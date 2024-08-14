@@ -6,16 +6,7 @@ export const tabs = [
         label: 'Home',
         dest: '/',
     },
-    {
-        icon: 'sports',
-        label: 'Matchups',
-        dest: '/matchups',
-    },
-    {
-        icon: 'swap_horiz',
-        label: 'Trades & Waivers',
-        dest: '/transactions',
-    },
+    
     {
         icon: 'article',
         label: 'Blog',
@@ -36,11 +27,7 @@ export const tabs = [
                 label: 'Managers',
                 dest: '/managers',
             },
-            {
-                icon: 'local_fire_department',
-                label: 'Rivalry',
-                dest: '/rivalry',
-            },
+            
             {
                 icon: 'leaderboard',
                 label: 'Standings',
@@ -51,21 +38,7 @@ export const tabs = [
                 label: 'Drafts',
                 dest: '/drafts',
             },
-            {
-                icon: 'emoji_events',
-                label: 'Trophy Room',
-                dest: '/awards',
-            },
-            {
-                icon: 'military_tech',
-                label: 'Records',
-                dest: '/records',
-            },
-            {
-                icon: 'history_edu',
-                label: 'Constitution',
-                dest: '/constitution',
-            },
+           
             {
                 icon: 'sports_football',
                 label: 'Go to Sleeper',
@@ -73,9 +46,5 @@ export const tabs = [
             },
         ]
     },
-    {
-        icon: 'lightbulb',
-        label: 'Resources',
-        dest: '/resources',
-    },
+   
 ];
