@@ -79,7 +79,7 @@
         <LinearProgress indeterminate />
     </div>
 {:else}
-    <h2>League Blog</h2>
+    
     <Post {leagueTeamManagers} {post} {createdAt} {id} />
     <div class="center">
         <a class="viewAll" href="/blog">View More Blog Posts</a>
