@@ -7,7 +7,7 @@ export const enableBlog = true; // requires VITE_CONTENTFUL_ACCESS_TOKEN and VIT
 
 /*   STEP 2   */
 export const homepageText = `
-  <p>Season Eleven</p>
+ 
 `;
 
 /*   STEP 3   */
