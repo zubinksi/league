@@ -1000,3 +1000,40 @@
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
 }
+
+/* ---- game log grid ---- */
+
+.log-grid {
+  display: grid;
+  gap: 0 6px;
+  align-items: baseline;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--divider-row);
+}
+
+.log-grid.log-head {
+  padding: 8px 20px 6px;
+}
+
+.log-stat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dimmer);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.log-head .log-stat {
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+}
+
+.log-grid .log-opp {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

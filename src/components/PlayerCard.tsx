@@ -12,7 +12,7 @@ import {
 import { useSeasonLog } from '../hooks/useSeasonLog';
 import { formatHeight, playerFullName } from '../api/players';
 import { teamLabel } from '../api/sleeper';
-import { projectedPoints, statPairs } from '../api/stats';
+import { gameLogColumns, projectedPoints, statPairs } from '../api/stats';
 import { computeMetrics, computePointsAllowed, ordinal, type PlayerMetrics } from '../lib/metrics';
 import type { StarterView } from '../lib/matchup';
 
@@ -113,6 +113,12 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
         : '');
 
   const pairs = statPairs(meta?.position ?? null, weekStats);
+
+  const logCols = gameLogColumns(meta?.position ?? null);
+  const logGridStyle = {
+    gridTemplateColumns:
+      logCols.length > 0 ? `30px 52px repeat(${logCols.length}, 1fr) 52px` : '30px 1fr 52px',
+  };
 
   const matchupNote =
     pointsAllowed && game && meta?.position
@@ -270,31 +276,48 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
 
             <div className="sheet-section">
               <span>GAME LOG</span>
-              <span>PTS</span>
+              <span>{logCols.length === 0 ? 'PTS' : ''}</span>
             </div>
-            {[...log.entries].reverse().map((e) => (
-              <div className="log-row" key={e.week}>
-                <span className="log-week">W{e.week}</span>
-                <span className="log-main">
+            {logCols.length > 0 && (
+              <div className="log-grid log-head" style={logGridStyle}>
+                <span />
+                <span />
+                {logCols.map((c) => (
+                  <span key={c.label} className="log-stat">
+                    {c.label}
+                  </span>
+                ))}
+                <span className="log-stat">PTS</span>
+              </div>
+            )}
+            {[...log.entries].reverse().map((e) => {
+              const weekStatsRow = log.weeklyStats[e.week - 1]?.[card.playerId];
+              return (
+                <div className="log-grid" style={logGridStyle} key={e.week}>
+                  <span className="log-week">W{e.week}</span>
                   <span className={`log-opp${e.live ? ' live' : ''}`}>
                     {e.live && <span className="live-dot" />}
                     {e.opponent || (e.loaded ? '—' : '')}
                   </span>
-                  {e.statLine && <span className="log-line">{e.statLine}</span>}
-                </span>
-                <span className="log-right">
-                  <span className={`log-pts${e.points === undefined ? ' none' : ''}`}>
-                    {e.points !== undefined ? fmtPts(e.points) : '—'}
-                  </span>
-                  {e.posRank !== undefined && meta?.position && (
-                    <span className="log-rank">
-                      {meta.position}
-                      {e.posRank}
+                  {logCols.map((c) => (
+                    <span key={c.label} className="log-stat">
+                      {e.points !== undefined ? c.value(weekStatsRow) : ''}
                     </span>
-                  )}
-                </span>
-              </div>
-            ))}
+                  ))}
+                  <span className="log-right">
+                    <span className={`log-pts${e.points === undefined ? ' none' : ''}`}>
+                      {e.points !== undefined ? fmtPts(e.points) : '—'}
+                    </span>
+                    {e.posRank !== undefined && meta?.position && (
+                      <span className="log-rank">
+                        {meta.position}
+                        {e.posRank}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
           </>
         )}
       </div>

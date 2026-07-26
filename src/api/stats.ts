@@ -154,6 +154,59 @@ export function statPairs(
   return out;
 }
 
+/** Column spec for the game-log grid: the same categories every week so a
+ *  column can be scanned vertically across the season. */
+export function gameLogColumns(
+  position: string | null,
+): { label: string; value: (s: StatMap | undefined) => string }[] {
+  const n = (key: string) => (s: StatMap | undefined) => (s ? fmt(s[key] ?? 0) : '');
+  const pair = (a: string, b: string) => (s: StatMap | undefined) =>
+    s ? `${fmt(s[a] ?? 0)}/${fmt(s[b] ?? 0)}` : '';
+  const sum2 = (a: string, b: string) => (s: StatMap | undefined) =>
+    s ? fmt((s[a] ?? 0) + (s[b] ?? 0)) : '';
+
+  switch (position) {
+    case 'QB':
+      return [
+        { label: 'C/A', value: pair('pass_cmp', 'pass_att') },
+        { label: 'YD', value: n('pass_yd') },
+        { label: 'TD', value: n('pass_td') },
+        { label: 'INT', value: n('pass_int') },
+        { label: 'RUSH', value: n('rush_yd') },
+      ];
+    case 'RB':
+      return [
+        { label: 'CAR', value: n('rush_att') },
+        { label: 'YD', value: n('rush_yd') },
+        { label: 'REC', value: n('rec') },
+        { label: 'RECYD', value: n('rec_yd') },
+        { label: 'TD', value: sum2('rush_td', 'rec_td') },
+      ];
+    case 'WR':
+    case 'TE':
+      return [
+        { label: 'TGT', value: n('rec_tgt') },
+        { label: 'REC', value: n('rec') },
+        { label: 'YD', value: n('rec_yd') },
+        { label: 'TD', value: sum2('rec_td', 'rush_td') },
+      ];
+    case 'K':
+      return [
+        { label: 'FG', value: pair('fgm', 'fga') },
+        { label: 'XP', value: n('xpm') },
+      ];
+    case 'DEF':
+      return [
+        { label: 'SCK', value: n('sack') },
+        { label: 'INT', value: n('int') },
+        { label: 'FR', value: n('fum_rec') },
+        { label: 'PA', value: n('pts_allow') },
+      ];
+    default:
+      return [];
+  }
+}
+
 /** Box-score line like `14/22 · 176YD · 1TD`, position-aware, zeros omitted. */
 export function statLine(position: string | null, stats: StatMap | undefined): string {
   if (!stats) return '';
