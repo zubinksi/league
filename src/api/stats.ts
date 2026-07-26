@@ -57,6 +57,30 @@ export function fetchWeekProjections(season: string, week: number): Promise<Week
   ]);
 }
 
+/** Season-aggregate stats (one request, all players): player_id → totals. */
+export function fetchSeasonStats(season: string): Promise<WeekStats> {
+  return fetchFirst('seasonStats', [
+    `https://api.sleeper.com/stats/nfl/${season}?season_type=regular&${POSITION_PARAMS}&order_by=pts_ppr`,
+    `https://api.sleeper.app/stats/nfl/regular/${season}`,
+  ]);
+}
+
+/** Season projections carry Sleeper's ADP fields (adp_ppr / adp_half_ppr / …). */
+export function fetchSeasonProjections(season: string): Promise<WeekStats> {
+  return fetchFirst('seasonProjections', [
+    `https://api.sleeper.com/projections/nfl/${season}?season_type=regular&${POSITION_PARAMS}&order_by=adp_half_ppr`,
+    `https://api.sleeper.app/projections/nfl/regular/${season}`,
+  ]);
+}
+
+/** ADP matching the league's reception scoring; undefined = undrafted. */
+export function adpValue(stats: StatMap | undefined, recValue: number): number | undefined {
+  if (!stats) return undefined;
+  const key = recValue >= 1 ? 'adp_ppr' : recValue > 0 ? 'adp_half_ppr' : 'adp_std';
+  const v = stats[key] ?? stats.adp_half_ppr ?? stats.adp_ppr ?? stats.adp_std ?? stats.adp_2qb;
+  return typeof v === 'number' && v > 0 ? v : undefined;
+}
+
 /** Pick the projected fantasy points matching the league's reception scoring. */
 export function projectedPoints(stats: StatMap | undefined, recValue: number): number | undefined {
   if (!stats) return undefined;

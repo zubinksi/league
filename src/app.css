@@ -914,3 +914,17 @@
 .player-row.clickable {
   cursor: pointer;
 }
+
+/* players page filter rows */
+
+.pos-chips.filter-row {
+  padding-top: 0;
+}
+
+.chip-sep {
+  flex: none;
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 4px;
+  background: var(--divider-strong);
+}

@@ -70,64 +70,76 @@ interface FixturePlayer {
   team: string;
   pts?: number;
   proj: number;
+  adp?: number;
   stats?: Record<string, number>;
 }
 
 const HOME_STARTERS: FixturePlayer[] = [
-  { id: 'p_maye', first: 'Drake', last: 'Maye', pos: 'QB', team: 'NE', pts: 18.4, proj: 19.5,
+  { id: 'p_maye', first: 'Drake', last: 'Maye', pos: 'QB', team: 'NE', pts: 18.4, proj: 19.5, adp: 38.2,
     stats: { pass_cmp: 14, pass_att: 22, pass_yd: 176, pass_td: 1, rush_yd: 24 } },
-  { id: 'p_gibbs', first: 'Jahmyr', last: 'Gibbs', pos: 'RB', team: 'DET', pts: 21.3, proj: 17.8,
+  { id: 'p_gibbs', first: 'Jahmyr', last: 'Gibbs', pos: 'RB', team: 'DET', pts: 21.3, proj: 17.8, adp: 4.1,
     stats: { rush_att: 16, rush_yd: 104, rec: 4, rec_yd: 39, rush_td: 1 } },
-  { id: 'p_brobinson', first: 'Bijan', last: 'Robinson', pos: 'RB', team: 'ATL', pts: 9.6, proj: 18.2,
+  { id: 'p_brobinson', first: 'Bijan', last: 'Robinson', pos: 'RB', team: 'ATL', pts: 9.6, proj: 18.2, adp: 2.3,
     stats: { rush_att: 13, rush_yd: 51, rec: 3, rec_yd: 15 } },
-  { id: 'p_nacua', first: 'Puka', last: 'Nacua', pos: 'WR', team: 'LAR', proj: 16.4 },
-  { id: 'p_collins', first: 'Nico', last: 'Collins', pos: 'WR', team: 'HOU', pts: 8.9, proj: 15.1,
+  { id: 'p_nacua', first: 'Puka', last: 'Nacua', pos: 'WR', team: 'LAR', proj: 16.4, adp: 9.8 },
+  { id: 'p_collins', first: 'Nico', last: 'Collins', pos: 'WR', team: 'HOU', pts: 8.9, proj: 15.1, adp: 14.5,
     stats: { rec: 4, rec_yd: 49 } },
-  { id: 'p_mcbride', first: 'Trey', last: 'McBride', pos: 'TE', team: 'ARI', proj: 12.2 },
-  { id: 'p_jacobs', first: 'Josh', last: 'Jacobs', pos: 'RB', team: 'GB', pts: 6.7, proj: 14.6,
+  { id: 'p_mcbride', first: 'Trey', last: 'McBride', pos: 'TE', team: 'ARI', proj: 12.2, adp: 22.7 },
+  { id: 'p_jacobs', first: 'Josh', last: 'Jacobs', pos: 'RB', team: 'GB', pts: 6.7, proj: 14.6, adp: 21.4,
     stats: { rush_att: 14, rush_yd: 47, rec: 2, rec_yd: 10 } },
-  { id: 'p_butker', first: 'Harrison', last: 'Butker', pos: 'K', team: 'KC', pts: 5.0, proj: 8.4,
+  { id: 'p_butker', first: 'Harrison', last: 'Butker', pos: 'K', team: 'KC', pts: 5.0, proj: 8.4, adp: 141.0,
     stats: { fgm: 1, fga: 2, xpm: 2 } },
-  { id: 'PHI', first: 'Philadelphia', last: 'Eagles', pos: 'DEF', team: 'PHI', pts: 4.0, proj: 6.8,
+  { id: 'PHI', first: 'Philadelphia', last: 'Eagles', pos: 'DEF', team: 'PHI', pts: 4.0, proj: 6.8, adp: 118.6,
     stats: { sack: 2, int: 1, pts_allow: 20 } },
 ];
 
 const AWAY_STARTERS: FixturePlayer[] = [
-  { id: 'p_allen', first: 'Josh', last: 'Allen', pos: 'QB', team: 'BUF', pts: 22.1, proj: 21.5,
+  { id: 'p_allen', first: 'Josh', last: 'Allen', pos: 'QB', team: 'BUF', pts: 22.1, proj: 21.5, adp: 12.9,
     stats: { pass_cmp: 17, pass_att: 25, pass_yd: 221, pass_td: 2, rush_yd: 31 } },
-  { id: 'p_achane', first: "De'Von", last: 'Achane', pos: 'RB', team: 'MIA', proj: 16.8 },
-  { id: 'p_cbrown', first: 'Chase', last: 'Brown', pos: 'RB', team: 'CIN', pts: 12.4, proj: 14.9,
+  { id: 'p_achane', first: "De'Von", last: 'Achane', pos: 'RB', team: 'MIA', proj: 16.8, adp: 11.2 },
+  { id: 'p_cbrown', first: 'Chase', last: 'Brown', pos: 'RB', team: 'CIN', pts: 12.4, proj: 14.9, adp: 19.8,
     stats: { rush_att: 15, rush_yd: 78, rec: 2, rec_yd: 16 } },
-  { id: 'p_chase', first: "Ja'Marr", last: 'Chase', pos: 'WR', team: 'CIN', pts: 15.2, proj: 17.3,
+  { id: 'p_chase', first: "Ja'Marr", last: 'Chase', pos: 'WR', team: 'CIN', pts: 15.2, proj: 17.3, adp: 3.0,
     stats: { rec: 6, rec_yd: 92 } },
-  { id: 'p_jsn', first: 'Jaxon', last: 'Smith-Njigba', pos: 'WR', team: 'SEA', proj: 13.0 },
-  { id: 'p_laporta', first: 'Sam', last: 'LaPorta', pos: 'TE', team: 'DET', pts: 7.8, proj: 10.1,
+  { id: 'p_jsn', first: 'Jaxon', last: 'Smith-Njigba', pos: 'WR', team: 'SEA', proj: 13.0, adp: 16.3 },
+  { id: 'p_laporta', first: 'Sam', last: 'LaPorta', pos: 'TE', team: 'DET', pts: 7.8, proj: 10.1, adp: 40.5,
     stats: { rec: 4, rec_yd: 38 } },
-  { id: 'p_white', first: 'Rachaad', last: 'White', pos: 'RB', team: 'TB', pts: 8.1, proj: 11.0,
+  { id: 'p_white', first: 'Rachaad', last: 'White', pos: 'RB', team: 'TB', pts: 8.1, proj: 11.0, adp: 71.9,
     stats: { rush_att: 11, rush_yd: 42, rec: 3, rec_yd: 19 } },
-  { id: 'p_aubrey', first: 'Brandon', last: 'Aubrey', pos: 'K', team: 'DAL', pts: 12.0, proj: 9.2,
+  { id: 'p_aubrey', first: 'Brandon', last: 'Aubrey', pos: 'K', team: 'DAL', pts: 12.0, proj: 9.2, adp: 133.2,
     stats: { fgm: 3, fga: 3, xpm: 3 } },
-  { id: 'BAL', first: 'Baltimore', last: 'Ravens', pos: 'DEF', team: 'BAL', pts: 3.0, proj: 7.1,
+  { id: 'BAL', first: 'Baltimore', last: 'Ravens', pos: 'DEF', team: 'BAL', pts: 3.0, proj: 7.1, adp: 108.4,
     stats: { sack: 1, int: 1, pts_allow: 17 } },
 ];
 
 const HOME_BENCH: FixturePlayer[] = [
-  { id: 'p_downs', first: 'Josh', last: 'Downs', pos: 'WR', team: 'MIN', pts: 7.4, proj: 10.8,
+  { id: 'p_downs', first: 'Josh', last: 'Downs', pos: 'WR', team: 'MIN', pts: 7.4, proj: 10.8, adp: 92.1,
     stats: { rec: 5, rec_yd: 44 } },
-  { id: 'p_charbonnet', first: 'Zach', last: 'Charbonnet', pos: 'RB', team: 'SEA', proj: 9.4 },
-  { id: 'p_pitts', first: 'Kyle', last: 'Pitts', pos: 'TE', team: 'ATL', pts: 4.2, proj: 8.6,
+  { id: 'p_charbonnet', first: 'Zach', last: 'Charbonnet', pos: 'RB', team: 'SEA', proj: 9.4, adp: 96.7 },
+  { id: 'p_pitts', first: 'Kyle', last: 'Pitts', pos: 'TE', team: 'ATL', pts: 4.2, proj: 8.6, adp: 61.5,
     stats: { rec: 2, rec_yd: 22 } },
 ];
 
 const AWAY_BENCH: FixturePlayer[] = [
-  { id: 'p_wilson', first: 'Garrett', last: 'Wilson', pos: 'WR', team: 'NYJ', proj: 14.2 },
-  { id: 'p_warren', first: 'Tyler', last: 'Warren', pos: 'TE', team: 'MIN', pts: 6.1, proj: 7.9,
+  { id: 'p_wilson', first: 'Garrett', last: 'Wilson', pos: 'WR', team: 'NYJ', proj: 14.2, adp: 30.6 },
+  { id: 'p_warren', first: 'Tyler', last: 'Warren', pos: 'TE', team: 'MIN', pts: 6.1, proj: 7.9, adp: 86.3,
     stats: { rec: 3, rec_yd: 31 } },
-  { id: 'p_bigsby', first: 'Tank', last: 'Bigsby', pos: 'RB', team: 'JAX', pts: 3.8, proj: 7.2,
+  { id: 'p_bigsby', first: 'Tank', last: 'Bigsby', pos: 'RB', team: 'JAX', pts: 3.8, proj: 7.2, adp: 148.9,
     stats: { rush_att: 6, rush_yd: 28 } },
 ];
 
-const ALL_PLAYERS = [...HOME_STARTERS, ...AWAY_STARTERS, ...HOME_BENCH, ...AWAY_BENCH];
+/** Unrostered in the mock league — exercise the AVAILABLE pool. */
+const FREE_AGENTS: FixturePlayer[] = [
+  { id: 'p_dobbins', first: 'J.K.', last: 'Dobbins', pos: 'RB', team: 'DEN', pts: 11.2, proj: 10.4, adp: 55.3,
+    stats: { rush_att: 14, rush_yd: 71, rec: 2, rec_yd: 11, rush_td: 1 } },
+  { id: 'p_shaheed', first: 'Rashid', last: 'Shaheed', pos: 'WR', team: 'NO', pts: 9.1, proj: 8.8, adp: 112.4,
+    stats: { rec: 4, rec_yd: 61 } },
+  { id: 'p_kraft', first: 'Tucker', last: 'Kraft', pos: 'TE', team: 'GB', pts: 8.6, proj: 7.5, adp: 99.2,
+    stats: { rec: 4, rec_yd: 46 } },
+  { id: 'p_wright', first: 'Jaylen', last: 'Wright', pos: 'RB', team: 'MIA', proj: 6.9, adp: 160.8 },
+];
+
+const ALL_PLAYERS = [...HOME_STARTERS, ...AWAY_STARTERS, ...HOME_BENCH, ...AWAY_BENCH, ...FREE_AGENTS];
 
 const playersBlob: Record<string, any> = {};
 for (const p of ALL_PLAYERS) {
@@ -229,9 +241,9 @@ const matchups = [
   })),
 ];
 
-const trending = [...HOME_BENCH, ...AWAY_BENCH].map((p, i) => ({
+const trending = [...FREE_AGENTS, ...HOME_BENCH, ...AWAY_BENCH].map((p, i) => ({
   player_id: p.id,
-  count: 900 - i * 120,
+  count: 900 - i * 90,
 }));
 
 const nflState = { season: SEASON, week: WEEK, display_week: WEEK, season_type: 'regular' };
@@ -268,6 +280,32 @@ const weekFromUrl = (url: string, re: RegExp): number => {
   return m ? parseInt(m[1], 10) : WEEK;
 };
 
+/** Season URLs have no week segment: /stats/nfl/2025?... or /stats/nfl/regular/2025 */
+const isSeasonUrl = (url: string, kind: 'stats' | 'projections') =>
+  new RegExp(`/${kind}/nfl/(?:regular/)?\\d{4}(?:\\?|$)`).test(url);
+
+/** Season totals consistent with the per-week mock stats. */
+function seasonStatsFixture(): Record<string, any> {
+  const out: Record<string, any> = {};
+  ALL_PLAYERS.forEach((p) => {
+    out[p.id] = { pts_ppr: 0 };
+  });
+  for (let w = 1; w <= WEEK; w++) {
+    const weekly = statsForWeek(w);
+    for (const [id, s] of Object.entries(weekly)) {
+      out[id].pts_ppr = Math.round((out[id].pts_ppr + ((s as any).pts_ppr ?? 0)) * 10) / 10;
+    }
+  }
+  return out;
+}
+
+const seasonProjectionsFixture: Record<string, any> = Object.fromEntries(
+  ALL_PLAYERS.map((p) => [
+    p.id,
+    { adp_ppr: p.adp, adp_half_ppr: p.adp, adp_std: p.adp, pts_ppr: p.proj * 17 },
+  ]),
+);
+
 /** Returns fixture data for a recognized URL, undefined to fall through to fetch. */
 export function mockFetch(url: string): unknown {
   if (url.includes('site.api.espn.com')) {
@@ -276,8 +314,11 @@ export function mockFetch(url: string): unknown {
   if (url.includes('/v1/state/nfl')) return nflState;
   if (url.includes('/players/nfl/trending')) return trending;
   if (url.endsWith('/v1/players/nfl')) return playersBlob;
-  if (url.includes('/projections/nfl/')) return projections;
+  if (url.includes('/projections/nfl/')) {
+    return isSeasonUrl(url, 'projections') ? seasonProjectionsFixture : projections;
+  }
   if (url.includes('/stats/nfl/')) {
+    if (isSeasonUrl(url, 'stats')) return seasonStatsFixture();
     return statsForWeek(weekFromUrl(url, /\/stats\/nfl\/(?:regular\/)?\d{4}\/(\d+)/));
   }
   if (url.includes('/users')) return users;

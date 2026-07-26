@@ -11,7 +11,12 @@ import {
 } from '../api/sleeper';
 import { fetchPlayers } from '../api/players';
 import { fetchScoreboard } from '../api/espn';
-import { fetchWeekProjections, fetchWeekStats } from '../api/stats';
+import {
+  fetchSeasonProjections,
+  fetchSeasonStats,
+  fetchWeekProjections,
+  fetchWeekStats,
+} from '../api/stats';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -37,6 +42,26 @@ export function useNflState() {
 
 export function usePlayers() {
   return useQuery({ queryKey: ['players'], queryFn: fetchPlayers, staleTime: DAY, gcTime: DAY });
+}
+
+/** Season point totals per player (refreshed hourly — totals move on game days). */
+export function useSeasonTotals(season: string | undefined) {
+  return useQuery({
+    queryKey: ['seasonStats', season],
+    queryFn: () => fetchSeasonStats(season!),
+    enabled: !!season,
+    staleTime: 60 * 60 * 1000,
+  });
+}
+
+/** Season projections, used for their ADP fields (fixed after drafts — daily). */
+export function useSeasonAdp(season: string | undefined) {
+  return useQuery({
+    queryKey: ['seasonAdp', season],
+    queryFn: () => fetchSeasonProjections(season!),
+    enabled: !!season,
+    staleTime: DAY,
+  });
 }
 
 /** The week to show by default: the league's current leg while in season,

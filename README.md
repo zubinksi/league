@@ -12,8 +12,9 @@ and gold reserved strictly for live scoring moments.
 - **League** — standings plus per-week matchup scores (tap through to any
   matchup, browse weeks with ‹ ›).
 - **Team** — a roster's week: starters by slot, bench, record, PF/PA.
-- **Players** — search + position filter over the NFL player pool, with
-  Sleeper's trending adds by default.
+- **Players** — search + position filter over the NFL player pool, an
+  ALL/AVAILABLE pool toggle (available = unrostered in this league), and
+  sorting by season points, weekly points, ADP, or Sleeper's trending adds.
 
 ## Running
 
