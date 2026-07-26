@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { LEAGUE_ID, LIVE_POLL_MS } from '../config';
 import {
@@ -17,6 +18,7 @@ import {
   fetchWeekProjections,
   fetchWeekStats,
 } from '../api/stats';
+import { recordMatchupSnapshots } from '../lib/snapshots';
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -107,6 +109,17 @@ export function useWeekData(season: string | undefined, week: number | undefined
     enabled,
     staleTime: 60 * 60 * 1000,
   });
+
+  // Record real per-player scoring samples while any game is live — these
+  // become the true portion of the chart/scrub timeline. Deduped internally,
+  // so multiple mounted consumers of this hook are harmless.
+  const matchupsData = matchups.data;
+  const scoreboardData = scoreboard.data;
+  useEffect(() => {
+    if (!season || !week || !matchupsData || !scoreboardData) return;
+    if (!Object.values(scoreboardData).some((g) => g.state === 'live')) return;
+    recordMatchupSnapshots(season, week, matchupsData);
+  }, [season, week, matchupsData, scoreboardData]);
 
   return { matchups, scoreboard, stats, projections };
 }

@@ -1,22 +1,118 @@
-import { useMemo, type CSSProperties } from 'react';
+import { useMemo, useRef, type CSSProperties, type PointerEvent } from 'react';
 import type { MatchupView } from '../lib/matchup';
-import { buildChartModel, CHART_W, CHART_H } from '../lib/chart';
+import type { MatchupTimeline } from '../lib/timeline';
+import { buildChartModel, py, CHART_W, CHART_H } from '../lib/chart';
 import { usePulseOnIncrease } from '../hooks/usePulseOnIncrease';
 
 /** Style prop with the CSS `d`/`cy` properties so path morphs animate via the
  *  0.6s transition in browsers that support them (attribute set as fallback). */
 const pathStyle = (d: string): CSSProperties => ({ d: `path("${d}")` }) as CSSProperties;
 
-export function RaceChart({ view }: { view: MatchupView }) {
-  const model = useMemo(() => buildChartModel(view), [view]);
+const TOUCH_HOLD_MS = 220;
+const CANCEL_DISTANCE = 10;
+
+export function RaceChart({
+  view,
+  timeline,
+  scrubTau,
+  onScrub,
+}: {
+  view: MatchupView;
+  timeline: MatchupTimeline | null;
+  scrubTau: number | null;
+  onScrub: (tau: number | null) => void;
+}) {
+  const model = useMemo(() => buildChartModel(view, timeline), [view, timeline]);
   const pulse = usePulseOnIncrease(view.home.score + view.away.score);
+
+  const svgRef = useRef<SVGSVGElement>(null);
+  const active = useRef(false);
+  const pending = useRef<{ x: number; y: number; pointerId: number } | null>(null);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const tauFromClientX = (clientX: number): number => {
+    const rect = svgRef.current!.getBoundingClientRect();
+    const x = ((clientX - rect.left) / rect.width) * CHART_W;
+    const frac = Math.min(1, Math.max(0, x / model.nowX));
+    return timeline!.t0 + frac * (timeline!.t1 - timeline!.t0);
+  };
+
+  const activate = (pointerId: number, clientX: number) => {
+    active.current = true;
+    try {
+      svgRef.current?.setPointerCapture(pointerId);
+    } catch {
+      /* pointer already gone */
+    }
+    onScrub(tauFromClientX(clientX));
+  };
+
+  const clearPending = () => {
+    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+    pending.current = null;
+  };
+
+  const end = () => {
+    clearPending();
+    if (active.current) {
+      active.current = false;
+      onScrub(null);
+    }
+  };
+
+  const onPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    if (!timeline) return;
+    if (e.pointerType === 'mouse') {
+      if (e.button !== 0) return;
+      activate(e.pointerId, e.clientX);
+    } else {
+      // Touch: require a short hold so vertical page scrolls aren't hijacked.
+      pending.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
+      holdTimer.current = setTimeout(() => {
+        if (pending.current) {
+          activate(pending.current.pointerId, pending.current.x);
+          pending.current = null;
+        }
+      }, TOUCH_HOLD_MS);
+    }
+  };
+
+  const onPointerMove = (e: PointerEvent<SVGSVGElement>) => {
+    if (active.current) {
+      onScrub(tauFromClientX(e.clientX));
+    } else if (pending.current) {
+      const dx = e.clientX - pending.current.x;
+      const dy = e.clientY - pending.current.y;
+      if (Math.hypot(dx, dy) > CANCEL_DISTANCE) clearPending();
+      else pending.current = { ...pending.current, x: e.clientX };
+    }
+  };
+
+  const scrub =
+    scrubTau !== null && timeline
+      ? (() => {
+          const frac = (scrubTau - timeline.t0) / (timeline.t1 - timeline.t0 || 1);
+          return {
+            x: Math.min(1, Math.max(0, frac)) * model.nowX,
+            homeY: py(timeline.sideAt('home', scrubTau), model.maxY),
+            awayY: py(timeline.sideAt('away', scrubTau), model.maxY),
+          };
+        })()
+      : null;
 
   return (
     <svg
-      className="race-chart"
+      ref={svgRef}
+      className={`race-chart${timeline ? ' scrubbable' : ''}`}
       viewBox={`0 0 ${CHART_W} ${CHART_H}`}
       preserveAspectRatio="none"
       aria-hidden="true"
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={end}
+      onPointerCancel={end}
+      onPointerLeave={end}
     >
       {/* lead gap fill */}
       <path className="morph" d={model.gap} style={pathStyle(model.gap)} fill="var(--gap-fill)" />
@@ -77,6 +173,22 @@ export function RaceChart({ view }: { view: MatchupView }) {
         r="2.4"
         fill="#ffffff"
       />
+
+      {/* scrub crosshair — monochrome; gold stays reserved for live */}
+      {scrub && (
+        <g>
+          <line
+            x1={scrub.x}
+            x2={scrub.x}
+            y1={0}
+            y2={CHART_H}
+            stroke="rgba(255,255,255,0.22)"
+            strokeWidth="1"
+          />
+          <circle cx={scrub.x} cy={scrub.awayY} r="2.2" fill="rgba(235,235,240,0.6)" />
+          <circle cx={scrub.x} cy={scrub.homeY} r="2.2" fill="#ffffff" />
+        </g>
+      )}
     </svg>
   );
 }

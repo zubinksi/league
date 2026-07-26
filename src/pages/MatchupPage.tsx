@@ -14,6 +14,8 @@ import {
   useWeekData,
 } from '../hooks/useLeagueData';
 import { buildMatchupView } from '../lib/matchup';
+import { buildTimeline } from '../lib/timeline';
+import { loadPlayerSeries } from '../lib/snapshots';
 import type { SleeperMatchupEntry } from '../api/sleeper';
 
 export function MatchupPage() {
@@ -64,6 +66,18 @@ export function MatchupPage() {
     });
   }, [pair, league.data, rosters.data, users.data, players.data, scoreboard.data, projections.data, stats.data, week]);
 
+  // Scrub state + the time-indexed scoring model behind the chart. Recorded
+  // snapshots are re-read each time the view updates (i.e. every poll) so
+  // fresh live samples flow straight into the timeline.
+  const [scrubTau, setScrubTau] = useState<number | null>(null);
+  const timeline = useMemo(() => {
+    if (!view) return null;
+    const season = league.data?.season;
+    const matchupId = pair?.[0].matchup_id;
+    const series = season && matchupId != null ? loadPlayerSeries(season, week, matchupId) : {};
+    return buildTimeline(view, series);
+  }, [view, league.data?.season, pair, week]);
+
   // No team chosen and no explicit matchup in the URL → pick a perspective first.
   const needsPicker = !params.matchupId && pickedRoster === null;
 
@@ -78,8 +92,8 @@ export function MatchupPage() {
         )
       ) : view ? (
         <>
-          <MatchupHero view={view} />
-          <RosterCompare view={view} />
+          <MatchupHero view={view} timeline={timeline} scrubTau={scrubTau} onScrub={setScrubTau} />
+          <RosterCompare view={view} timeline={timeline} scrubTau={scrubTau} />
         </>
       ) : matchups.isError || league.isError ? (
         <div className="state-note">Failed to load — retrying</div>

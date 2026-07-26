@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { MatchupView, StarterView, TeamView } from '../lib/matchup';
+import type { MatchupTimeline } from '../lib/timeline';
 import { usePulseOnIncrease } from '../hooks/usePulseOnIncrease';
 import { usePlayerCard } from './PlayerCard';
 
@@ -17,15 +18,21 @@ export function PlayerCell({
   player,
   opposing,
   side,
+  scrubValue,
 }: {
   player: StarterView;
   opposing?: StarterView;
   side: 'home' | 'away';
+  /** When scrubbing: the player's value at the scrub time (null = game not
+   *  started yet at that time). undefined = not scrubbing. */
+  scrubValue?: number | null;
 }) {
   const pulse = usePulseOnIncrease(player.state === 'live' ? player.points : null);
   const openCard = usePlayerCard();
   const cls = stateClasses(player, opposing);
   const showProj = player.state !== 'final' && player.projected !== undefined;
+  const scrubbing = scrubValue !== undefined;
+  const displayPoints = scrubbing ? scrubValue : player.points;
 
   const dot = player.state === 'live' ? <span className="live-dot" /> : null;
 
@@ -41,8 +48,8 @@ export function PlayerCell({
         >
           {player.name}
         </span>
-        <span key={pulse} className={`ppts ${cls}${pulse ? ' anim-livetick' : ''}`}>
-          {player.points === null ? '—' : fmtPts(player.points)}
+        <span key={pulse} className={`ppts ${cls}${pulse && !scrubbing ? ' anim-livetick' : ''}`}>
+          {displayPoints === null || displayPoints === undefined ? '—' : fmtPts(displayPoints)}
         </span>
       </div>
       <div className="line2">
@@ -78,11 +85,22 @@ function StatusGroup({ team }: { team: TeamView }) {
   return <span className="status-group">{parts}</span>;
 }
 
-export function RosterCompare({ view }: { view: MatchupView }) {
+export function RosterCompare({
+  view,
+  timeline,
+  scrubTau,
+}: {
+  view: MatchupView;
+  timeline?: MatchupTimeline | null;
+  scrubTau?: number | null;
+}) {
   const [benchOpen, setBenchOpen] = useState(false);
   const { home, away } = view;
   const rows = Math.max(home.starters.length, away.starters.length);
   const benchRows = Math.max(home.bench.length, away.bench.length);
+
+  const scrubFor = (p: StarterView | undefined): number | null | undefined =>
+    p !== undefined && scrubTau != null && timeline ? timeline.playerAt(p.playerId, scrubTau) : undefined;
 
   return (
     <section>
@@ -95,12 +113,22 @@ export function RosterCompare({ view }: { view: MatchupView }) {
         <div className="roster-row" key={home.starters[i]?.playerId ?? away.starters[i]?.playerId ?? i}>
           <div className="roster-grid">
             {home.starters[i] ? (
-              <PlayerCell player={home.starters[i]} opposing={away.starters[i]} side="home" />
+              <PlayerCell
+                player={home.starters[i]}
+                opposing={away.starters[i]}
+                side="home"
+                scrubValue={scrubFor(home.starters[i])}
+              />
             ) : (
               <div className="pcell home" />
             )}
             {away.starters[i] ? (
-              <PlayerCell player={away.starters[i]} opposing={home.starters[i]} side="away" />
+              <PlayerCell
+                player={away.starters[i]}
+                opposing={home.starters[i]}
+                side="away"
+                scrubValue={scrubFor(away.starters[i])}
+              />
             ) : (
               <div className="pcell away" />
             )}
@@ -113,12 +141,12 @@ export function RosterCompare({ view }: { view: MatchupView }) {
           <div className="roster-row" key={`bn-${home.bench[i]?.playerId ?? ''}-${away.bench[i]?.playerId ?? i}`}>
             <div className="roster-grid">
               {home.bench[i] ? (
-                <PlayerCell player={home.bench[i]} side="home" />
+                <PlayerCell player={home.bench[i]} side="home" scrubValue={scrubFor(home.bench[i])} />
               ) : (
                 <div className="pcell home" />
               )}
               {away.bench[i] ? (
-                <PlayerCell player={away.bench[i]} side="away" />
+                <PlayerCell player={away.bench[i]} side="away" scrubValue={scrubFor(away.bench[i])} />
               ) : (
                 <div className="pcell away" />
               )}

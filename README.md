@@ -54,6 +54,19 @@ All read-only, no auth, fetched directly from the browser:
   clock, keyed by NFL team. Drives the `vs BUF · Q3` strings, live dots, and
   the chart's progress axis.
 
+### Chart scrubbing & the snapshot recorder
+
+Drag on the matchup chart (mouse: drag; touch: short hold, then drag) to
+scrub through the week: the hero scores, leader emphasis, and every roster
+row re-render to their values at the scrubbed time, with a timestamp shown
+in place of the projection/win row. Release to snap back to now.
+
+While games are live, every poll records the per-player points that changed
+(delta-encoded per matchup, in localStorage). The scrub timeline uses those
+observed values verbatim wherever they exist and falls back to linear
+interpolation across each game window elsewhere — so the more the app is
+open during games, the more the replay reflects what actually happened.
+
 ### Known approximations
 
 - **Win %** is computed, not official: current score plus remaining

@@ -928,3 +928,21 @@
   margin: 4px 4px;
   background: var(--divider-strong);
 }
+
+/* ---- chart scrubbing ---- */
+
+.race-chart.scrubbable {
+  touch-action: pan-y;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.win-row.scrubbing {
+  justify-content: center;
+}
+
+.scrub-time {
+  color: var(--text-muted);
+  letter-spacing: 0.13em;
+}
