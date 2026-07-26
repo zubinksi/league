@@ -1,0 +1,148 @@
+/* ---------------------------------------------------------------------------
+   Design tokens — premium financial terminal. Near-monochrome; gold is the
+   ONLY accent and is reserved strictly for live/scoring moments.
+--------------------------------------------------------------------------- */
+:root {
+  --bg-app: #0c0d0f;
+  --bg-gradient: radial-gradient(120% 90% at 50% 0%, #17181c 0%, #0c0d0f 55%, #08090b 100%);
+
+  --text-max: #fbfbfd;
+  --text-white: #ffffff;
+  --text-strong: #ececed;
+  --text-strong2: #f4f4f6;
+  --text-mid: #c9c9cf;
+  --text-muted: #8a8c92;
+  --text-muted2: #77797f;
+  --text-dim: #6d6f76;
+  --text-dimmer: #606668;
+  --text-faint: #5c5e64;
+  --text-faint2: #5f6167;
+  --text-dot: #43454b;
+  --text-proj-right: #565860;
+  --game-live: #b6b8be;
+
+  --divider-strong: rgba(255, 255, 255, 0.12);
+  --divider-hero: rgba(255, 255, 255, 0.07);
+  --divider-header: rgba(255, 255, 255, 0.05);
+  --divider-row: rgba(255, 255, 255, 0.028);
+
+  --gap-fill: rgba(255, 255, 255, 0.11);
+  --line-home: rgba(255, 255, 255, 0.95);
+  --line-away: rgba(235, 235, 240, 0.52);
+  --dash-home: rgba(255, 255, 255, 0.55);
+  --dash-away: rgba(235, 235, 240, 0.3);
+
+  --accent-live: oklch(0.82 0.15 85);
+  --accent-live-hex: #e8c561;
+
+  --font-ui: 'Geist Sans', 'Geist', system-ui, -apple-system, sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--bg-app);
+}
+
+body {
+  font-family: var(--font-ui);
+  color: var(--text-strong);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100dvh;
+  background: var(--bg-gradient);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+input {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- animations (exact per spec) ---- */
+
+@keyframes livepulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.3; }
+  100% { opacity: 1; }
+}
+
+@keyframes livetick {
+  from { color: #e8c561; }
+  to { color: #f4f4f6; }
+}
+
+@keyframes scoreflash {
+  from { color: #e8c561; }
+}
+
+@keyframes endpulse {
+  0% { r: 2.4; fill: #e8c561; }
+  50% { r: 4.2; fill: #e8c561; }
+  100% { r: 2.4; fill: #ffffff; }
+}
+
+.anim-livetick {
+  animation: livetick 1.1s ease-out;
+}
+
+.anim-scoreflash {
+  animation: scoreflash 1.1s ease-out;
+}
+
+.anim-endpulse {
+  animation: endpulse 1.1s ease-out;
+}
+
+.live-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-live);
+  flex: none;
+  animation: livepulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .live-dot,
+  .anim-livetick,
+  .anim-scoreflash,
+  .anim-endpulse {
+    animation: none !important;
+  }
+  * {
+    transition: none !important;
+  }
+}

@@ -1,0 +1,96 @@
+import { getJSON } from './http';
+
+export type StatMap = Record<string, number>;
+/** player_id → raw stat categories (pass_yd, rush_att, rec, pts_ppr, …). */
+export type WeekStats = Record<string, StatMap>;
+
+/** Unofficial endpoints used by Sleeper's own clients. Shapes vary between the
+ *  legacy map form and a newer array form — accept both. */
+function normalizeStats(data: unknown): WeekStats {
+  if (Array.isArray(data)) {
+    const out: WeekStats = {};
+    for (const row of data as { player_id?: string; stats?: StatMap }[]) {
+      if (row.player_id && row.stats) out[row.player_id] = row.stats;
+    }
+    return out;
+  }
+  return (data ?? {}) as WeekStats;
+}
+
+export async function fetchWeekStats(season: string, week: number): Promise<WeekStats> {
+  const data = await getJSON<unknown>(
+    `https://api.sleeper.app/stats/nfl/regular/${season}/${week}`,
+  );
+  return normalizeStats(data);
+}
+
+export async function fetchWeekProjections(season: string, week: number): Promise<WeekStats> {
+  const data = await getJSON<unknown>(
+    `https://api.sleeper.app/projections/nfl/regular/${season}/${week}`,
+  );
+  return normalizeStats(data);
+}
+
+/** Pick the projected fantasy points matching the league's reception scoring. */
+export function projectedPoints(stats: StatMap | undefined, recValue: number): number | undefined {
+  if (!stats) return undefined;
+  const key = recValue >= 1 ? 'pts_ppr' : recValue > 0 ? 'pts_half_ppr' : 'pts_std';
+  const v = stats[key] ?? stats.pts_ppr ?? stats.pts_half_ppr ?? stats.pts_std;
+  return typeof v === 'number' ? v : undefined;
+}
+
+const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
+
+/** Box-score line like `14/22 · 176YD · 1TD`, position-aware, zeros omitted. */
+export function statLine(position: string | null, stats: StatMap | undefined): string {
+  if (!stats) return '';
+  const t: string[] = [];
+  const has = (k: string) => (stats[k] ?? 0) > 0;
+
+  switch (position) {
+    case 'QB': {
+      if (has('pass_att')) t.push(`${fmt(stats.pass_cmp ?? 0)}/${fmt(stats.pass_att)}`);
+      if (has('pass_yd')) t.push(`${fmt(stats.pass_yd)}YD`);
+      if (has('pass_td')) t.push(`${fmt(stats.pass_td)}TD`);
+      if (has('pass_int')) t.push(`${fmt(stats.pass_int)}INT`);
+      if (has('rush_yd')) t.push(`${fmt(stats.rush_yd)}RUSH`);
+      if (has('rush_td')) t.push(`${fmt(stats.rush_td)}RTD`);
+      break;
+    }
+    case 'RB': {
+      if (has('rush_att')) t.push(`${fmt(stats.rush_att)}CAR`);
+      if (has('rush_yd')) t.push(`${fmt(stats.rush_yd)}YD`);
+      if (has('rec')) t.push(`${fmt(stats.rec)}REC`);
+      if (has('rec_yd')) t.push(`${fmt(stats.rec_yd)}RECYD`);
+      const td = (stats.rush_td ?? 0) + (stats.rec_td ?? 0);
+      if (td > 0) t.push(`${fmt(td)}TD`);
+      break;
+    }
+    case 'WR':
+    case 'TE': {
+      if (has('rec')) t.push(`${fmt(stats.rec)}REC`);
+      if (has('rec_yd')) t.push(`${fmt(stats.rec_yd)}YD`);
+      if (has('rush_yd')) t.push(`${fmt(stats.rush_yd)}RUSH`);
+      const td = (stats.rec_td ?? 0) + (stats.rush_td ?? 0);
+      if (td > 0) t.push(`${fmt(td)}TD`);
+      break;
+    }
+    case 'K': {
+      if ((stats.fga ?? 0) > 0 || (stats.fgm ?? 0) > 0) t.push(`${fmt(stats.fgm ?? 0)}/${fmt(stats.fga ?? 0)}FG`);
+      if (has('xpm')) t.push(`${fmt(stats.xpm)}XP`);
+      break;
+    }
+    case 'DEF': {
+      if (has('sack')) t.push(`${fmt(stats.sack)}SCK`);
+      if (has('int')) t.push(`${fmt(stats.int)}INT`);
+      if (has('fum_rec')) t.push(`${fmt(stats.fum_rec)}FR`);
+      const td = (stats.def_td ?? 0) + (stats.st_td ?? 0);
+      if (td > 0) t.push(`${fmt(td)}TD`);
+      if (stats.pts_allow !== undefined) t.push(`${fmt(stats.pts_allow)}PA`);
+      break;
+    }
+    default:
+      break;
+  }
+  return t.join(' · ');
+}
