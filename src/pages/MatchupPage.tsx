@@ -16,6 +16,9 @@ import {
 import { buildMatchupView } from '../lib/matchup';
 import { buildTimeline } from '../lib/timeline';
 import { loadPlayerSeries } from '../lib/snapshots';
+import { RadarIcon, RosterAnalysisSheet } from '../components/RosterAnalysis';
+import { useWeeklyStatsAll } from '../hooks/useWeeklyStats';
+import { computeRosterRanks } from '../lib/rosterRanks';
 import type { SleeperMatchupEntry } from '../api/sleeper';
 
 export function MatchupPage() {
@@ -66,6 +69,15 @@ export function MatchupPage() {
     });
   }, [pair, league.data, rosters.data, users.data, players.data, scoreboard.data, projections.data, stats.data, week]);
 
+  const [analysisOpen, setAnalysisOpen] = useState(false);
+  const recValue = league.data?.scoring_settings?.rec ?? 0;
+  const weeklyAll = useWeeklyStatsAll(league.data?.season, week, analysisOpen);
+  const rosterRanks = useMemo(() => {
+    if (!analysisOpen || weeklyAll.loading || !rosters.data || !players.data) return null;
+    return computeRosterRanks(rosters.data, players.data, weeklyAll.weekly, recValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisOpen, weeklyAll.loading, rosters.data, players.data, recValue]);
+
   // Scrub state + the time-indexed scoring model behind the chart. Recorded
   // snapshots are re-read each time the view updates (i.e. every poll) so
   // fresh live samples flow straight into the timeline.
@@ -83,7 +95,29 @@ export function MatchupPage() {
 
   return (
     <div className="page">
-      <NavBar title={`WEEK ${week} MATCHUP`} back={!!params.matchupId} />
+      <NavBar
+        title={`WEEK ${week} MATCHUP`}
+        back={!!params.matchupId}
+        action={
+          view ? (
+            <button className="navbar-action" onClick={() => setAnalysisOpen(true)} aria-label="Roster analysis">
+              <RadarIcon />
+            </button>
+          ) : undefined
+        }
+      />
+      {analysisOpen && view && (
+        <RosterAnalysisSheet
+          teams={[
+            rosterRanks?.byRoster.get(view.home.rosterId),
+            rosterRanks?.byRoster.get(view.away.rosterId),
+          ]}
+          labels={[view.home.label, view.away.label]}
+          teamsCount={rosterRanks?.teams ?? rosters.data?.length ?? 0}
+          loading={!rosterRanks}
+          onClose={() => setAnalysisOpen(false)}
+        />
+      )}
       {needsPicker ? (
         rosters.data && users.data ? (
           <TeamPicker rosters={rosters.data} users={users.data} onPick={setPickedRoster} />

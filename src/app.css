@@ -1064,3 +1064,114 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ---- roster analysis (radar sheet) ---- */
+
+.navbar-action {
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: -8px;
+  flex: none;
+}
+
+.radar {
+  display: block;
+  width: min(100%, 320px);
+  margin: 10px auto 0;
+}
+
+.radar-label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  fill: var(--text-dim);
+}
+
+.arow {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 56px 52px;
+  gap: 0 10px;
+  align-items: baseline;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--divider-row);
+}
+
+.arow.dual {
+  grid-template-columns: 52px minmax(0, 1fr) 44px minmax(0, 1fr) 52px;
+}
+
+.aslot {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+}
+
+.arow.dual .aslot {
+  text-align: center;
+}
+
+.aname {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.appg {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.appg.right {
+  text-align: right;
+}
+
+.arow.dual .appg {
+  color: var(--text-strong2);
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.arow.dual .appg:not(.right) {
+  text-align: left;
+}
+
+.arank {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-mid);
+  font-variant-numeric: tabular-nums;
+}
+
+.arank.right {
+  text-align: right;
+}
+
+.arank.first {
+  color: var(--accent-live);
+}
+
+.ra-home {
+  color: var(--text-mid);
+}
+
+.ra-footnote {
+  padding: 14px 20px 4px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-faint);
+  text-align: center;
+}

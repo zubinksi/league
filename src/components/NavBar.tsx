@@ -1,6 +1,15 @@
 import { useNavigate } from 'react-router-dom';
 
-export function NavBar({ title, back }: { title: string; back?: boolean }) {
+export function NavBar({
+  title,
+  back,
+  action,
+}: {
+  title: string;
+  back?: boolean;
+  /** Optional 34px action button rendered in the right slot (keeps the title centered). */
+  action?: React.ReactNode;
+}) {
   const navigate = useNavigate();
   return (
     <header className="navbar">
@@ -20,7 +29,7 @@ export function NavBar({ title, back }: { title: string; back?: boolean }) {
         <span className="navbar-spacer" />
       )}
       <span className="navbar-title">{title}</span>
-      <span className="navbar-spacer" />
+      {action ?? <span className="navbar-spacer" />}
     </header>
   );
 }

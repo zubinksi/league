@@ -14,6 +14,9 @@ import {
 } from '../hooks/useLeagueData';
 import { buildMatchupView, starterSlots, type MatchupView } from '../lib/matchup';
 import { rosterPoints, teamLabel } from '../api/sleeper';
+import { RadarIcon, RosterAnalysisSheet } from '../components/RosterAnalysis';
+import { useWeeklyStatsAll } from '../hooks/useWeeklyStats';
+import { computeRosterRanks } from '../lib/rosterRanks';
 
 const fmtPts = (n: number) => n.toFixed(1);
 
@@ -25,10 +28,19 @@ export function TeamPage() {
   const players = usePlayers();
   const state = useNflState();
   const [picked, setPicked] = useState<number | null>(getMyRosterId());
+  const [analysisOpen, setAnalysisOpen] = useState(false);
 
   const rosterId = params.rosterId ? parseInt(params.rosterId, 10) : picked;
   const week = defaultWeek(league.data, state.data);
   const { matchups, scoreboard, stats, projections } = useWeekData(league.data?.season, week);
+
+  const recValue = league.data?.scoring_settings?.rec ?? 0;
+  const weeklyAll = useWeeklyStatsAll(league.data?.season, week, analysisOpen);
+  const rosterRanks = useMemo(() => {
+    if (!analysisOpen || weeklyAll.loading || !rosters.data || !players.data) return null;
+    return computeRosterRanks(rosters.data, players.data, weeklyAll.weekly, recValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisOpen, weeklyAll.loading, rosters.data, players.data, recValue]);
 
   // Reuse the matchup assembly for this team's side of its current matchup.
   const view: MatchupView | null = useMemo(() => {
@@ -73,7 +85,26 @@ export function TeamPage() {
 
   return (
     <div className="page">
-      <NavBar title="Team" back={!!params.rosterId} />
+      <NavBar
+        title="Team"
+        back={!!params.rosterId}
+        action={
+          roster ? (
+            <button className="navbar-action" onClick={() => setAnalysisOpen(true)} aria-label="Roster analysis">
+              <RadarIcon />
+            </button>
+          ) : undefined
+        }
+      />
+      {analysisOpen && roster && (
+        <RosterAnalysisSheet
+          teams={[rosterRanks?.byRoster.get(rosterId!) ?? undefined]}
+          labels={[label]}
+          teamsCount={rosterRanks?.teams ?? rosters.data?.length ?? 0}
+          loading={!rosterRanks}
+          onClose={() => setAnalysisOpen(false)}
+        />
+      )}
       {roster ? (
         <>
           <div className="team-hero">
