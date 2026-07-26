@@ -42,12 +42,13 @@ All read-only, no auth, fetched directly from the browser:
 - **Sleeper public API** (`api.sleeper.app/v1`) — league, users, rosters,
   weekly matchups, player metadata (the ~5MB `/players/nfl` blob is slimmed
   and cached in localStorage for 24h), trending players.
-- **Sleeper unofficial endpoints** — weekly projections
-  (`/projections/nfl/regular/{season}/{week}`) and box-score stats
-  (`/stats/nfl/regular/{season}/{week}`). These power PROJ, win %, and the
-  stat lines. They're used by Sleeper's own clients but are undocumented, so
-  they could change; the UI degrades gracefully (hides PROJ/stat lines) if
-  they do.
+- **Sleeper unofficial endpoints** — weekly projections and box-score stats.
+  These power PROJ, win %, and the stat lines. They're used by Sleeper's own
+  clients but are undocumented and have moved hosts over time, so the client
+  tries each known variant (`api.sleeper.com/stats/nfl/{season}/{week}`,
+  then the legacy `api.sleeper.app/stats/nfl/regular/{season}/{week}`; same
+  for projections) and sticks with the first that returns data. If all fail,
+  the UI degrades gracefully (hides PROJ/stat lines).
 - **ESPN public scoreboard** — per-game state (pre/live/final), quarter, and
   clock, keyed by NFL team. Drives the `vs BUF · Q3` strings, live dots, and
   the chart's progress axis.

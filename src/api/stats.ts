@@ -17,18 +17,44 @@ function normalizeStats(data: unknown): WeekStats {
   return (data ?? {}) as WeekStats;
 }
 
-export async function fetchWeekStats(season: string, week: number): Promise<WeekStats> {
-  const data = await getJSON<unknown>(
-    `https://api.sleeper.app/stats/nfl/regular/${season}/${week}`,
-  );
-  return normalizeStats(data);
+const POSITION_PARAMS = ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']
+  .map((p) => `position[]=${p}`)
+  .join('&');
+
+/** These endpoints are undocumented and have moved hosts over time. Try each
+ *  candidate in order and remember the first that returns data, so the 45s
+ *  poll doesn't keep re-probing a dead URL. */
+const workingCandidate: Record<string, number> = {};
+
+async function fetchFirst(kind: string, urls: string[]): Promise<WeekStats> {
+  const start = workingCandidate[kind] ?? 0;
+  let lastError: unknown = new Error(`no ${kind} endpoint available`);
+  for (let i = start; i < urls.length; i++) {
+    try {
+      const result = normalizeStats(await getJSON<unknown>(urls[i]));
+      if (Object.keys(result).length > 0) {
+        workingCandidate[kind] = i;
+        return result;
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
 }
 
-export async function fetchWeekProjections(season: string, week: number): Promise<WeekStats> {
-  const data = await getJSON<unknown>(
+export function fetchWeekStats(season: string, week: number): Promise<WeekStats> {
+  return fetchFirst('stats', [
+    `https://api.sleeper.com/stats/nfl/${season}/${week}?season_type=regular&${POSITION_PARAMS}&order_by=pts_ppr`,
+    `https://api.sleeper.app/stats/nfl/regular/${season}/${week}`,
+  ]);
+}
+
+export function fetchWeekProjections(season: string, week: number): Promise<WeekStats> {
+  return fetchFirst('projections', [
+    `https://api.sleeper.com/projections/nfl/${season}/${week}?season_type=regular&${POSITION_PARAMS}&order_by=ppr`,
     `https://api.sleeper.app/projections/nfl/regular/${season}/${week}`,
-  );
-  return normalizeStats(data);
+  ]);
 }
 
 /** Pick the projected fantasy points matching the league's reception scoring. */

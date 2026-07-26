@@ -239,8 +239,8 @@ export function mockFetch(url: string): unknown {
   if (url.includes('/v1/state/nfl')) return nflState;
   if (url.includes('/players/nfl/trending')) return trending;
   if (url.endsWith('/v1/players/nfl')) return playersBlob;
-  if (url.includes('/projections/nfl/regular/')) return projections;
-  if (url.includes('/stats/nfl/regular/')) return weekStats;
+  if (url.includes('/projections/nfl/')) return projections;
+  if (url.includes('/stats/nfl/')) return weekStats;
   if (url.includes('/users')) return users;
   if (url.includes('/rosters')) return rosters;
   if (url.includes('/matchups/')) return matchups;
