@@ -55,33 +55,6 @@ export function LeaguePage() {
       <NavBar title={league.data ? league.data.name : 'League'} />
 
       <div className="section-header">
-        <span>STANDINGS</span>
-      </div>
-      <div className="standings-row standings-head">
-        <span className="rank">#</span>
-        <span className="team">TEAM</span>
-        <span className="num">W-L</span>
-        <span className="num">PF</span>
-        <span className="num">PA</span>
-      </div>
-      {standings.map((r, i) => {
-        const { pf, pa } = rosterPoints(r);
-        return (
-          <Link to={`/team/${r.roster_id}`} className="standings-row" key={r.roster_id}>
-            <span className="rank">{i + 1}</span>
-            <span className="team">{labelFor(r.roster_id)}</span>
-            <span className="num rec">
-              {r.settings.wins}-{r.settings.losses}
-              {r.settings.ties ? `-${r.settings.ties}` : ''}
-            </span>
-            <span className="num">{fmtPts(pf)}</span>
-            <span className="num">{fmtPts(pa)}</span>
-          </Link>
-        );
-      })}
-      {!standings.length && <div className="state-note">{rosters.isError ? 'Failed to load' : 'Loading'}</div>}
-
-      <div className="section-header">
         <span>MATCHUPS</span>
         <span className="week-nav">
           <button onClick={() => setWeekOverride(Math.max(1, week - 1))} disabled={week <= 1} aria-label="Previous week">
@@ -116,6 +89,33 @@ export function LeaguePage() {
       {!weekMatchups.length && (
         <div className="state-note">{matchups.isError ? 'Failed to load' : matchups.isLoading ? 'Loading' : 'No matchups'}</div>
       )}
+      <div className="section-header">
+        <span>STANDINGS</span>
+      </div>
+      <div className="standings-row standings-head">
+        <span className="rank">#</span>
+        <span className="team">TEAM</span>
+        <span className="num">W-L</span>
+        <span className="num">PF</span>
+        <span className="num">PA</span>
+      </div>
+      {standings.map((r, i) => {
+        const { pf, pa } = rosterPoints(r);
+        return (
+          <Link to={`/team/${r.roster_id}`} className="standings-row" key={r.roster_id}>
+            <span className="rank">{i + 1}</span>
+            <span className="team">{labelFor(r.roster_id)}</span>
+            <span className="num rec">
+              {r.settings.wins}-{r.settings.losses}
+              {r.settings.ties ? `-${r.settings.ties}` : ''}
+            </span>
+            <span className="num">{fmtPts(pf)}</span>
+            <span className="num">{fmtPts(pa)}</span>
+          </Link>
+        );
+      })}
+      {!standings.length && <div className="state-note">{rosters.isError ? 'Failed to load' : 'Loading'}</div>}
+
     </div>
   );
 }
