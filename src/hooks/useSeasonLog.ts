@@ -1,13 +1,16 @@
 import { useQueries } from '@tanstack/react-query';
-import { fetchScoreboard } from '../api/espn';
-import { fetchWeekStats, projectedPoints, statLine } from '../api/stats';
-import type { PlayerMeta } from '../api/players';
+import { fetchScoreboard, type ScoreboardMap } from '../api/espn';
+import { fetchWeekStats, projectedPoints, statLine, type WeekStats } from '../api/stats';
+import type { PlayerMap, PlayerMeta } from '../api/players';
+import { positionRank } from '../lib/metrics';
 
 export interface GameLogEntry {
   week: number;
   /** `vs BUF` / `@ BUF`, `BYE`, or '' while loading. */
   opponent: string;
   points?: number;
+  /** Positional finish that week within this league's scoring (1 = best). */
+  posRank?: number;
   statLine: string;
   live: boolean;
   loaded: boolean;
@@ -21,6 +24,9 @@ export interface SeasonLog {
   low?: number;
   playedWeeks: number;
   loading: boolean;
+  /** Raw per-week data (index = week - 1), for metrics computation. */
+  weeklyStats: (WeekStats | undefined)[];
+  weeklyScoreboards: (ScoreboardMap | undefined)[];
 }
 
 /**
@@ -31,6 +37,7 @@ export interface SeasonLog {
  */
 export function useSeasonLog(
   player: PlayerMeta | undefined,
+  players: PlayerMap | undefined,
   season: string | undefined,
   currentWeek: number,
   recValue: number,
@@ -65,10 +72,15 @@ export function useSeasonLog(
     if (sb) opponent = game ? `${game.home ? 'vs' : '@'} ${game.opponent}` : 'BYE';
 
     const started = game ? game.state !== 'pre' : week < currentWeek;
+    const points = started && stats ? projectedPoints(stats, recValue) : undefined;
     return {
       week,
       opponent,
-      points: started && stats ? projectedPoints(stats, recValue) : undefined,
+      points,
+      posRank:
+        points !== undefined && players
+          ? positionRank(statsResults[i].data, players, player!.player_id, recValue)
+          : undefined,
       statLine: started ? statLine(player!.position, stats) : '',
       live: game?.state === 'live',
       loaded: !statsResults[i].isLoading,
@@ -86,5 +98,7 @@ export function useSeasonLog(
     low: played.length ? Math.min(...played.map((e) => e.points!)) : undefined,
     playedWeeks: played.length,
     loading: statsResults.some((q) => q.isLoading),
+    weeklyStats: statsResults.map((q) => q.data),
+    weeklyScoreboards: sbResults.map((q) => q.data),
   };
 }

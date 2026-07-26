@@ -961,3 +961,40 @@
   color: var(--text-muted);
   letter-spacing: 0.13em;
 }
+
+/* ---- player card metrics ---- */
+
+.sw-matchup {
+  margin-top: 10px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+
+.metrics-wrap {
+  padding: 14px 20px 0;
+}
+
+.metrics-wrap .stat-tiles {
+  margin-top: 0;
+}
+
+.log-right {
+  flex: none;
+  text-align: right;
+}
+
+.log-right .log-pts {
+  display: block;
+}
+
+.log-rank {
+  display: block;
+  margin-top: 3px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}

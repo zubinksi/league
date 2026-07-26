@@ -1,9 +1,19 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useLeague, useNflState, usePlayers, useRosters, useUsers, useWeekData, defaultWeek } from '../hooks/useLeagueData';
+import {
+  useLeague,
+  useNflState,
+  usePlayers,
+  useRosters,
+  useSeasonTotals,
+  useUsers,
+  useWeekData,
+  defaultWeek,
+} from '../hooks/useLeagueData';
 import { useSeasonLog } from '../hooks/useSeasonLog';
 import { formatHeight, playerFullName } from '../api/players';
 import { teamLabel } from '../api/sleeper';
 import { projectedPoints, statPairs } from '../api/stats';
+import { computeMetrics, computePointsAllowed, ordinal, type PlayerMetrics } from '../lib/metrics';
 import type { StarterView } from '../lib/matchup';
 
 /** Optional context a card is opened from (a roster row) — carries the
@@ -34,7 +44,33 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const { stats, scoreboard, projections } = useWeekData(season, week);
 
   const meta = players.data?.[card.playerId];
-  const log = useSeasonLog(meta, season, week, recValue);
+  const seasonTotals = useSeasonTotals(season);
+  const log = useSeasonLog(meta, players.data, season, week, recValue);
+
+  const metrics = useMemo(() => {
+    if (!meta || !players.data) return null;
+    const weeks = log.entries
+      .filter((e) => e.points !== undefined)
+      .map((e) => ({
+        points: e.points!,
+        posRank: e.posRank,
+        all: log.weeklyStats[e.week - 1] ?? {},
+      }));
+    return computeMetrics({
+      meta,
+      players: players.data,
+      recValue,
+      weeks,
+      seasonTotals: seasonTotals.data,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meta, players.data, recValue, log.playedWeeks, log.loading, seasonTotals.data]);
+
+  const pointsAllowed = useMemo(() => {
+    if (!players.data) return null;
+    return computePointsAllowed(log.weeklyStats, log.weeklyScoreboards, players.data, recValue);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players.data, recValue, log.playedWeeks, log.loading]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -77,6 +113,43 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
         : '');
 
   const pairs = statPairs(meta?.position ?? null, weekStats);
+
+  const matchupNote =
+    pointsAllowed && game && meta?.position
+      ? (() => {
+          const r = pointsAllowed.rank(game.opponent, meta.position!);
+          // Only rank against a reasonably full slate of defenses.
+          if (!r || r.teams < 8) return null;
+          return `${game.opponent} ALLOWS ${ordinal(r.rank)}-MOST TO ${meta.position}`;
+        })()
+      : null;
+
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const metricTiles = (m: PlayerMetrics): { label: string; value: string }[] => {
+    const pos = meta?.position ?? '';
+    const t: { label: string; value: string }[] = [
+      { label: 'FLOOR', value: m.floor.toFixed(1) },
+      { label: 'CEILING', value: m.ceiling.toFixed(1) },
+      { label: 'BOOM', value: pct(m.boomRate) },
+      { label: 'BUST', value: pct(m.bustRate) },
+    ];
+    if (m.l4Avg !== undefined) t.push({ label: 'L4 AVG', value: m.l4Avg.toFixed(1) });
+    if (m.tier1Weeks || m.tier2Weeks) {
+      t.push({ label: `${pos}1 WKS`, value: `${m.tier1Weeks}/${m.gamesPlayed}` });
+      if (pos === 'RB' || pos === 'WR')
+        t.push({ label: `${pos}2 WKS`, value: `${m.tier2Weeks}/${m.gamesPlayed}` });
+    }
+    if (m.oppPerGame !== undefined) t.push({ label: 'OPP/G', value: m.oppPerGame.toFixed(1) });
+    if (m.ptsPerOpp !== undefined) t.push({ label: 'PTS/OPP', value: m.ptsPerOpp.toFixed(2) });
+    if (m.targetShare !== undefined) t.push({ label: 'TGT SHARE', value: pct(m.targetShare) });
+    if (m.carryShare !== undefined && pos === 'RB')
+      t.push({ label: 'CARRY SH', value: pct(m.carryShare) });
+    if (m.catchRate !== undefined) t.push({ label: 'CATCH', value: pct(m.catchRate) });
+    if (m.yardsPerTouch !== undefined) t.push({ label: 'YD/TOUCH', value: m.yardsPerTouch.toFixed(1) });
+    if (m.snapShare !== undefined) t.push({ label: 'SNAP', value: pct(m.snapShare) });
+    if (m.rzOppPerGame !== undefined) t.push({ label: 'RZ OPP/G', value: m.rzOppPerGame.toFixed(1) });
+    return t;
+  };
 
   const bio = meta
     ? [
@@ -125,6 +198,7 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
               )}
             </span>
           </div>
+          {matchupNote && <div className="sw-matchup">{matchupNote}</div>}
           {pairs.length > 0 && (
             <div className="stat-tiles">
               {pairs.map((p) => (
@@ -136,6 +210,29 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             </div>
           )}
         </div>
+
+        {metrics && (
+          <>
+            <div className="sheet-section">
+              <span>METRICS</span>
+              <span>
+                {metrics.seasonPosRank !== undefined && meta?.position
+                  ? `SEASON ${meta.position}${metrics.seasonPosRank}`
+                  : ''}
+              </span>
+            </div>
+            <div className="metrics-wrap">
+              <div className="stat-tiles">
+                {metricTiles(metrics).map((t) => (
+                  <div className="stat-tile" key={t.label}>
+                    <div className="stat-tile-label">{t.label}</div>
+                    <div className="stat-tile-value">{t.value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="sheet-section">
           <span>SEASON</span>
@@ -189,8 +286,16 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
                   </span>
                   {e.statLine && <span className="log-line">{e.statLine}</span>}
                 </span>
-                <span className={`log-pts${e.points === undefined ? ' none' : ''}`}>
-                  {e.points !== undefined ? fmtPts(e.points) : '—'}
+                <span className="log-right">
+                  <span className={`log-pts${e.points === undefined ? ' none' : ''}`}>
+                    {e.points !== undefined ? fmtPts(e.points) : '—'}
+                  </span>
+                  {e.posRank !== undefined && meta?.position && (
+                    <span className="log-rank">
+                      {meta.position}
+                      {e.posRank}
+                    </span>
+                  )}
                 </span>
               </div>
             ))}
