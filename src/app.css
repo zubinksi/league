@@ -946,7 +946,9 @@
 }
 
 .scrub-zone.scrubbable {
-  touch-action: pan-y;
+  /* Dedicated scrub surface: the browser never turns a touch that starts
+     here into a page scroll, so the gesture can't be cancelled mid-drag. */
+  touch-action: none;
   cursor: crosshair;
   user-select: none;
   -webkit-user-select: none;

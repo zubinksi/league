@@ -8,11 +8,6 @@ import { usePulseOnIncrease } from '../hooks/usePulseOnIncrease';
  *  0.6s transition in browsers that support them (attribute set as fallback). */
 const pathStyle = (d: string): CSSProperties => ({ d: `path("${d}")` }) as CSSProperties;
 
-const TOUCH_HOLD_MS = 180;
-/** Horizontal movement beyond this activates the scrub immediately. */
-const ACTIVATE_DX = 8;
-/** Clearly-vertical movement beyond this yields the gesture to page scroll. */
-const CANCEL_DY = 16;
 
 export function RaceChart({
   view,
@@ -31,8 +26,6 @@ export function RaceChart({
   const zoneRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const active = useRef(false);
-  const pending = useRef<{ x: number; y: number; pointerId: number } | null>(null);
-  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const tauFromClientX = (clientX: number): number => {
     const rect = svgRef.current!.getBoundingClientRect();
@@ -41,63 +34,30 @@ export function RaceChart({
     return timeline!.fromWarped(frac * timeline!.warpedDuration);
   };
 
-  const activate = (pointerId: number, clientX: number) => {
-    active.current = true;
-    try {
-      zoneRef.current?.setPointerCapture(pointerId);
-    } catch {
-      /* pointer already gone */
-    }
-    onScrub(tauFromClientX(clientX));
-  };
-
-  const clearPending = () => {
-    if (holdTimer.current !== null) clearTimeout(holdTimer.current);
-    holdTimer.current = null;
-    pending.current = null;
-  };
-
   const end = () => {
-    clearPending();
     if (active.current) {
       active.current = false;
       onScrub(null);
     }
   };
 
+  // The chart is a dedicated scrub surface (touch-action: none): a touch that
+  // lands here scrubs from the moment it lands, sticks no matter where the
+  // finger wanders, tracks only lateral movement, and ends on lift.
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (!timeline) return;
-    if (e.pointerType === 'mouse') {
-      if (e.button !== 0) return;
-      activate(e.pointerId, e.clientX);
-    } else {
-      // Touch: activate on a horizontal slide or a short stationary hold;
-      // a clearly vertical move yields the gesture to page scrolling.
-      pending.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
-      holdTimer.current = setTimeout(() => {
-        if (pending.current) {
-          activate(pending.current.pointerId, pending.current.x);
-          pending.current = null;
-        }
-      }, TOUCH_HOLD_MS);
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    active.current = true;
+    try {
+      zoneRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      /* pointer already gone */
     }
+    onScrub(tauFromClientX(e.clientX));
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (active.current) {
-      onScrub(tauFromClientX(e.clientX));
-    } else if (pending.current) {
-      // Direction is measured from the original touch point.
-      const dx = e.clientX - pending.current.x;
-      const dy = e.clientY - pending.current.y;
-      if (Math.abs(dx) > ACTIVATE_DX && Math.abs(dx) >= Math.abs(dy)) {
-        const { pointerId } = pending.current;
-        clearPending();
-        activate(pointerId, e.clientX);
-      } else if (Math.abs(dy) > CANCEL_DY && Math.abs(dy) > Math.abs(dx)) {
-        clearPending();
-      }
-    }
+    if (active.current) onScrub(tauFromClientX(e.clientX));
   };
 
   const scrub =
