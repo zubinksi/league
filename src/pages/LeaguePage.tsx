@@ -9,7 +9,7 @@ import {
   useUsers,
   useWeekData,
 } from '../hooks/useLeagueData';
-import { rosterPoints, teamLabel, type SleeperMatchupEntry } from '../api/sleeper';
+import { rosterPoints, rosterStreak, teamLabel, type SleeperMatchupEntry } from '../api/sleeper';
 
 const fmtPts = (n: number) => n.toFixed(1);
 
@@ -98,19 +98,25 @@ export function LeaguePage() {
         <span className="num">W-L</span>
         <span className="num">PF</span>
         <span className="num">PA</span>
+        <span className="num">WVR</span>
       </div>
       {standings.map((r, i) => {
         const { pf, pa } = rosterPoints(r);
+        const streak = rosterStreak(r);
         return (
           <Link to={`/team/${r.roster_id}`} className="standings-row" key={r.roster_id}>
             <span className="rank">{i + 1}</span>
-            <span className="team">{labelFor(r.roster_id)}</span>
+            <span className="team">
+              <span className="tname">{labelFor(r.roster_id)}</span>
+              {streak && <span className={`streak ${streak.won ? 'win' : 'loss'}`}>{streak.label}</span>}
+            </span>
             <span className="num rec">
               {r.settings.wins}-{r.settings.losses}
               {r.settings.ties ? `-${r.settings.ties}` : ''}
             </span>
             <span className="num">{fmtPts(pf)}</span>
             <span className="num">{fmtPts(pa)}</span>
+            <span className="num">{r.settings.waiver_position ?? '—'}</span>
           </Link>
         );
       })}

@@ -28,6 +28,7 @@ export interface SleeperRoster {
   owner_id: string | null;
   players: string[] | null;
   starters: string[] | null;
+  metadata?: { streak?: string; record?: string } | null;
   settings: {
     wins: number;
     losses: number;
@@ -36,7 +37,15 @@ export interface SleeperRoster {
     fpts_decimal?: number;
     fpts_against?: number;
     fpts_against_decimal?: number;
+    waiver_position?: number;
   };
+}
+
+/** Sleeper stores streaks as "3W" / "1L"; render as "W3" / "L1". */
+export function rosterStreak(r: SleeperRoster): { label: string; won: boolean } | null {
+  const m = r.metadata?.streak?.match(/^(\d+)([WL])$/);
+  if (!m) return null;
+  return { label: `${m[2]}${m[1]}`, won: m[2] === 'W' };
 }
 
 export interface SleeperMatchupEntry {

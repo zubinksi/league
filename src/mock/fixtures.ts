@@ -193,11 +193,14 @@ const users = TEAMS.map(([team, display], i) => ({
   metadata: { team_name: team },
 }));
 
+const STREAKS = ['3W', '1L', '2W', '1W', '2L', '1L', '4L', '1W', '2L', '5L'];
+
 const rosters = TEAMS.map(([, , wins, losses, fpts], i) => ({
   roster_id: i + 1,
   owner_id: `u${i + 1}`,
   players: [],
   starters: [],
+  metadata: { streak: STREAKS[i] },
   settings: {
     wins,
     losses,
@@ -206,6 +209,7 @@ const rosters = TEAMS.map(([, , wins, losses, fpts], i) => ({
     fpts_decimal: 40,
     fpts_against: 1500 - i * 12,
     fpts_against_decimal: 10,
+    waiver_position: TEAMS.length - i,
   },
 }));
 
