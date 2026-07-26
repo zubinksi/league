@@ -728,12 +728,14 @@
 
 .sheet-sub .sheet-owner { color: var(--text-mid); }
 
-.sheet-bio {
-  margin-top: 6px;
+.sheet-rank {
+  margin-top: 8px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  color: var(--text-dimmer);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  color: var(--accent-live);
+  font-variant-numeric: tabular-nums;
 }
 
 .sheet-section {

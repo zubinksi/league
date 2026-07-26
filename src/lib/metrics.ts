@@ -40,25 +40,34 @@ export function positionRank(
   return above + 1;
 }
 
-function quantile(sorted: number[], q: number): number {
-  if (sorted.length === 0) return 0;
-  const pos = (sorted.length - 1) * q;
-  const lo = Math.floor(pos);
-  const hi = Math.min(sorted.length - 1, lo + 1);
-  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+/** Rank of a player's fantasy points across ALL positions (1 = best). */
+export function overallRank(
+  stats: WeekStats | undefined,
+  playerId: string,
+  recValue: number,
+): number | undefined {
+  if (!stats) return undefined;
+  const mine = projectedPoints(stats[playerId], recValue);
+  if (mine === undefined) return undefined;
+  let above = 0;
+  for (const [id, s] of Object.entries(stats)) {
+    if (id === playerId) continue;
+    const v = projectedPoints(s, recValue);
+    if (v !== undefined && v > mine) above++;
+  }
+  return above + 1;
 }
 
 export interface PlayerMetrics {
   gamesPlayed: number;
   seasonAvg: number;
-  floor: number;
-  ceiling: number;
   boomRate: number; // 0..1, weeks ≥ 1.2× season avg
   bustRate: number; // 0..1, weeks ≤ 0.5× season avg
   l4Avg?: number;
   tier1Weeks: number; // positional finishes 1–12
   tier2Weeks: number; // positional finishes 13–24
   seasonPosRank?: number;
+  seasonOverallRank?: number;
   catchRate?: number;
   targetShare?: number;
   carryShare?: number;
@@ -85,13 +94,10 @@ export function computeMetrics(args: {
 
   const pts = weeks.map((w) => w.points);
   const seasonAvg = pts.reduce((a, b) => a + b, 0) / gp;
-  const sorted = [...pts].sort((a, b) => a - b);
 
   const metrics: PlayerMetrics = {
     gamesPlayed: gp,
     seasonAvg,
-    floor: quantile(sorted, 0.25),
-    ceiling: quantile(sorted, 0.75),
     boomRate: seasonAvg > 0 ? pts.filter((p) => p >= 1.2 * seasonAvg).length / gp : 0,
     bustRate: seasonAvg > 0 ? pts.filter((p) => p <= 0.5 * seasonAvg).length / gp : 0,
     tier1Weeks: weeks.filter((w) => w.posRank !== undefined && w.posRank <= 12).length,
@@ -104,6 +110,7 @@ export function computeMetrics(args: {
   }
 
   metrics.seasonPosRank = positionRank(seasonTotals, players, meta.player_id, recValue);
+  metrics.seasonOverallRank = overallRank(seasonTotals, meta.player_id, recValue);
 
   const pos = meta.position;
   if (!pos || !SKILL.has(pos)) return metrics;

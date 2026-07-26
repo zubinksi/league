@@ -10,7 +10,7 @@ import {
   defaultWeek,
 } from '../hooks/useLeagueData';
 import { useSeasonLog } from '../hooks/useSeasonLog';
-import { formatHeight, playerFullName } from '../api/players';
+import { playerFullName } from '../api/players';
 import { teamLabel } from '../api/sleeper';
 import { gameLogColumns, projectedPoints, statPairs } from '../api/stats';
 import { computeMetrics, computePointsAllowed, ordinal, type PlayerMetrics } from '../lib/metrics';
@@ -134,8 +134,6 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const metricTiles = (m: PlayerMetrics): { label: string; value: string }[] => {
     const pos = meta?.position ?? '';
     const t: { label: string; value: string }[] = [
-      { label: 'FLOOR', value: m.floor.toFixed(1) },
-      { label: 'CEILING', value: m.ceiling.toFixed(1) },
       { label: 'BOOM', value: pct(m.boomRate) },
       { label: 'BUST', value: pct(m.bustRate) },
     ];
@@ -149,19 +147,16 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
     if (m.carryShare !== undefined && pos === 'RB')
       t.push({ label: 'CARRY SH', value: pct(m.carryShare) });
     if (m.catchRate !== undefined) t.push({ label: 'CATCH', value: pct(m.catchRate) });
-    if (m.snapShare !== undefined) t.push({ label: 'SNAP', value: pct(m.snapShare) });
+    if (m.snapShare !== undefined && pos !== 'QB') t.push({ label: 'SNAP', value: pct(m.snapShare) });
     return t;
   };
 
-  const bio = meta
-    ? [
-        meta.age ? `AGE ${meta.age}` : null,
-        formatHeight(meta.height),
-        meta.weight ? `${meta.weight}LB` : null,
-        meta.years_exp != null ? `EXP ${meta.years_exp}` : null,
-        meta.college?.toUpperCase() ?? null,
-      ].filter(Boolean)
-    : [];
+  const rankParts = [
+    metrics?.seasonPosRank !== undefined && meta?.position
+      ? `${meta.position}${metrics.seasonPosRank}`
+      : null,
+    metrics?.seasonOverallRank !== undefined ? `#${metrics.seasonOverallRank} OVERALL` : null,
+  ].filter(Boolean);
 
   const barMax = Math.max(10, ...log.entries.map((e) => e.points ?? 0));
   const n = Math.max(1, log.entries.length);
@@ -180,7 +175,7 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             {meta?.injury_status ? ` · ${meta.injury_status.toUpperCase()}` : ''}
             <span className="sheet-owner"> · {ownedBy}</span>
           </div>
-          {bio.length > 0 && <div className="sheet-bio">{bio.join(' · ')}</div>}
+          {rankParts.length > 0 && <div className="sheet-rank">{rankParts.join(' · ')}</div>}
         </div>
 
         <div className="sheet-section">
@@ -217,11 +212,7 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           <>
             <div className="sheet-section">
               <span>METRICS</span>
-              <span>
-                {metrics.seasonPosRank !== undefined && meta?.position
-                  ? `SEASON ${meta.position}${metrics.seasonPosRank}`
-                  : ''}
-              </span>
+              <span />
             </div>
             <div className="metrics-wrap">
               <div className="stat-tiles">
