@@ -195,6 +195,9 @@ const rosters = TEAMS.map(([, , wins, losses, fpts], i) => ({
   },
 }));
 
+rosters[0].players = [...HOME_STARTERS, ...HOME_BENCH].map((p) => p.id) as never[];
+rosters[1].players = [...AWAY_STARTERS, ...AWAY_BENCH].map((p) => p.id) as never[];
+
 const sumPts = (list: FixturePlayer[]) => list.reduce((s, p) => s + (p.pts ?? 0), 0);
 const pointsMap = (list: FixturePlayer[]) =>
   Object.fromEntries(list.filter((p) => p.pts !== undefined).map((p) => [p.id, p.pts]));
@@ -233,14 +236,50 @@ const trending = [...HOME_BENCH, ...AWAY_BENCH].map((p, i) => ({
 
 const nflState = { season: SEASON, week: WEEK, display_week: WEEK, season_type: 'regular' };
 
+/** Past weeks in mock mode: same slate of games, all final. */
+const finalScoreboard = {
+  events: scoreboard.events.map((e) => {
+    const status = { period: 4, displayClock: '0:00', type: { state: 'post', completed: true } };
+    return { ...e, status, competitions: [{ ...e.competitions[0], status }] };
+  }),
+};
+
+/** Deterministic per-week variation so the season log / bar strip looks real. */
+function statsForWeek(week: number): Record<string, any> {
+  if (week >= WEEK) return weekStats;
+  const out: Record<string, any> = {};
+  ALL_PLAYERS.forEach((p, idx) => {
+    const factor = 0.45 + (((week * 31 + idx * 17) % 90) / 90) * 1.1;
+    const base = p.stats ?? {};
+    const scaled: Record<string, number> = {};
+    for (const [k, v] of Object.entries(base)) {
+      scaled[k] = k.includes('att') || k === 'rec' || k.includes('cmp')
+        ? Math.max(1, Math.round(v * factor))
+        : Math.round(v * factor * 10) / 10;
+    }
+    scaled.pts_ppr = Math.round((p.pts ?? p.proj) * factor * 10) / 10;
+    out[p.id] = scaled;
+  });
+  return out;
+}
+
+const weekFromUrl = (url: string, re: RegExp): number => {
+  const m = url.match(re);
+  return m ? parseInt(m[1], 10) : WEEK;
+};
+
 /** Returns fixture data for a recognized URL, undefined to fall through to fetch. */
 export function mockFetch(url: string): unknown {
-  if (url.includes('site.api.espn.com')) return scoreboard;
+  if (url.includes('site.api.espn.com')) {
+    return weekFromUrl(url, /[?&]week=(\d+)/) < WEEK ? finalScoreboard : scoreboard;
+  }
   if (url.includes('/v1/state/nfl')) return nflState;
   if (url.includes('/players/nfl/trending')) return trending;
   if (url.endsWith('/v1/players/nfl')) return playersBlob;
   if (url.includes('/projections/nfl/')) return projections;
-  if (url.includes('/stats/nfl/')) return weekStats;
+  if (url.includes('/stats/nfl/')) {
+    return statsForWeek(weekFromUrl(url, /\/stats\/nfl\/(?:regular\/)?\d{4}\/(\d+)/));
+  }
   if (url.includes('/users')) return users;
   if (url.includes('/rosters')) return rosters;
   if (url.includes('/matchups/')) return matchups;

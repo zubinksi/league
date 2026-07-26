@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { MatchupView, StarterView, TeamView } from '../lib/matchup';
 import { usePulseOnIncrease } from '../hooks/usePulseOnIncrease';
+import { usePlayerCard } from './PlayerCard';
 
 const fmtPts = (n: number) => n.toFixed(1);
 
@@ -22,6 +23,7 @@ export function PlayerCell({
   side: 'home' | 'away';
 }) {
   const pulse = usePulseOnIncrease(player.state === 'live' ? player.points : null);
+  const openCard = usePlayerCard();
   const cls = stateClasses(player, opposing);
   const showProj = player.state !== 'final' && player.projected !== undefined;
 
@@ -30,7 +32,15 @@ export function PlayerCell({
   return (
     <div className={`pcell ${side}`}>
       <div className="line1">
-        <span className={`pname ${cls}`}>{player.name}</span>
+        <span
+          className={`pname clickable ${cls}`}
+          role="button"
+          tabIndex={0}
+          onClick={() => openCard(player.playerId, player)}
+          onKeyDown={(e) => e.key === 'Enter' && openCard(player.playerId, player)}
+        >
+          {player.name}
+        </span>
         <span key={pulse} className={`ppts ${cls}${pulse ? ' anim-livetick' : ''}`}>
           {player.points === null ? '—' : fmtPts(player.points)}
         </span>

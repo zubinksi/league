@@ -9,11 +9,16 @@ export interface PlayerMeta {
   status?: string;
   injury_status?: string | null;
   number?: number | null;
+  age?: number | null;
+  years_exp?: number | null;
+  height?: string | null;
+  weight?: string | null;
+  college?: string | null;
 }
 
 export type PlayerMap = Record<string, PlayerMeta>;
 
-const CACHE_KEY = 'league:players:v1';
+const CACHE_KEY = 'league:players:v2';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // refresh daily per Sleeper guidance
 
 const FANTASY_POSITIONS = new Set(['QB', 'RB', 'WR', 'TE', 'K', 'DEF']);
@@ -28,6 +33,11 @@ interface RawPlayer {
   injury_status?: string | null;
   number?: number | null;
   active?: boolean;
+  age?: number | null;
+  years_exp?: number | null;
+  height?: string | null;
+  weight?: string | null;
+  college?: string | null;
 }
 
 /** The /players/nfl blob is ~5MB; strip it to the fields we render and cache
@@ -57,6 +67,11 @@ export async function fetchPlayers(): Promise<PlayerMap> {
       status: p.status,
       injury_status: p.injury_status ?? null,
       number: p.number ?? null,
+      age: p.age ?? null,
+      years_exp: p.years_exp ?? null,
+      height: p.height ?? null,
+      weight: p.weight ?? null,
+      college: p.college ?? null,
     };
   }
   try {
@@ -78,4 +93,12 @@ export function playerShortName(p: PlayerMeta | undefined, id: string): string {
 export function playerFullName(p: PlayerMeta | undefined, id: string): string {
   if (!p) return id;
   return `${p.first_name} ${p.last_name}`.trim() || id;
+}
+
+/** `6'2"` from Sleeper's height field, which is usually inches ("74"). */
+export function formatHeight(height: string | null | undefined): string | null {
+  if (!height) return null;
+  const inches = parseInt(height, 10);
+  if (!Number.isFinite(inches) || inches < 48) return height;
+  return `${Math.floor(inches / 12)}'${inches % 12}"`;
 }

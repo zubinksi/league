@@ -1,4 +1,5 @@
 import { getJSON } from './http';
+import { MOCK } from '../config';
 
 export type GameState = 'pre' | 'live' | 'final';
 
@@ -62,7 +63,21 @@ function quarterLabel(period: number): string {
   return `Q${period}`;
 }
 
+const SB_CACHE_PREFIX = 'league:sb:v1';
+
 export async function fetchScoreboard(season: string, week: number): Promise<ScoreboardMap> {
+  // Finished weeks never change; serve the normalized map from localStorage.
+  // (Skipped in mock mode so fixtures never poison the real-season cache.)
+  const cacheKey = `${SB_CACHE_PREFIX}:${season}:${week}`;
+  if (!MOCK) {
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) return JSON.parse(cached) as ScoreboardMap;
+    } catch {
+      /* corrupted cache — refetch */
+    }
+  }
+
   const url = `https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?dates=${season}&seasontype=2&week=${week}`;
   const data = await getJSON<EspnScoreboard>(url);
   const map: ScoreboardMap = {};
@@ -86,6 +101,15 @@ export async function fetchScoreboard(season: string, week: number): Promise<Sco
 
     map[homeAbbr] = { team: homeAbbr, opponent: awayAbbr, home: true, state, quarter, clock, kickoff, progress };
     map[awayAbbr] = { team: awayAbbr, opponent: homeAbbr, home: false, state, quarter, clock, kickoff, progress };
+  }
+
+  const games = Object.values(map);
+  if (!MOCK && games.length > 0 && games.every((g) => g.state === 'final')) {
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(map));
+    } catch {
+      /* quota exceeded — fine, refetch next time */
+    }
   }
   return map;
 }

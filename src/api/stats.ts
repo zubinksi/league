@@ -67,6 +67,69 @@ export function projectedPoints(stats: StatMap | undefined, recValue: number): n
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
+/** Labeled stat tiles for the player card, position-aware, zeros omitted
+ *  except the core volume stats that give the line shape. */
+export function statPairs(
+  position: string | null,
+  stats: StatMap | undefined,
+): { label: string; value: string }[] {
+  if (!stats) return [];
+  const out: { label: string; value: string }[] = [];
+  const push = (label: string, v: number | undefined, always = false) => {
+    if (v === undefined || (!always && v === 0)) return;
+    out.push({ label, value: fmt(v) });
+  };
+
+  switch (position) {
+    case 'QB':
+      if (stats.pass_att !== undefined)
+        out.push({ label: 'CMP/ATT', value: `${fmt(stats.pass_cmp ?? 0)}/${fmt(stats.pass_att)}` });
+      push('PASS YD', stats.pass_yd, true);
+      push('PASS TD', stats.pass_td);
+      push('INT', stats.pass_int);
+      push('RUSH YD', stats.rush_yd);
+      push('RUSH TD', stats.rush_td);
+      push('FUM', stats.fum_lost);
+      break;
+    case 'RB':
+      push('CAR', stats.rush_att, true);
+      push('RUSH YD', stats.rush_yd, true);
+      push('RUSH TD', stats.rush_td);
+      push('REC', stats.rec);
+      push('REC YD', stats.rec_yd);
+      push('REC TD', stats.rec_td);
+      push('TGT', stats.rec_tgt);
+      push('FUM', stats.fum_lost);
+      break;
+    case 'WR':
+    case 'TE':
+      push('REC', stats.rec, true);
+      push('TGT', stats.rec_tgt);
+      push('REC YD', stats.rec_yd, true);
+      push('REC TD', stats.rec_td);
+      push('RUSH YD', stats.rush_yd);
+      push('RUSH TD', stats.rush_td);
+      push('FUM', stats.fum_lost);
+      break;
+    case 'K':
+      if (stats.fga !== undefined || stats.fgm !== undefined)
+        out.push({ label: 'FG', value: `${fmt(stats.fgm ?? 0)}/${fmt(stats.fga ?? 0)}` });
+      push('XP', stats.xpm);
+      break;
+    case 'DEF':
+      push('SACK', stats.sack);
+      push('INT', stats.int);
+      push('FUM REC', stats.fum_rec);
+      push('TD', (stats.def_td ?? 0) + (stats.st_td ?? 0));
+      push('PTS ALLOW', stats.pts_allow, true);
+      push('YDS ALLOW', stats.yds_allow);
+      break;
+    default:
+      break;
+  }
+  return out;
+}
+
 /** Box-score line like `14/22 · 176YD · 1TD`, position-aware, zeros omitted. */
 export function statLine(position: string | null, stats: StatMap | undefined): string {
   if (!stats) return '';

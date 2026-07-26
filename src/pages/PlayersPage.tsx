@@ -11,6 +11,7 @@ import {
 import { fetchTrending } from '../api/sleeper';
 import { playerFullName, type PlayerMeta } from '../api/players';
 import { projectedPoints } from '../api/stats';
+import { usePlayerCard } from '../components/PlayerCard';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'K', 'DEF'] as const;
 
@@ -30,6 +31,7 @@ export function PlayersPage() {
 
   const [query, setQuery] = useState('');
   const [pos, setPos] = useState<(typeof POSITIONS)[number]>('ALL');
+  const openCard = usePlayerCard();
 
   const recValue = league.data?.scoring_settings?.rec ?? 0;
   const weekPts = (id: string) => projectedPoints(stats.data?.[id], recValue);
@@ -97,7 +99,14 @@ export function PlayersPage() {
         const pts = weekPts(p.player_id);
         const proj = weekProj(p.player_id);
         return (
-          <div className="player-row" key={p.player_id}>
+          <div
+            className="player-row clickable"
+            key={p.player_id}
+            role="button"
+            tabIndex={0}
+            onClick={() => openCard(p.player_id)}
+            onKeyDown={(e) => e.key === 'Enter' && openCard(p.player_id)}
+          >
             <div className="pmain">
               <div className="pname won">{playerFullName(p, p.player_id)}</div>
               <div className="psub">
