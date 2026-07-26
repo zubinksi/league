@@ -8,7 +8,8 @@
 const SEASON = '2025';
 const WEEK = 15;
 
-// Kickoff windows (UTC) for the fixture Sunday.
+// Kickoff windows (UTC) for the fixture week.
+const THU = '2025-12-12T01:15:00Z';
 const EARLY = '2025-12-14T18:00:00Z';
 const LATE = '2025-12-14T21:25:00Z';
 const SNF = '2025-12-15T01:20:00Z';
@@ -49,7 +50,7 @@ const scoreboard = {
   events: [
     espnEvent('GB', 'DET', EARLY, 'post'),
     espnEvent('TB', 'ATL', EARLY, 'post'),
-    espnEvent('DEN', 'KC', EARLY, 'post'),
+    espnEvent('DEN', 'KC', THU, 'post'),
     espnEvent('PHI', 'DAL', EARLY, 'post'),
     espnEvent('MIN', 'CHI', EARLY, 'post'),
     espnEvent('NO', 'CAR', EARLY, 'post'),

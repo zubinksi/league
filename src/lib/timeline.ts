@@ -23,6 +23,12 @@ export interface MatchupTimeline {
   /** null = this player's game hasn't started at tau (render an em dash). */
   playerAt(id: string, tau: number): number | null;
   sideAt(side: 'home' | 'away', tau: number): number;
+  /** Game-time axis: dead time between game windows is compressed out.
+   *  warpedDuration = total active game time; toWarped/fromWarped convert
+   *  between real timestamps and positions on the compressed axis. */
+  warpedDuration: number;
+  toWarped(tau: number): number;
+  fromWarped(s: number): number;
 }
 
 const lerp = (a: number, b: number, f: number) => a + (b - a) * Math.min(1, Math.max(0, f));
@@ -48,6 +54,35 @@ export function buildTimeline(
 
   const t0 = Math.min(...[...tracks.values()].map((tr) => tr.start));
   const t1 = Math.max(...[...tracks.values()].map((tr) => tr.end));
+
+  // Merged active game windows — the chart's x-axis skips the gaps between
+  // them (e.g. Thursday night → Sunday morning), so the curve is all signal.
+  const intervals: { start: number; end: number }[] = [];
+  for (const tr of [...tracks.values()].sort((a, b) => a.start - b.start)) {
+    const last = intervals[intervals.length - 1];
+    if (last && tr.start <= last.end) last.end = Math.max(last.end, tr.end);
+    else intervals.push({ start: tr.start, end: tr.end });
+  }
+  const warpedDuration = intervals.reduce((a, iv) => a + (iv.end - iv.start), 0);
+
+  const toWarped = (tau: number): number => {
+    let acc = 0;
+    for (const iv of intervals) {
+      if (tau <= iv.start) break;
+      acc += Math.min(tau, iv.end) - iv.start;
+    }
+    return acc;
+  };
+
+  const fromWarped = (s: number): number => {
+    let acc = 0;
+    for (const iv of intervals) {
+      const len = iv.end - iv.start;
+      if (s <= acc + len) return iv.start + (s - acc);
+      acc += len;
+    }
+    return intervals[intervals.length - 1].end;
+  };
 
   const playerAt = (id: string, tau: number): number | null => {
     const tr = tracks.get(id);
@@ -85,5 +120,5 @@ export function buildTimeline(
   const sideAt = (side: 'home' | 'away', tau: number): number =>
     starterIds[side].reduce((sum, id) => sum + (playerAt(id, tau) ?? 0), 0);
 
-  return { t0, t1, playerAt, sideAt };
+  return { t0, t1, playerAt, sideAt, warpedDuration, toWarped, fromWarped };
 }

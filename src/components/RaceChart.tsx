@@ -38,7 +38,7 @@ export function RaceChart({
     const rect = svgRef.current!.getBoundingClientRect();
     const x = ((clientX - rect.left) / rect.width) * CHART_W;
     const frac = Math.min(1, Math.max(0, x / model.nowX));
-    return timeline!.t0 + frac * (timeline!.t1 - timeline!.t0);
+    return timeline!.fromWarped(frac * timeline!.warpedDuration);
   };
 
   const activate = (pointerId: number, clientX: number) => {
@@ -103,7 +103,7 @@ export function RaceChart({
   const scrub =
     scrubTau !== null && timeline
       ? (() => {
-          const frac = (scrubTau - timeline.t0) / (timeline.t1 - timeline.t0 || 1);
+          const frac = timeline.toWarped(scrubTau) / (timeline.warpedDuration || 1);
           return {
             x: Math.min(1, Math.max(0, frac)) * model.nowX,
             homeY: py(timeline.sideAt('home', scrubTau), model.maxY),

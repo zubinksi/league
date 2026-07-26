@@ -16,18 +16,19 @@ export function nowXFor(progress: number): number {
   return (0.42 + 0.34 * progress) * CHART_W;
 }
 
-/** Cumulative score series sampled from the matchup timeline, ending exactly
- *  at the team's current total. Falls back to a 2-point line with no games. */
+/** Cumulative score series sampled from the matchup timeline along the
+ *  compressed game-time axis, ending exactly at the team's current total.
+ *  Falls back to a 2-point line with no games. */
 function cumulativeSeries(
   timeline: MatchupTimeline | null,
   side: 'home' | 'away',
   score: number,
 ): number[] {
   if (!timeline) return [0, score];
-  const { t0, t1 } = timeline;
   const series: number[] = [];
   for (let i = 0; i < SAMPLES; i++) {
-    series.push(timeline.sideAt(side, t0 + (i / (SAMPLES - 1)) * (t1 - t0)));
+    const tau = timeline.fromWarped((i / (SAMPLES - 1)) * timeline.warpedDuration);
+    series.push(timeline.sideAt(side, tau));
   }
   series[SAMPLES - 1] = score;
   return series;
@@ -68,7 +69,14 @@ export interface ChartModel {
 
 export function buildChartModel(view: MatchupView, timeline: MatchupTimeline | null): ChartModel {
   const live = view.phase !== 'final';
-  const maxY = live ? 105 : 130;
+  // Spec ceilings (105 live / 130 final) hold for typical weeks, but stretch
+  // for high-scoring ones — clamping would crush the real margin at the top.
+  const needed = Math.max(
+    view.home.score,
+    view.away.score,
+    live ? Math.max(view.home.projectedFinal, view.away.projectedFinal) : 0,
+  );
+  const maxY = Math.max(live ? 105 : 130, Math.ceil(needed * 1.04));
   const nowX = live ? nowXFor(view.progress) : CHART_W;
 
   const homeSeries = cumulativeSeries(timeline, 'home', view.home.score);
