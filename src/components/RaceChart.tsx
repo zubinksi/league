@@ -8,8 +8,11 @@ import { usePulseOnIncrease } from '../hooks/usePulseOnIncrease';
  *  0.6s transition in browsers that support them (attribute set as fallback). */
 const pathStyle = (d: string): CSSProperties => ({ d: `path("${d}")` }) as CSSProperties;
 
-const TOUCH_HOLD_MS = 220;
-const CANCEL_DISTANCE = 10;
+const TOUCH_HOLD_MS = 180;
+/** Horizontal movement beyond this activates the scrub immediately. */
+const ACTIVATE_DX = 8;
+/** Clearly-vertical movement beyond this yields the gesture to page scroll. */
+const CANCEL_DY = 16;
 
 export function RaceChart({
   view,
@@ -25,6 +28,7 @@ export function RaceChart({
   const model = useMemo(() => buildChartModel(view, timeline), [view, timeline]);
   const pulse = usePulseOnIncrease(view.home.score + view.away.score);
 
+  const zoneRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const active = useRef(false);
   const pending = useRef<{ x: number; y: number; pointerId: number } | null>(null);
@@ -40,7 +44,7 @@ export function RaceChart({
   const activate = (pointerId: number, clientX: number) => {
     active.current = true;
     try {
-      svgRef.current?.setPointerCapture(pointerId);
+      zoneRef.current?.setPointerCapture(pointerId);
     } catch {
       /* pointer already gone */
     }
@@ -61,13 +65,14 @@ export function RaceChart({
     }
   };
 
-  const onPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     if (!timeline) return;
     if (e.pointerType === 'mouse') {
       if (e.button !== 0) return;
       activate(e.pointerId, e.clientX);
     } else {
-      // Touch: require a short hold so vertical page scrolls aren't hijacked.
+      // Touch: activate on a horizontal slide or a short stationary hold;
+      // a clearly vertical move yields the gesture to page scrolling.
       pending.current = { x: e.clientX, y: e.clientY, pointerId: e.pointerId };
       holdTimer.current = setTimeout(() => {
         if (pending.current) {
@@ -78,14 +83,20 @@ export function RaceChart({
     }
   };
 
-  const onPointerMove = (e: PointerEvent<SVGSVGElement>) => {
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
     if (active.current) {
       onScrub(tauFromClientX(e.clientX));
     } else if (pending.current) {
+      // Direction is measured from the original touch point.
       const dx = e.clientX - pending.current.x;
       const dy = e.clientY - pending.current.y;
-      if (Math.hypot(dx, dy) > CANCEL_DISTANCE) clearPending();
-      else pending.current = { ...pending.current, x: e.clientX };
+      if (Math.abs(dx) > ACTIVATE_DX && Math.abs(dx) >= Math.abs(dy)) {
+        const { pointerId } = pending.current;
+        clearPending();
+        activate(pointerId, e.clientX);
+      } else if (Math.abs(dy) > CANCEL_DY && Math.abs(dy) > Math.abs(dx)) {
+        clearPending();
+      }
     }
   };
 
@@ -102,17 +113,21 @@ export function RaceChart({
       : null;
 
   return (
-    <svg
-      ref={svgRef}
-      className={`race-chart${timeline ? ' scrubbable' : ''}`}
-      viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
+    <div
+      ref={zoneRef}
+      className={`scrub-zone${timeline ? ' scrubbable' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
       onPointerLeave={end}
+    >
+    <svg
+      ref={svgRef}
+      className="race-chart"
+      viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+      preserveAspectRatio="none"
+      aria-hidden="true"
     >
       {/* lead gap fill */}
       <path className="morph" d={model.gap} style={pathStyle(model.gap)} fill="var(--gap-fill)" />
@@ -190,5 +205,6 @@ export function RaceChart({
         </g>
       )}
     </svg>
+    </div>
   );
 }

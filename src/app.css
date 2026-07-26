@@ -931,11 +931,26 @@
 
 /* ---- chart scrubbing ---- */
 
-.race-chart.scrubbable {
+/* Generous touch target: pads the 88px chart to ~130px of hit area without
+   moving anything visually (10 + 12 = the chart's original 22px top margin;
+   the bottom padding is pulled back out with a negative margin). */
+.scrub-zone {
+  position: relative;
+  z-index: 1;
+  margin: 10px 0 -20px;
+  padding: 12px 0 20px;
+}
+
+.scrub-zone .race-chart {
+  margin-top: 0;
+}
+
+.scrub-zone.scrubbable {
   touch-action: pan-y;
   cursor: crosshair;
   user-select: none;
   -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .win-row.scrubbing {
