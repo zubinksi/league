@@ -66,16 +66,23 @@ function buildPlayerView(
   recValue: number,
 ): StarterView {
   const meta = players[playerId];
+  const empty = playerId === '0' || playerId === '';
   const nflTeam = meta?.team ?? (meta?.position === 'DEF' ? playerId : null);
   const game = nflTeam ? scoreboard[nflTeam] : undefined;
-  const state: GameState = game?.state ?? 'pre';
+
+  // A starter with no game this week — bye, empty slot, or a free agent —
+  // cannot score any more points. Once the scoreboard is known, treat them
+  // as final (with whatever they have, usually 0) rather than "to play",
+  // so they don't hold the matchup open or inflate projections.
+  const scoreboardLoaded = Object.keys(scoreboard).length > 0;
+  const state: GameState = game?.state ?? (scoreboardLoaded ? 'final' : 'pre');
 
   const rawPoints = entry.players_points?.[playerId];
   const points = state === 'pre' ? null : rawPoints ?? 0;
 
   let gameText: string;
   if (!game) {
-    gameText = nflTeam ? 'BYE' : '';
+    gameText = empty ? '' : nflTeam ? 'BYE' : scoreboardLoaded ? '—' : '';
   } else {
     const opp = `${game.home ? 'vs' : '@'} ${game.opponent}`;
     if (state === 'live') gameText = `${opp} · ${game.quarter ?? ''}`.trim();
@@ -86,7 +93,7 @@ function buildPlayerView(
   return {
     playerId,
     slot,
-    name: playerShortName(meta, playerId),
+    name: empty ? 'EMPTY' : playerShortName(meta, playerId),
     position: meta?.position ?? null,
     nflTeam,
     state,

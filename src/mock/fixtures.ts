@@ -85,7 +85,8 @@ const HOME_STARTERS: FixturePlayer[] = [
   { id: 'p_nacua', first: 'Puka', last: 'Nacua', pos: 'WR', team: 'LAR', proj: 16.4, adp: 9.8 },
   { id: 'p_collins', first: 'Nico', last: 'Collins', pos: 'WR', team: 'HOU', pts: 8.9, proj: 15.1, adp: 14.5,
     stats: { rec: 4, rec_yd: 49 } },
-  { id: 'p_mcbride', first: 'Trey', last: 'McBride', pos: 'TE', team: 'ARI', proj: 12.2, adp: 22.7 },
+  // On bye in the fixture week (CLE has no game in the slate).
+  { id: 'p_mcbride', first: 'Trey', last: 'McBride', pos: 'TE', team: 'CLE', proj: 12.2, adp: 22.7 },
   { id: 'p_jacobs', first: 'Josh', last: 'Jacobs', pos: 'RB', team: 'GB', pts: 6.7, proj: 14.6, adp: 21.4,
     stats: { rush_att: 14, rush_yd: 47, rec: 2, rec_yd: 10 } },
   { id: 'p_butker', first: 'Harrison', last: 'Butker', pos: 'K', team: 'KC', pts: 5.0, proj: 8.4, adp: 141.0,
