@@ -60,10 +60,9 @@ Player cards include a METRICS section computed client-side from the
 season's weekly stat maps, scored with the league's own settings: weekly
 positional finishes (with per-week tags in the game log and a season
 positional rank), floor/ceiling (25th/75th percentile weeks), boom/bust
-rates, last-4 average, opportunities per game, points per opportunity,
-catch rate, yards per touch, and target/carry share of the player's NFL
-team. Snap share and red-zone usage render automatically when Sleeper's
-payload carries those keys. The This Week section adds matchup context —
+rates, last-4 average, catch rate, and target/carry share of the player's
+NFL team. Snap share renders automatically when Sleeper's payload carries
+the snap-count keys. The This Week section adds matchup context —
 "BUF allows 5th-most to WR" — derived from the same data.
 
 ### Chart scrubbing & the snapshot recorder

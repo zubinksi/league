@@ -139,15 +139,11 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
       if (pos === 'RB' || pos === 'WR')
         t.push({ label: `${pos}2 WKS`, value: `${m.tier2Weeks}/${m.gamesPlayed}` });
     }
-    if (m.oppPerGame !== undefined) t.push({ label: 'OPP/G', value: m.oppPerGame.toFixed(1) });
-    if (m.ptsPerOpp !== undefined) t.push({ label: 'PTS/OPP', value: m.ptsPerOpp.toFixed(2) });
     if (m.targetShare !== undefined) t.push({ label: 'TGT SHARE', value: pct(m.targetShare) });
     if (m.carryShare !== undefined && pos === 'RB')
       t.push({ label: 'CARRY SH', value: pct(m.carryShare) });
     if (m.catchRate !== undefined) t.push({ label: 'CATCH', value: pct(m.catchRate) });
-    if (m.yardsPerTouch !== undefined) t.push({ label: 'YD/TOUCH', value: m.yardsPerTouch.toFixed(1) });
     if (m.snapShare !== undefined) t.push({ label: 'SNAP', value: pct(m.snapShare) });
-    if (m.rzOppPerGame !== undefined) t.push({ label: 'RZ OPP/G', value: m.rzOppPerGame.toFixed(1) });
     return t;
   };
 

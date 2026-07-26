@@ -59,14 +59,10 @@ export interface PlayerMetrics {
   tier1Weeks: number; // positional finishes 1–12
   tier2Weeks: number; // positional finishes 13–24
   seasonPosRank?: number;
-  oppPerGame?: number;
-  ptsPerOpp?: number;
   catchRate?: number;
-  yardsPerTouch?: number;
   targetShare?: number;
   carryShare?: number;
   snapShare?: number; // opportunistic: needs off_snp / tm_off_snp keys
-  rzOppPerGame?: number; // opportunistic: needs red-zone keys
 }
 
 export interface PlayedWeek {
@@ -119,16 +115,7 @@ export function computeMetrics(args: {
   const rushAtt = sum('rush_att');
   const targets = sum('rec_tgt');
   const receptions = sum('rec');
-  const opportunities = pos === 'QB' ? sum('pass_att') + rushAtt : rushAtt + targets;
-  if (opportunities > 0) {
-    metrics.oppPerGame = opportunities / gp;
-    metrics.ptsPerOpp = pts.reduce((a, b) => a + b, 0) / opportunities;
-  }
-  if (pos !== 'QB') {
-    if (targets > 0) metrics.catchRate = receptions / targets;
-    const touches = rushAtt + receptions;
-    if (touches > 0) metrics.yardsPerTouch = (sum('rush_yd') + sum('rec_yd')) / touches;
-  }
+  if (pos !== 'QB' && targets > 0) metrics.catchRate = receptions / targets;
 
   // Share of the NFL team's targets/carries, summed over this player's played
   // weeks. Uses each player's current team, so mid-season trades wobble it
@@ -151,9 +138,6 @@ export function computeMetrics(args: {
   const snaps = sum('off_snp');
   const teamSnaps = sum('tm_off_snp');
   if (snaps > 0 && teamSnaps > 0) metrics.snapShare = snaps / teamSnaps;
-
-  const rz = sum('rush_rz_att') + sum('rec_rz_tgt') + (pos === 'QB' ? sum('pass_rz_att') : 0);
-  if (rz > 0) metrics.rzOppPerGame = rz / gp;
 
   return metrics;
 }
