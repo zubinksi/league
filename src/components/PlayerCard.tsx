@@ -143,7 +143,8 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
       if (pos === 'RB' || pos === 'WR')
         t.push({ label: `${pos}2 WKS`, value: `${m.tier2Weeks}/${m.gamesPlayed}` });
     }
-    if (m.targetShare !== undefined) t.push({ label: 'TGT SHARE', value: pct(m.targetShare) });
+    if (m.targetShare !== undefined && pos !== 'RB')
+      t.push({ label: 'TGT SHARE', value: pct(m.targetShare) });
     if (m.carryShare !== undefined && pos === 'RB')
       t.push({ label: 'CARRY SH', value: pct(m.carryShare) });
     if (m.catchRate !== undefined) t.push({ label: 'CATCH', value: pct(m.catchRate) });
