@@ -104,7 +104,7 @@
 // the rush closes. Tap a receiver to throw to where they're going.
 // ---------------------------------------------------------------------------
 
-const BUILD = 'qb1';
+const BUILD = 'qb2-yac';
 const VW = 180;
 let VH = 260;
 const YARD = 16;
@@ -252,6 +252,9 @@ function sprite(rows, px, py, ball) {
 
 // ---- game ----------------------------------------------------------------
 const CATCH_R = 11;
+// Yards after catch reuses the running-back verbs: swipe to cut, tap to spin.
+const YAC_FWD = 0.92, YAC_SPIN = 26, YAC_SPIN_CD = 30;
+const YAC_TACKLE_R = 12, YAC_CONTACT = 28, DB_PURSUE = 0.74;
 let game;
 
 function newGame() {
@@ -317,6 +320,16 @@ function throwTo(rec) {
   g.state = 'ball';
 }
 
+function startYac(rec, ball) {
+  const g = game;
+  g.carrier = {
+    x: ball.x, y: ball.y, vx: 0, frame: 0,
+    spin: 0, spinCd: 0, spinDir: 1, id: rec.id,
+  };
+  g.ball = null;
+  g.state = 'yac';
+}
+
 function routeAt(rec, t) {
   const o = ROUTES[rec.route](Math.max(0, t), rec.dir);
   return { x: rec.sx + o.x, y: rec.sy + o.y };
@@ -357,8 +370,41 @@ function toLogical(e) {
     y: ((e.clientY - r.top) / r.height) * VH + game.camY,
   };
 }
+let pStart = null;
+function yacNudge(dir) { game.carrier.vx += dir * 1.9; }
+function yacSpin() {
+  const g = game, c = g.carrier;
+  if (c.spin > 0 || c.spinCd > 0) return;
+  let near = null, nd = Infinity;
+  for (const r of g.receivers) {
+    const d = Math.hypot(c.x - r.db.x, c.y - r.db.y);
+    if (d < nd) { nd = d; near = r.db; }
+  }
+  c.spin = YAC_SPIN;
+  c.spinCd = YAC_SPIN + YAC_SPIN_CD;
+  c.spinDir = near && nd < 46 ? (Math.sign(c.x - near.x) || 1) : (Math.sign(c.vx) || 1);
+  if (near && nd < YAC_CONTACT) {
+    for (const r of g.receivers) {
+      const d = r.db;
+      if (Math.hypot(c.x - d.x, c.y - d.y) < YAC_CONTACT + 8) {
+        // beaten defenders get shoved back off the play for a beat
+        d.x -= Math.sign(c.x - d.x) * 10;
+        d.y += 12;
+      }
+    }
+  }
+}
+canvas.addEventListener('pointerup', (e) => {
+  if (game.state !== 'yac' || !pStart) { pStart = null; return; }
+  const dx = e.clientX - pStart.x;
+  if (Math.abs(dx) > 18) yacNudge(Math.sign(dx));
+  else yacSpin();
+  pStart = null;
+});
 canvas.addEventListener('pointerdown', (e) => {
   const g = game;
+  pStart = { x: e.clientX, y: e.clientY };
+  if (g.state === 'yac') return;                    // handled on pointerup
   if (g.state === 'select') return;
   if (g.state === 'ready') { snap(); return; }
   if (g.state === 'live') {
@@ -381,6 +427,12 @@ window.addEventListener('keydown', (e) => {
     if (n >= 1 && n <= ROSTER.length) choose(n - 1);
     return;
   }
+  if (g.state === 'yac') {
+    if (e.key === 'ArrowLeft') yacNudge(-1);
+    else if (e.key === 'ArrowRight') yacNudge(1);
+    else if (e.code === 'Space') { e.preventDefault(); yacSpin(); }
+    return;
+  }
   const n = parseInt(e.key, 10);
   if (g.state === 'live' && n >= 1 && n <= g.receivers.length) { throwTo(g.receivers[n - 1]); return; }
   if (e.code === 'Space' || e.key === 'Enter') {
@@ -392,8 +444,45 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ---- simulation ----------------------------------------------------------
+function stepYac() {
+  const g = game;
+  const c = g.carrier;
+  if (c.spinCd > 0) c.spinCd--;
+
+  if (c.spin > 0) {
+    const p = c.spin / YAC_SPIN;
+    c.x += c.spinDir * 3.0 * p;
+    c.y -= YAC_FWD * 0.55;
+    c.vx *= 0.7;
+    c.spin--;
+  } else {
+    c.y -= YAC_FWD;
+    c.x += c.vx;
+    c.vx *= 0.86;
+    c.frame += 0.22;
+  }
+  c.x = Math.max(HALF - 2, Math.min(VW - HALF + 2, c.x));
+
+  // every defensive back converges; the rush is behind the play
+  const chasers = g.receivers.map((r) => r.db);
+  for (const d of chasers) {
+    const dx = (c.x + c.vx * 8) - d.x, dy = c.y - d.y;
+    const dist = Math.hypot(dx, dy) || 1;
+    d.x += (dx / dist) * DB_PURSUE;
+    d.y += (dy / dist) * DB_PURSUE;
+    d.frame += 0.2;
+    if (c.spin <= 6 && Math.hypot(c.x - d.x, c.y - d.y) < YAC_TACKLE_R) {
+      endPlay('complete', g.los - c.y);
+      return;
+    }
+  }
+  if (c.y <= ENDZONE_Y + 16) { endPlay('td', g.los - c.y); return; }
+  g.camY = Math.max(0, Math.min(WORLD_H - VH, c.y - VH * 0.62));
+}
+
 function step() {
   const g = game;
+  if (g.state === 'yac') { g.t++; stepYac(); return; }
   if (g.state !== 'live' && g.state !== 'ball') return;
   g.t++;
 
@@ -453,7 +542,7 @@ function resolveCatch() {
 
   if (recD < CATCH_R && dbD > recD + 3) {
     if (b.y <= ENDZONE_Y + 16) endPlay('td', gain);
-    else endPlay('complete', gain);
+    else startYac(rec, b);
   } else if (dbD < CATCH_R && dbD < recD) {
     // a defender is closer to the ball than the receiver — likely picked
     if (g.roll() < 0.62) endPlay('int', 0);
@@ -500,13 +589,25 @@ function drawField(camY) {
 // Routes drawn as hairlines — the signature look of this screen.
 function drawRoutes(camY) {
   const g = game;
-  ctx.fillStyle = 'rgba(255,255,255,0.10)';
+  const preSnap = g.state === 'ready';
+  // Pre-snap the routes are the playbook, so they're bright and near-solid;
+  // once the ball is live they recede to a trace.
+  ctx.fillStyle = preSnap ? 'rgba(255,255,255,0.42)' : 'rgba(255,255,255,0.10)';
+  const stride = preSnap ? 1 : 3;
   for (const r of g.receivers) {
-    for (let t = 0; t < 130; t += 3) {
+    for (let t = 0; t < 150; t += stride) {
       const p = routeAt(r, t);
       const sy = Math.round(p.y - camY);
       if (sy < -2 || sy > VH + 2) continue;
       ctx.fillRect(Math.round(p.x), sy, 1, 1);
+    }
+    if (preSnap) {
+      // a tick at the break, and an arrowhead at the end of the route
+      const end = routeAt(r, 150);
+      const ey = Math.round(end.y - camY);
+      ctx.fillRect(Math.round(end.x) - 2, ey + 2, 5, 1);
+      ctx.fillRect(Math.round(end.x) - 1, ey + 3, 3, 1);
+      ctx.fillRect(Math.round(end.x), ey + 4, 1, 1);
     }
   }
 }
@@ -515,12 +616,14 @@ function render() {
   const g = game;
   drawField(g.camY);
   if (g.state === 'live' || g.state === 'ready' || g.state === 'ball') drawRoutes(g.camY);
+  if (g.state === 'yac') { /* the play is a run now — no route art */ }
 
   for (const r of g.receivers) {
     const dy = Math.round(r.db.y - g.camY);
     sprite(RUN_G[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, dy - HALF, false);
   }
   for (const r of g.receivers) {
+    if (g.state === 'yac' && g.carrier && g.carrier.id === r.id) continue;
     const sy = Math.round(r.y - g.camY);
     sprite(RUN[Math.floor(r.frame) % 3], Math.round(r.x) - HALF, sy - HALF, false);
   }
@@ -528,8 +631,14 @@ function render() {
     const sy = Math.round(d.y - g.camY);
     sprite(RUN_G[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, sy - HALF, false);
   }
-  const qy = Math.round(g.qb.y - g.camY);
-  sprite(RUN[0], Math.round(g.qb.x) - HALF, qy - HALF, !g.ball);
+  if (g.state === 'yac' && g.carrier) {
+    const c = g.carrier;
+    const cy = Math.round(c.y - g.camY);
+    sprite(RUN[Math.floor(c.frame) % 3], Math.round(c.x) - HALF, cy - HALF, true);
+  } else {
+    const qy = Math.round(g.qb.y - g.camY);
+    sprite(RUN[0], Math.round(g.qb.x) - HALF, qy - HALF, !g.ball);
+  }
 
   if (g.ball) {
     const by = Math.round(g.ball.y - g.camY);
@@ -618,7 +727,10 @@ function paintUI() {
     tap.textContent = 'tap to play again';
   }
   attrs.classList.toggle('show', g.state === 'ready' && g.t === 0 && g.down === 1 && g.drive === 0);
-  overlay.classList.toggle('show', g.state !== 'live' && g.state !== 'ball');
+  overlay.classList.toggle('show',
+    g.state !== 'live' && g.state !== 'ball' && g.state !== 'yac');
+  document.getElementById('hint').textContent =
+    g.state === 'yac' ? 'swipe ← → to cut · tap to spin' : 'tap a receiver to throw';
 }
 paintUI();
 document.getElementById('build').textContent = `sprites ${SPR}×${SPR} · build ${BUILD}`;
