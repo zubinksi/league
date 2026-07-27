@@ -151,7 +151,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade6-truck';
+const BUILD = 'arcade8-goalline';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -302,7 +302,7 @@ function yardLines(camY, worldH, yards, yard) {
 // GAME 1 — RUN
 // ===========================================================================
 const RUN_GAME = (() => {
-  const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0;
+  const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0, GOAL = EZ + 12;
   const SPR = 32, HALF = 16;
   const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IF = 8, TACKLE_R = 17;
   const TRUCK_LEN = 24, TRUCK_CD = 46;
@@ -322,13 +322,30 @@ const RUN_GAME = (() => {
     };
   }
   function defenders(rnd, drive, los) {
-    const ramp = 1 + drive * 0.07, n = drive >= 2 ? 4 : 3, out = [];
-    for (let i = 0; i < n; i++) out.push({
-      x: VW / 2 + (i - (n - 1) / 2) * (52 * FRONT.spread) + Math.floor(rnd() * 14) - 7,
-      y: los - 74 - i * 58 - Math.floor(rnd() * 26),
-      speed: (0.58 + rnd() * 0.28) * ramp, lateral: (0.46 + rnd() * 0.32) * ramp,
-      stumble: 0, frame: rnd() * 3,
-    });
+    const ramp = 1 + drive * 0.07, out = [];
+    // The front used to be spaced purely off the line of scrimmage, which only
+    // works with a whole field behind it: inside about five yards every
+    // defender spawned past the end line and short yardage was an untouched
+    // walk-in. Line up in the room that actually exists instead — the deep
+    // help thins out, because getting to the stripe already beat it.
+    const room = Math.max(26, los - GOAL + 4);
+    const standoff = Math.max(26, Math.min(74, room * 0.45));
+    const n = Math.max(1, Math.min(drive >= 2 ? 4 : 3,
+      1 + Math.floor((room - standoff) / 44)));
+    const gap = n > 1 ? Math.min(58, (room - standoff) / (n - 1)) : 0;
+    // As the layers tighten the front also flattens across the width, so a
+    // goal-line stand is a gap to find rather than a wall or a walk-in.
+    const tight = Math.min(1, gap / 58);
+    const lane = 52 * FRONT.spread * tight + (VW / (n + 0.6)) * (1 - tight);
+    for (let i = 0; i < n; i++) {
+      const x = VW / 2 + (i - (n - 1) / 2) * lane + Math.floor(rnd() * 14) - 7;
+      const back = standoff + i * gap + Math.floor(rnd() * 26) * tight;
+      out.push({
+        x, y: Math.max(4, los - back),
+        speed: (0.58 + rnd() * 0.28) * ramp, lateral: (0.46 + rnd() * 0.32) * ramp,
+        stumble: 0, frame: rnd() * 3,
+      });
+    }
     return out;
   }
   return {
@@ -414,7 +431,7 @@ const RUN_GAME = (() => {
           this.end('tackled'); return;
         }
       }
-      if (rb.y <= EZ + 12) { this.end('td'); return; }
+      if (rb.y <= GOAL) { this.end('td'); return; }
       g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.62));
     },
     render() {
@@ -424,7 +441,7 @@ const RUN_GAME = (() => {
         ctx.fillStyle = 'rgba(232,197,97,0.45)';
         for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
       }
-      const gy = Math.round(EZ + 12 - g.camY);
+      const gy = Math.round(GOAL - g.camY);
       if (gy > -SPR && gy < VH + SPR) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
         ctx.fillStyle = 'rgba(255,255,255,0.035)';
