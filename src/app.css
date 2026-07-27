@@ -1159,9 +1159,17 @@
   text-align: right;
 }
 
-.arank.first {
+/* Top four ranks tint gold, fading as the rank drops. */
+.arank.r1,
+.arank.r2,
+.arank.r3,
+.arank.r4 {
   color: var(--accent-live);
 }
+
+.arank.r2 { opacity: 0.72; }
+.arank.r3 { opacity: 0.52; }
+.arank.r4 { opacity: 0.36; }
 
 .ra-name-row {
   display: flex;

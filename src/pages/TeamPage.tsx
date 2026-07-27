@@ -93,7 +93,7 @@ export function TeamPage() {
         action={
           roster ? (
             <button className="navbar-action" onClick={() => setAnalysisOpen(true)} aria-label="Roster analysis">
-              <RadarIcon />
+              <RadarIcon color="var(--accent-live)" />
             </button>
           ) : undefined
         }

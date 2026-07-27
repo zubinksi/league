@@ -5,21 +5,21 @@ import { ordinal } from '../lib/metrics';
 const fmt1 = (n: number | undefined) => (n === undefined ? '—' : n.toFixed(1));
 
 /** Small web glyph for the nav bar action. */
-export function RadarIcon() {
+export function RadarIcon({ color = '#f5f5f7' }: { color?: string }) {
   return (
     <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <polygon
         points="10,2 16.93,6 16.93,14 10,18 3.07,14 3.07,6"
-        stroke="#f5f5f7"
+        stroke={color}
         strokeWidth="1.2"
       />
       <polygon
         points="10,6 13.46,8 13.46,12 10,14 6.54,12 6.54,8"
-        stroke="#f5f5f7"
+        stroke={color}
         strokeWidth="1"
         opacity="0.55"
       />
-      <g stroke="#f5f5f7" strokeWidth="0.8" opacity="0.3">
+      <g stroke={color} strokeWidth="0.8" opacity="0.3">
         <line x1="10" y1="10" x2="10" y2="2" />
         <line x1="10" y1="10" x2="16.93" y2="6" />
         <line x1="10" y1="10" x2="16.93" y2="14" />
@@ -65,10 +65,10 @@ export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount
   const medianFrac = (teamsCount + 1) / (2 * teamsCount);
 
   // Dual mode keys the teams to purple (home) and blue (away) so the webs
-  // read apart; single mode stays monochrome.
-  const homeStroke = dual ? 'var(--accent-home)' : 'var(--line-home)';
-  const homeFill = dual ? 'rgba(163,124,235,0.10)' : 'var(--gap-fill)';
-  const homeDot = dual ? 'var(--accent-home)' : '#ffffff';
+  // read apart; a lone web is gold, matching the team page's radar action.
+  const homeStroke = dual ? 'var(--accent-home)' : 'var(--accent-live)';
+  const homeFill = dual ? 'rgba(163,124,235,0.10)' : 'rgba(232,197,97,0.10)';
+  const homeDot = dual ? 'var(--accent-home)' : 'var(--accent-live)';
 
   return (
     <svg className="radar" viewBox="0 0 300 280" aria-hidden="true">
@@ -155,7 +155,8 @@ export function RosterAnalysisSheet({
 
   const present = teams.filter((t): t is TeamRanks => !!t);
   const dual = present.length === 2;
-  const goldIf1 = (rank?: number) => (rank === 1 ? ' first' : '');
+  /** Top four ranks tint gold, fading as the rank drops. */
+  const rankClass = (rank?: number) => (rank && rank <= 4 ? ` r${rank}` : '');
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -187,13 +188,13 @@ export function RosterAnalysisSheet({
                   const away = present[1].slots[i];
                   return (
                     <div className="arow dual" key={home.slot}>
-                      <span className={`arank${goldIf1(home.rank)}`}>
+                      <span className={`arank${rankClass(home.rank)}`}>
                         {home.rank ? ordinal(home.rank) : '—'}
                       </span>
                       <span className="appg">{fmt1(home.ppg)}</span>
                       <span className="aslot">{home.slot}</span>
                       <span className="appg right">{fmt1(away.ppg)}</span>
-                      <span className={`arank right${goldIf1(away.rank)}`}>
+                      <span className={`arank right${rankClass(away.rank)}`}>
                         {away.rank ? ordinal(away.rank) : '—'}
                       </span>
                     </div>
@@ -204,7 +205,7 @@ export function RosterAnalysisSheet({
                     <span className="aslot">{s.slot}</span>
                     <span className="aname">{s.name ?? '—'}</span>
                     <span className="appg right">{fmt1(s.ppg)}</span>
-                    <span className={`arank right${goldIf1(s.rank)}`}>
+                    <span className={`arank right${rankClass(s.rank)}`}>
                       {s.rank ? ordinal(s.rank) : '—'}
                     </span>
                   </div>
