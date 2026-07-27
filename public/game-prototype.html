@@ -11,6 +11,7 @@
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
+    touch-action: manipulation;          /* no double-tap zoom on stray taps */
     height: 100%; background: #08090b; color: #e9e9ec;
     font-family: var(--mono);
     -webkit-user-select: none; user-select: none;
@@ -71,6 +72,7 @@
     background: rgba(8,9,11,0.92);
   }
   #picker.show { display: flex; }
+  #picker, .pick { touch-action: manipulation; }
   .ptitle {
     font-size: 13px; font-weight: 600; letter-spacing: 0.22em;
     text-transform: uppercase; color: #fbfbfd;
@@ -140,7 +142,7 @@
 // Four downs to score; a touchdown earns a fresh, faster drive.
 // ---------------------------------------------------------------------------
 
-const BUILD = 'g7-pick';
+const BUILD = 'g8-tap';
 const VW = 180;                        // logical width — fixed, gameplay depends on it
 let VH = 260;                          // logical height — sized to the device in fit()
 const YARD = 16;                       // logical px per yard

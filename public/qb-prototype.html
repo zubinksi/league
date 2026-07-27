@@ -8,6 +8,7 @@
   :root { --gold: #e8c561; --mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
+    touch-action: manipulation;          /* no double-tap zoom on stray taps */
     height: 100%; background: #08090b; color: #e9e9ec; font-family: var(--mono);
     -webkit-user-select: none; user-select: none; overscroll-behavior: none;
   }
@@ -56,6 +57,7 @@
     background: rgba(8,9,11,0.93);
   }
   #picker.show { display: flex; }
+  #picker, .pick { touch-action: manipulation; }
   .ptitle { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #fbfbfd; }
   .pfront { font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
   #plist { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 300px; }
@@ -111,7 +113,7 @@
 // the rush closes. Tap a receiver to throw to where they're going.
 // ---------------------------------------------------------------------------
 
-const BUILD = 'qb4-pass';
+const BUILD = 'qb5-tap';
 const VW = 180;
 let VH = 260;
 const YARD = 16;
