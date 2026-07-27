@@ -53,6 +53,17 @@
     font-size: 8.5px; letter-spacing: 0.24em; text-transform: uppercase; color: #4a4c52;
     margin-top: 6px;
   }
+  /* Attribute card — the carrier inherits your best back's qualities. */
+  #attrs { display: none; flex-direction: column; gap: 5px; margin-top: 10px; }
+  #attrs.show { display: flex; }
+  .attr { display: flex; align-items: center; gap: 9px; }
+  .attr .k {
+    width: 62px; text-align: right; font-size: 8px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: #6d6f76;
+  }
+  .attr .bar { display: flex; gap: 2px; }
+  .attr .seg { width: 7px; height: 7px; background: rgba(255,255,255,0.10); }
+  .attr .seg.on { background: #e9e9ec; }
   /* Drive state sits above the field, never on it. */
   #status {
     display: flex; gap: 16px; align-items: baseline;
@@ -76,6 +87,7 @@
     <div id="overlay">
       <div id="ttl"></div>
       <div id="sub"></div>
+      <div id="attrs"></div>
       <div id="tap"></div>
     </div>
   </div>
@@ -89,7 +101,7 @@
 // Four downs to score; a touchdown earns a fresh, faster drive.
 // ---------------------------------------------------------------------------
 
-const BUILD = 'g5-big32';
+const BUILD = 'g6-attrs';
 const VW = 180;                        // logical width — fixed, gameplay depends on it
 let VH = 260;                          // logical height — sized to the device in fit()
 const YARD = 16;                       // logical px per yard
@@ -300,11 +312,27 @@ function drawSprite(rows, px, py, ballTint, ballDx) {
   }
 }
 
+// ---- the carrier inherits your best running back ------------------------
+// The app passes these; standalone falls back to a league-average back.
+const Q = new URLSearchParams(location.search);
+const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0.5));
+const RB = {
+  name: (Q.get('rb') || 'The Back').toUpperCase(),
+  team: (Q.get('tm') || '').toUpperCase(),
+  spd: clamp01(parseFloat(Q.get('spd'))),   // yards per carry  → top speed
+  pow: clamp01(parseFloat(Q.get('pow'))),   // listed weight    → breaks tackles
+  elu: clamp01(parseFloat(Q.get('elu'))),   // receiving work   → spin quality
+};
+
 // ---- game ----------------------------------------------------------------
-const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
-const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IFRAMES = 8, CONTACT = 40;
+const SEED = Q.get('seed') || 'WK15';
+const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IFRAMES = 8;
+// Attributes move real numbers, but modestly — skill still decides the run.
+const FORWARD = 0.82 + 0.24 * RB.spd;          // 0.82 .. 1.06
+const BREAK_ODDS = 0.05 + 0.30 * RB.pow;       // 5% .. 35% to shrug a tackle
+const CONTACT = 32 + 18 * RB.elu;              // spin's effective reach
+const STUMBLE = 78 + 46 * RB.elu;              // how long a beaten defender stalls
 const TACKLE_R = 17;
-const FORWARD = 0.92;
 
 let game;
 
@@ -328,6 +356,7 @@ function makeDefenders(rnd, drive) {
 function newGame() {
   game = {
     rnd: mulberry32(hashSeed(SEED)),
+    roll: mulberry32(hashSeed(SEED + '|rolls')),   // seeded, so runs stay fair
     drive: 0,
     down: 1,
     los: WORLD_H - 26,          // line of scrimmage for this down
@@ -345,7 +374,7 @@ function newGame() {
 
 function startDown() {
   const g = game;
-  g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1, clean: false };
+  g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1, clean: false, breakCd: 0, stagger: 0 };
   g.defenders = makeDefenders(g.rnd, g.drive);
   // push defenders ahead of the current line of scrimmage
   const shift = g.los - (WORLD_H - 26);
@@ -406,7 +435,7 @@ function spin() {
   rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
   if (rb.clean) {
     for (const d of g.defenders) {
-      if (Math.hypot(rb.x - d.x, rb.y - d.y) < CONTACT + 10) d.stumble = 95;
+      if (Math.hypot(rb.x - d.x, rb.y - d.y) < CONTACT + 10) d.stumble = STUMBLE;
     }
   }
 }
@@ -432,6 +461,8 @@ function step() {
   if (g.state !== 'live') return;
   const rb = g.rb;
   if (rb.spinCd > 0) rb.spinCd--;
+  if (rb.breakCd > 0) rb.breakCd--;
+  if (rb.stagger > 0) rb.stagger--;
 
   if (rb.spin > 0) {
     const p = rb.spin / SPIN_LEN;
@@ -440,10 +471,11 @@ function step() {
     rb.vx *= 0.7;
     rb.spin--;
   } else {
-    rb.y -= FORWARD;
+    // breaking a tackle costs speed for a beat
+    rb.y -= rb.stagger > 0 ? FORWARD * 0.42 : FORWARD;
     rb.x += rb.vx;
     rb.vx *= 0.86;
-    rb.frame += 0.22;
+    rb.frame += rb.stagger > 0 ? 0.12 : 0.22;
   }
   rb.x = Math.max(HALF - 4, Math.min(VW - HALF + 4, rb.x));
 
@@ -456,7 +488,17 @@ function step() {
     d.y += (dy / dist) * d.speed;
     d.frame += 0.2;
     const spinning = rb.spin > SPIN_IFRAMES;
-    if (!spinning && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) { endPlay('tackled'); return; }
+    if (!spinning && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
+      // A powerful back can shrug the hit — costs momentum, not the down.
+      if (rb.breakCd <= 0 && g.roll() < BREAK_ODDS) {
+        rb.breakCd = 80;
+        rb.stagger = 22;
+        d.stumble = STUMBLE;
+        continue;
+      }
+      endPlay('tackled');
+      return;
+    }
   }
 
   if (rb.y <= ENDZONE_Y + 12) { endPlay('td'); return; }
@@ -530,7 +572,18 @@ const ttl = document.getElementById('ttl');
 const sub = document.getElementById('sub');
 const tap = document.getElementById('tap');
 const status = document.getElementById('status');
+const attrs = document.getElementById('attrs');
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
+
+const SEGS = 10;
+function attrRow(label, v) {
+  const on = Math.max(1, Math.round(v * SEGS));
+  let bar = '';
+  for (let i = 0; i < SEGS; i++) bar += `<span class="seg${i < on ? ' on' : ''}"></span>`;
+  return `<div class="attr"><span class="k">${label}</span><span class="bar">${bar}</span></div>`;
+}
+attrs.innerHTML =
+  attrRow('Speed', RB.spd) + attrRow('Power', RB.pow) + attrRow('Elusive', RB.elu);
 
 function toGo(g) { return Math.max(1, Math.round((g.los - ENDZONE_Y - 12) / YARD)); }
 
@@ -544,8 +597,8 @@ function paintUI() {
 
   ttl.classList.remove('gold');
   if (g.state === 'ready') {
-    ttl.textContent = 'Opening Drive';
-    sub.textContent = `1st & ${toGo(g)}`;
+    ttl.textContent = RB.name;
+    sub.textContent = `${RB.team ? RB.team + ' · ' : ''}opening drive · 1st & ${toGo(g)}`;
     tap.textContent = 'tap to start';
   } else if (g.state === 'between') {
     ttl.textContent = `Tackled`;
@@ -561,6 +614,7 @@ function paintUI() {
     sub.textContent = `${g.touchdowns} TD · ${g.totalYards} total yards`;
     tap.textContent = 'tap to play again';
   }
+  attrs.classList.toggle('show', g.state === 'ready');
   overlay.classList.toggle('show', g.state !== 'live');
 }
 paintUI();
