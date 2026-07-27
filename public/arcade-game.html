@@ -151,7 +151,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade4-truck';
+const BUILD = 'arcade6-truck';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -318,7 +318,7 @@ const RUN_GAME = (() => {
       CONTACT: 32 + 18 * p.c, STUMBLE: 78 + 46 * p.c,
       // Trucking is POWER made active: a bruiser runs through people, a
       // scatback who tries it gets stopped cold.
-      TRUCK: 0.22 + 0.68 * p.b,
+      TRUCK: 0.40 + 0.55 * p.b,
     };
   }
   function defenders(rnd, drive, los) {
@@ -398,7 +398,10 @@ const RUN_GAME = (() => {
         if (rb.spin <= SPIN_IF && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
           if (rb.truck > 0) {
             // Committed to contact: run him over, or get stood up for a loss.
-            if (g.roll() < A.TRUCK) {
+            // Trucking is for defenders in front of you — a man on your hip
+            // is a spin, and taking him on squares you up badly.
+            const square = 1 - Math.min(1, Math.abs(rb.x - d.x) / TACKLE_R);
+            if (g.roll() < A.TRUCK * (0.45 + 0.55 * square)) {
               d.stumble = A.STUMBLE * 1.5;
               rb.truck = 0; rb.stagger = 26;
               continue;

@@ -62,7 +62,7 @@ export function buildArcadeRosters(
       run.push({
         ...base,
         a: norm(per(t.rush_yd, t.rush_att), 3.2, 5.4),          // yards per carry → speed
-        b: norm(weight, 190, 250),                              // listed weight   → power
+        b: norm(weight, 198, 240),                              // listed weight   → power
         c: norm(per(t.rec, gp), 0.5, 5),                        // catches/game    → elusive
       });
     } else if (meta.position === 'QB') {
