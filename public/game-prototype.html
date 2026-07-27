@@ -60,60 +60,100 @@ const PAL = {
   O: '#e8c561',   // the football
 };
 
-// ---- sprites: 16x16, three-frame run cycle -------------------------------
+// ---- sprites: 24x24, three-frame run cycle -------------------------------
+const SPR = 24;
+const HALF = SPR / 2;
+
+// Back view: helmet, flared shoulder pads, jersey panel, tapered waist.
 const BODY = [
-  '................',
-  '.....DDDDDD.....',
-  '....DWWWWWWD....',
-  '....DWWWWWWD....',
-  '....DWWWWWWD....',
-  '.....DLLLLD.....',
-  '...DDWWWWWWDD...',
-  '..DWWWWWWWWWWD..',
-  '..DWWWWWWWWWWD..',
-  '..DWWWWWWWWWWD..',
-  '..DWWWWWWWWWWD..',
-  '...DWWWWWWWWD...',
-  '....DWWWWWWD....',
+  '........................',
+  '........................',
+  '.......DDDDDDDDDD.......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DDWWWWWWWWDD......',
+  '........DLLLLLLD........',
+  '....DDWWWWWWWWWWWWDD....',
+  '..DDWWWWWWWWWWWWWWWWDD..',
+  '..DWWWWWWWWWWWWWWWWWWD..',
+  '..DWWWWWWWWWWWWWWWWWWD..',
+  '...DWWWWWWWWWWWWWWWWD...',
+  '...DWWWWWLLLLLLWWWWWD...',
+  '...DWWWWWLLLLLLWWWWWD...',
+  '...DWWWWWWWWWWWWWWWWD...',
+  '....DWWWWWWWWWWWWWWD....',
+  '.....DWWWWWWWWWWWWD.....',
 ];
 const LEGS = [
-  ['...DLLD..DLLD...', '...DLLD..DLLD...', '...DDD....DDD...'],
-  ['....DLLDLLD.....', '....DLLDLLD.....', '....DDDDDD......'],
-  ['....DLLDDLLD....', '...DLLD..DLLD...', '...DDD....DDD...'],
+  [
+    '.....DLLLD....DLLLD.....',
+    '.....DLLLD....DLLLD.....',
+    '....DLLLD......DLLLD....',
+    '....DLLD........DLLD....',
+    '....DDDD........DDDD....',
+  ],
+  [
+    '.......DLLLDDLLLD.......',
+    '.......DLLLDDLLLD.......',
+    '.......DLLLDDLLLD.......',
+    '.......DLLDDDLLD........',
+    '.......DDDDDDDDD........',
+  ],
+  [
+    '.....DLLLD....DLLLD.....',
+    '....DLLLD......DLLLD....',
+    '....DLLLD......DLLLD....',
+    '...DLLD..........DLLD...',
+    '...DDDD..........DDDD...',
+  ],
 ];
 const RUN_FRAMES = LEGS.map((legs) => [...BODY, ...legs]);
 
 // Spin move: the body actually rotates — back → side → front → side. Feet stay
 // planted (pivot), so we reuse the together-legs frame for all four.
 const BODY_SIDE = [
-  '................',
-  '......DDDD......',
-  '.....DWWWWD.....',
-  '.....DWWWWD.....',
-  '.....DWWWWD.....',
-  '......DLLD......',
-  '....DDWWWWDD....',
-  '...DWWWWWWWWD...',
-  '...DWWWWWWWWD...',
-  '...DWWWWWWWWD...',
-  '...DWWWWWWWD....',
-  '....DWWWWWD.....',
-  '.....DWWWWD.....',
+  '........................',
+  '........................',
+  '........DDDDDDDD........',
+  '.......DWWWWWWWWD.......',
+  '.......DWWWWWWWWD.......',
+  '.......DWWWWWWWWD.......',
+  '.......DWWWWWWWWD.......',
+  '.......DDWWWWWWDD.......',
+  '.........DLLLLD.........',
+  '......DDWWWWWWWWDD......',
+  '.....DWWWWWWWWWWWWD.....',
+  '.....DWWWWWWWWWWWWD.....',
+  '.....DWWWWWWWWWWWWD.....',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWLLWWWWD......',
+  '......DWWWWLLWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '.......DWWWWWWWWD.......',
+  '.......DWWWWWWWWD.......',
 ];
 const BODY_FRONT = [
-  '................',
-  '.....DDDDDD.....',
-  '....DWWWWWWD....',
-  '....DWDDDDWD....',
-  '....DWDDDDWD....',
-  '.....DLLLLD.....',
-  '...DDWWWWWWDD...',
-  '..DWWWWWWWWWWD..',
-  '..DWWWWWWWWWWD..',
-  '..DWWWWWWWWWWD..',
-  '..DWWWWWWWWWWD..',
-  '...DWWWWWWWWD...',
-  '....DWWWWWWD....',
+  '........................',
+  '........................',
+  '.......DDDDDDDDDD.......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DWDDDDDDDDWD......',
+  '......DWDDDDDDDDWD......',
+  '......DDWWWWWWWWDD......',
+  '........DLLLLLLD........',
+  '....DDWWWWWWWWWWWWDD....',
+  '..DDWWWWWWWWWWWWWWWWDD..',
+  '..DWWWWWWWWWWWWWWWWWWD..',
+  '..DWWWWWWWWWWWWWWWWWWD..',
+  '...DWWWWWWWWWWWWWWWWD...',
+  '...DWWWWWLLLLLLWWWWWD...',
+  '...DWWWWWLLLLLLWWWWWD...',
+  '...DWWWWWWWWWWWWWWWWD...',
+  '....DWWWWWWWWWWWWWWD....',
+  '.....DWWWWWWWWWWWWD.....',
 ];
 const PIVOT = LEGS[1];
 const SPIN_FRAMES = [
@@ -123,14 +163,18 @@ const SPIN_FRAMES = [
   [...BODY_SIDE, ...PIVOT],
 ];
 // The ball swings around the body as it turns.
-const SPIN_BALL_DX = [0, -5, -8, -3];
+const SPIN_BALL_DX = [0, -7, -13, -5];
 
 // Defender: same silhouette, recessive gray so the carrier stays the hero.
 const toDefender = (rows) => rows.map((r) => r.replace(/W/g, 'G').replace(/L/g, 'G'));
 const DEF_FRAMES = RUN_FRAMES.map(toDefender);
 
 // Ball tucked under the right arm — the only gold on screen.
-const BALL = [[8, 12], [8, 13], [9, 12], [9, 13], [10, 13]];
+const BALL = [
+  [13, 20], [13, 21],
+  [14, 19], [14, 20], [14, 21], [14, 22],
+  [15, 20], [15, 21],
+];
 
 // ---- deterministic RNG so both managers face the same defense -------------
 function hashSeed(str) {
@@ -215,7 +259,7 @@ reset();
 const SPIN_LEN = 30;         // frames the spin lasts (~0.5s)
 const SPIN_CD = 34;          // cooldown after, so it can't be spammed
 const SPIN_IFRAMES = 8;      // last N frames of the spin are vulnerable again
-const CONTACT = 26;          // spin beats a defender only inside this range
+const CONTACT = 32;          // spin beats a defender only inside this range
 
 let pStart = null;
 function nudge(dir) {
@@ -244,7 +288,7 @@ function spin() {
   // Only a well-timed spin actually beats anybody.
   if (rb.clean) {
     for (const d of game.defenders) {
-      if (Math.hypot(rb.x - d.x, rb.y - d.y) < CONTACT + 6) d.stumble = 95;
+      if (Math.hypot(rb.x - d.x, rb.y - d.y) < CONTACT + 8) d.stumble = 95;
     }
   }
 }
@@ -281,7 +325,7 @@ function step() {
     // Spin arcs hard at first, then settles — and a whiffed spin bleeds
     // forward momentum, which is what makes timing it a real decision.
     const p = rb.spin / SPIN_LEN;
-    rb.x += rb.spinDir * 2.5 * p;
+    rb.x += rb.spinDir * 2.9 * p;
     rb.y -= rb.clean ? FORWARD : FORWARD * 0.45;
     rb.vx *= 0.7;
     rb.spin--;
@@ -291,7 +335,7 @@ function step() {
     rb.vx *= 0.86;                                  // easing, not stopping dead
     rb.frame += 0.22;
   }
-  rb.x = Math.max(6, Math.min(VW - 22, rb.x));
+  rb.x = Math.max(HALF + 1, Math.min(VW - HALF - 1, rb.x));
 
   for (const d of g.defenders) {
     if (d.stumble > 0) { d.stumble--; continue; }
@@ -303,7 +347,7 @@ function step() {
     d.frame += 0.2;
     // Untouchable through the meat of the spin; vulnerable again as it ends.
     const spinning = rb.spin > SPIN_IFRAMES;
-    if (!spinning && Math.hypot(rb.x - d.x, rb.y - d.y) < 9) {
+    if (!spinning && Math.hypot(rb.x - d.x, rb.y - d.y) < 13) {
       g.state = 'tackled';
       g.yards = Math.max(0, Math.round((g.startY - rb.y) / YARD));
     }
@@ -344,7 +388,7 @@ function drawField(camY) {
 
   // goal line + end zone
   const gy = Math.round(ENDZONE_Y + 12 - camY);
-  if (gy > -20 && gy < VH + 20) {
+  if (gy > -SPR && gy < VH + SPR) {
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
     ctx.fillRect(0, gy, VW, 1);
     ctx.fillStyle = 'rgba(255,255,255,0.035)';
@@ -365,9 +409,9 @@ function render() {
 
   for (const d of g.defenders) {
     const sy = Math.round(d.y - g.camY);
-    if (sy > -20 && sy < VH + 20) {
+    if (sy > -SPR && sy < VH + SPR) {
       const f = DEF_FRAMES[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3];
-      drawSprite(f, Math.round(d.x) - 8, sy - 8, false);
+      drawSprite(f, Math.round(d.x) - HALF, sy - HALF, false);
     }
   }
 
@@ -379,12 +423,12 @@ function render() {
     ctx.globalAlpha = 0.22;
     drawSprite(
       SPIN_FRAMES[(step4 + 3) % 4],
-      Math.round(rb.x - rb.spinDir * 5) - 8, rby - 8, false,
+      Math.round(rb.x - rb.spinDir * 6) - HALF, rby - HALF, false,
     );
     ctx.globalAlpha = 1;
-    drawSprite(SPIN_FRAMES[step4], Math.round(rb.x) - 8, rby - 8, true, SPIN_BALL_DX[step4]);
+    drawSprite(SPIN_FRAMES[step4], Math.round(rb.x) - HALF, rby - HALF, true, SPIN_BALL_DX[step4]);
   } else {
-    drawSprite(RUN_FRAMES[Math.floor(rb.frame) % 3], Math.round(rb.x) - 8, rby - 8, true, 0);
+    drawSprite(RUN_FRAMES[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, rby - HALF, true, 0);
   }
 
   if (g.state === 'ready') {
