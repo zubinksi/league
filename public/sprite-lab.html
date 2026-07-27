@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sprite Lab</title>
+<style>
+  :root { --mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0c0d0f; color: #e9e9ec; font-family: var(--mono);
+    font-size: 11px; letter-spacing: 0.04em;
+    -webkit-user-select: none; user-select: none;
+  }
+  .bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 18px; border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .title { font-size: 12px; font-weight: 600; letter-spacing: 0.18em; text-transform: uppercase; }
+  .spacer { flex: 1; }
+  .lay { display: flex; gap: 22px; padding: 18px; align-items: flex-start; flex-wrap: wrap; }
+  .col { display: flex; flex-direction: column; gap: 12px; }
+  .lbl {
+    font-size: 9px; letter-spacing: 0.16em; color: #6d6f76; text-transform: uppercase;
+  }
+  button, select {
+    font: inherit; color: #e6e6ea; background: none; cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 6px;
+    padding: 5px 9px; letter-spacing: 0.1em; text-transform: uppercase; font-size: 9.5px;
+  }
+  button:hover { border-color: rgba(255,255,255,0.4); }
+  button.on { background: #e9e9ec; color: #0c0d0f; border-color: #e9e9ec; }
+  .row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  canvas { display: block; image-rendering: pixelated; }
+  #grid { border: 1px solid rgba(255,255,255,0.12); cursor: crosshair; touch-action: none; }
+  #preview, #strip { border: 1px solid rgba(255,255,255,0.08); }
+  .sw {
+    width: 34px; height: 26px; border: 1px solid rgba(255,255,255,0.16); border-radius: 5px;
+    display: flex; align-items: flex-end; justify-content: center; cursor: pointer;
+    font-size: 8px; color: #0c0d0f; font-weight: 700; padding-bottom: 1px;
+  }
+  .sw.sel { outline: 2px solid #e8c561; outline-offset: 1px; }
+  .sw.trans {
+    background-image:
+      linear-gradient(45deg, #2a2c31 25%, transparent 25%),
+      linear-gradient(-45deg, #2a2c31 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, #2a2c31 75%),
+      linear-gradient(-45deg, transparent 75%, #2a2c31 75%);
+    background-size: 8px 8px; background-position: 0 0, 0 4px, 4px -4px, -4px 0;
+    color: #8a8c92;
+  }
+  textarea {
+    width: 340px; height: 220px; background: #08090b; color: #c9c9cf;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 9px;
+    font-family: var(--mono); font-size: 10px; line-height: 1.45; resize: vertical;
+    user-select: text;
+  }
+  .hint { font-size: 9px; color: #55575e; letter-spacing: 0.1em; line-height: 1.7; }
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <span class="title">Sprite Lab</span>
+  <span class="lbl" id="dims">24 × 24</span>
+  <div class="spacer"></div>
+  <div class="row">
+    <button id="size24" class="on">24²</button>
+    <button id="size32">32²</button>
+    <button id="onion" class="on">Onion</button>
+    <button id="flip">Flip H</button>
+    <button id="undo">Undo</button>
+  </div>
+</div>
+
+<div class="lay">
+
+  <!-- editor -->
+  <div class="col">
+    <div class="lbl">Canvas — drag to paint · right-click erases</div>
+    <canvas id="grid"></canvas>
+    <div class="row">
+      <button data-nudge="-1,0">←</button>
+      <button data-nudge="1,0">→</button>
+      <button data-nudge="0,-1">↑</button>
+      <button data-nudge="0,1">↓</button>
+      <span class="lbl">nudge</span>
+    </div>
+    <div class="row" id="palette"></div>
+    <div class="hint">
+      keys 1–7 pick a color · z undo · f flip · [ ] change frame
+    </div>
+  </div>
+
+  <!-- frames + preview -->
+  <div class="col">
+    <div class="lbl">Frames</div>
+    <canvas id="strip"></canvas>
+    <div class="row">
+      <button id="addFrame">+ Frame</button>
+      <button id="dupFrame">Duplicate</button>
+      <button id="delFrame">Delete</button>
+    </div>
+
+    <div class="lbl" style="margin-top:8px">In-game preview — true scale, on the field</div>
+    <canvas id="preview"></canvas>
+    <div class="row">
+      <span class="lbl">speed</span>
+      <input id="speed" type="range" min="60" max="320" value="140" style="width:120px" />
+      <button id="withDef" class="on">Defender</button>
+      <button id="playing" class="on">Playing</button>
+    </div>
+  </div>
+
+  <!-- io -->
+  <div class="col">
+    <div class="lbl">Export / import — paste back to load</div>
+    <textarea id="io" spellcheck="false"></textarea>
+    <div class="row">
+      <button id="export">Export ▸</button>
+      <button id="import">◂ Import</button>
+      <button id="copy">Copy</button>
+    </div>
+    <div class="hint">
+      Paste any quoted-row block here and hit Import — it chunks rows into
+      frames by grid size. Export writes the current frames back out.
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Sprite Lab — draw the game's sprites and watch them run, in context.
+// Same palette and same render path as the game, so what you see is what ships.
+// ---------------------------------------------------------------------------
+
+const PAL = {
+  '.': null,
+  W: '#ffffff',
+  L: '#c9c9cf',
+  M: '#8f9199',
+  G: '#6d6f76',
+  D: '#26282d',
+  O: '#e8c561',
+};
+const ORDER = ['.', 'W', 'L', 'M', 'G', 'D', 'O'];
+
+// Seeded with the game's current run cycle so you start from what ships.
+const SEED_BODY = [
+  '........................',
+  '........................',
+  '.......DDDDDDDDDD.......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DWWWWWWWWWWD......',
+  '......DDWWWWWWWWDD......',
+  '........DLLLLLLD........',
+  '....DDWWWWWWWWWWWWDD....',
+  '..DDWWWWWWWWWWWWWWWWDD..',
+  '..DWWWWWWWWWWWWWWWWWWD..',
+  '..DWWWWWWWWWWWWWWWWWWD..',
+  '...DWWWWWWWWWWWWWWWWD...',
+  '...DWWWWWMMMMMMWWWWWD...',
+  '...DWWWWWMMMMMMWWWWWD...',
+  '...DWWWWWWWWWWWWWWWWD...',
+  '....DWWWWWWWWWWWWWWD....',
+  '.....DWWWWWWWWWWWWD.....',
+];
+const SEED_LEGS = [
+  ['.....DLLLD....DLLLD.....','.....DLLLD....DLLLD.....','....DLLLD......DLLLD....','....DLLD........DLLD....','....DDDD........DDDD....'],
+  ['.......DLLLDDLLLD.......','.......DLLLDDLLLD.......','.......DLLLDDLLLD.......','.......DLLDDDLLD........','.......DDDDDDDDD........'],
+  ['.....DLLLD....DLLLD.....','....DLLLD......DLLLD....','....DLLLD......DLLLD....','...DLLD..........DLLD...','...DDDD..........DDDD...'],
+];
+
+let SIZE = 24;
+let frames = SEED_LEGS.map((legs) => [...SEED_BODY, ...legs].map((r) => r.split('')));
+let cur = 0;
+let pen = 'W';
+let onion = true;
+let playing = true;
+let withDef = true;
+const undoStack = [];
+
+// ---- elements ------------------------------------------------------------
+const grid = document.getElementById('grid');
+const gx = grid.getContext('2d');
+const strip = document.getElementById('strip');
+const sx = strip.getContext('2d');
+const preview = document.getElementById('preview');
+const px = preview.getContext('2d');
+const io = document.getElementById('io');
+const dims = document.getElementById('dims');
+
+let CELL = 18;
+function layout() {
+  CELL = SIZE === 24 ? 18 : 14;
+  grid.width = SIZE * CELL; grid.height = SIZE * CELL;
+  strip.width = 300; strip.height = SIZE * 2 + 16;
+  preview.width = 300; preview.height = 300;
+  gx.imageSmoothingEnabled = false;
+  sx.imageSmoothingEnabled = false;
+  px.imageSmoothingEnabled = false;
+  dims.textContent = `${SIZE} × ${SIZE}`;
+}
+layout();
+
+// ---- editor --------------------------------------------------------------
+function snapshot() {
+  undoStack.push(JSON.stringify(frames));
+  if (undoStack.length > 60) undoStack.shift();
+}
+function undo() {
+  const prev = undoStack.pop();
+  if (prev) { frames = JSON.parse(prev); cur = Math.min(cur, frames.length - 1); }
+}
+
+function drawGrid() {
+  gx.fillStyle = '#0c0d0f';
+  gx.fillRect(0, 0, grid.width, grid.height);
+
+  // transparent checker
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      if ((x + y) % 2 === 0) {
+        gx.fillStyle = '#101114';
+        gx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+  }
+  // onion skin of the previous frame
+  if (onion && frames.length > 1) {
+    const prev = frames[(cur - 1 + frames.length) % frames.length];
+    gx.globalAlpha = 0.25;
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const c = PAL[prev[y]?.[x]];
+        if (!c) continue;
+        gx.fillStyle = c;
+        gx.fillRect(x * CELL, y * CELL, CELL, CELL);
+      }
+    }
+    gx.globalAlpha = 1;
+  }
+  // current frame
+  const f = frames[cur];
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const c = PAL[f[y]?.[x]];
+      if (!c) continue;
+      gx.fillStyle = c;
+      gx.fillRect(x * CELL, y * CELL, CELL, CELL);
+    }
+  }
+  // grid lines, heavier every 4 and on center
+  for (let i = 0; i <= SIZE; i++) {
+    gx.fillStyle = i % 4 === 0 ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.05)';
+    gx.fillRect(i * CELL, 0, 1, grid.height);
+    gx.fillRect(0, i * CELL, grid.width, 1);
+  }
+  gx.fillStyle = 'rgba(232,197,97,0.35)';
+  gx.fillRect((SIZE / 2) * CELL, 0, 1, grid.height);
+}
+
+let painting = false, eraseMode = false;
+function cellFrom(e) {
+  const r = grid.getBoundingClientRect();
+  return [
+    Math.floor(((e.clientX - r.left) / r.width) * SIZE),
+    Math.floor(((e.clientY - r.top) / r.height) * SIZE),
+  ];
+}
+function paint(e) {
+  const [x, y] = cellFrom(e);
+  if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return;
+  frames[cur][y][x] = eraseMode ? '.' : pen;
+}
+grid.addEventListener('contextmenu', (e) => e.preventDefault());
+grid.addEventListener('pointerdown', (e) => {
+  snapshot();
+  painting = true;
+  eraseMode = e.button === 2;
+  grid.setPointerCapture(e.pointerId);
+  paint(e);
+});
+grid.addEventListener('pointermove', (e) => { if (painting) paint(e); });
+grid.addEventListener('pointerup', () => { painting = false; });
+grid.addEventListener('pointercancel', () => { painting = false; });
+
+// ---- palette -------------------------------------------------------------
+const palEl = document.getElementById('palette');
+function buildPalette() {
+  palEl.innerHTML = '';
+  ORDER.forEach((ch, i) => {
+    const d = document.createElement('div');
+    d.className = 'sw' + (ch === '.' ? ' trans' : '') + (ch === pen ? ' sel' : '');
+    if (ch !== '.') d.style.background = PAL[ch];
+    d.textContent = ch === '.' ? '·' : ch;
+    d.title = `${ch} — key ${i + 1}`;
+    d.onclick = () => { pen = ch; buildPalette(); };
+    palEl.appendChild(d);
+  });
+}
+buildPalette();
+
+// ---- frame strip ---------------------------------------------------------
+function drawStrip() {
+  sx.fillStyle = '#08090b';
+  sx.fillRect(0, 0, strip.width, strip.height);
+  frames.forEach((f, i) => {
+    const ox = 8 + i * (SIZE * 2 + 10);
+    if (i === cur) {
+      sx.fillStyle = 'rgba(232,197,97,0.14)';
+      sx.fillRect(ox - 4, 4, SIZE * 2 + 8, SIZE * 2 + 8);
+    }
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const c = PAL[f[y]?.[x]];
+        if (!c) continue;
+        sx.fillStyle = c;
+        sx.fillRect(ox + x * 2, 8 + y * 2, 2, 2);
+      }
+    }
+  });
+}
+strip.addEventListener('pointerdown', (e) => {
+  const r = strip.getBoundingClientRect();
+  const i = Math.floor(((e.clientX - r.left) - 4) / (SIZE * 2 + 10));
+  if (i >= 0 && i < frames.length) cur = i;
+});
+
+// ---- in-game preview -----------------------------------------------------
+const PV_SCALE = 3;
+const PV_W = 100, PV_H = 100;          // logical
+let animT = 0, animFrame = 0;
+
+function drawPreview(dt) {
+  px.fillStyle = '#08090b';
+  px.fillRect(0, 0, preview.width, preview.height);
+  px.save();
+  px.scale(PV_SCALE, PV_SCALE);
+
+  // field context: a yard line and hash marks, same values as the game
+  px.fillStyle = 'rgba(255,255,255,0.20)';
+  px.fillRect(0, 74, PV_W, 1);
+  px.fillStyle = 'rgba(255,255,255,0.07)';
+  for (const yy of [26, 42, 58]) {
+    px.fillRect(PV_W / 2 - 14, yy, 5, 1);
+    px.fillRect(PV_W / 2 + 9, yy, 5, 1);
+  }
+
+  if (playing) {
+    animT += dt;
+    const ms = +document.getElementById('speed').value;
+    while (animT > ms) { animT -= ms; animFrame++; }
+  }
+  const f = frames[animFrame % frames.length];
+
+  const bx = Math.round(PV_W / 2 - SIZE / 2) - (withDef ? 14 : 0);
+  const by = Math.round(PV_H / 2 - SIZE / 2);
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const c = PAL[f[y]?.[x]];
+      if (!c) continue;
+      px.fillStyle = c;
+      px.fillRect(bx + x, by + y, 1, 1);
+    }
+  }
+  // a defender beside it, so contrast and scale are judged in context
+  if (withDef) {
+    const dxo = bx + SIZE + 6;
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const ch = f[y]?.[x];
+        if (!ch || ch === '.') continue;
+        px.fillStyle = ch === 'D' ? PAL.D : PAL.G;
+        px.fillRect(dxo + x, by + y, 1, 1);
+      }
+    }
+  }
+  px.restore();
+}
+
+// ---- io ------------------------------------------------------------------
+function exportText() {
+  const body = frames
+    .map((f) => '  [\n' + f.map((r) => `    '${r.join('')}',`).join('\n') + '\n  ],')
+    .join('\n');
+  io.value = `const FRAMES = [\n${body}\n];\n`;
+}
+function importText() {
+  const rows = [...io.value.matchAll(/'([^']*)'/g)].map((m) => m[1]).filter((r) => r.length);
+  if (!rows.length) { alert('No quoted rows found.'); return; }
+  const len = rows[0].length;
+  if (len !== SIZE) {
+    SIZE = len === 32 ? 32 : 24;
+    layout(); syncSizeButtons();
+  }
+  snapshot();
+  frames = [];
+  for (let i = 0; i < rows.length; i += SIZE) {
+    const chunk = rows.slice(i, i + SIZE);
+    while (chunk.length < SIZE) chunk.push('.'.repeat(SIZE));
+    frames.push(chunk.map((r) => r.padEnd(SIZE, '.').slice(0, SIZE).split('')));
+  }
+  cur = 0;
+}
+
+// ---- resize / transforms -------------------------------------------------
+function resizeTo(n) {
+  if (n === SIZE) return;
+  snapshot();
+  const off = Math.floor((n - SIZE) / 2);
+  frames = frames.map((f) => {
+    const out = Array.from({ length: n }, () => Array(n).fill('.'));
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const ny = y + off, nx = x + off;
+        if (ny >= 0 && ny < n && nx >= 0 && nx < n) out[ny][nx] = f[y][x];
+      }
+    }
+    return out;
+  });
+  SIZE = n;
+  layout();
+}
+function flipH() {
+  snapshot();
+  frames[cur] = frames[cur].map((r) => [...r].reverse());
+}
+function nudge(dx, dy) {
+  snapshot();
+  const f = frames[cur];
+  const out = Array.from({ length: SIZE }, () => Array(SIZE).fill('.'));
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const ny = y + dy, nx = x + dx;
+      if (ny >= 0 && ny < SIZE && nx >= 0 && nx < SIZE) out[ny][nx] = f[y][x];
+    }
+  }
+  frames[cur] = out;
+}
+
+// ---- wiring --------------------------------------------------------------
+const b = (id) => document.getElementById(id);
+function syncSizeButtons() {
+  b('size24').classList.toggle('on', SIZE === 24);
+  b('size32').classList.toggle('on', SIZE === 32);
+}
+b('size24').onclick = () => { resizeTo(24); syncSizeButtons(); };
+b('size32').onclick = () => { resizeTo(32); syncSizeButtons(); };
+b('onion').onclick = (e) => { onion = !onion; e.target.classList.toggle('on', onion); };
+b('flip').onclick = flipH;
+b('undo').onclick = undo;
+b('addFrame').onclick = () => {
+  snapshot();
+  frames.push(Array.from({ length: SIZE }, () => Array(SIZE).fill('.')));
+  cur = frames.length - 1;
+};
+b('dupFrame').onclick = () => {
+  snapshot();
+  frames.splice(cur + 1, 0, frames[cur].map((r) => [...r]));
+  cur++;
+};
+b('delFrame').onclick = () => {
+  if (frames.length <= 1) return;
+  snapshot();
+  frames.splice(cur, 1);
+  cur = Math.max(0, cur - 1);
+};
+b('export').onclick = exportText;
+b('import').onclick = importText;
+b('copy').onclick = () => { exportText(); io.select(); document.execCommand('copy'); };
+b('withDef').onclick = (e) => { withDef = !withDef; e.target.classList.toggle('on', withDef); };
+b('playing').onclick = (e) => { playing = !playing; e.target.classList.toggle('on', playing); };
+document.querySelectorAll('[data-nudge]').forEach((el) => {
+  const [dx, dy] = el.dataset.nudge.split(',').map(Number);
+  el.onclick = () => nudge(dx, dy);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'TEXTAREA') return;
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= ORDER.length) { pen = ORDER[n - 1]; buildPalette(); }
+  else if (e.key === 'z') undo();
+  else if (e.key === 'f') flipH();
+  else if (e.key === '[') cur = (cur - 1 + frames.length) % frames.length;
+  else if (e.key === ']') cur = (cur + 1) % frames.length;
+});
+
+// ---- loop ----------------------------------------------------------------
+let last = performance.now();
+function tick(now) {
+  const dt = now - last; last = now;
+  drawGrid(); drawStrip(); drawPreview(dt);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+exportText();
+</script>
+</body>
+</html>
