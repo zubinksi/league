@@ -10,6 +10,7 @@ import {
   useNflState,
   usePlayers,
   useRosters,
+  useSeasonAdp,
   useUsers,
   useWeekData,
 } from '../hooks/useLeagueData';
@@ -72,11 +73,12 @@ export function MatchupPage() {
   const [analysisOpen, setAnalysisOpen] = useState(false);
   const recValue = league.data?.scoring_settings?.rec ?? 0;
   const weeklyAll = useWeeklyStatsAll(league.data?.season, week, analysisOpen);
+  const seasonProj = useSeasonAdp(analysisOpen ? league.data?.season : undefined);
   const rosterRanks = useMemo(() => {
     if (!analysisOpen || weeklyAll.loading || !rosters.data || !players.data) return null;
-    return computeRosterRanks(rosters.data, players.data, weeklyAll.weekly, recValue);
+    return computeRosterRanks(rosters.data, players.data, weeklyAll.weekly, recValue, seasonProj.data);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisOpen, weeklyAll.loading, rosters.data, players.data, recValue]);
+  }, [analysisOpen, weeklyAll.loading, rosters.data, players.data, recValue, seasonProj.data]);
 
   // Scrub state + the time-indexed scoring model behind the chart. Recorded
   // snapshots are re-read each time the view updates (i.e. every poll) so

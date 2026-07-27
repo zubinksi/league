@@ -209,7 +209,9 @@ export function RosterAnalysisSheet({
                     </span>
                   </div>
                 ))}
-            <div className="ra-footnote">RANKED BY PPG · MIN 4 GP · LEAGUE SCORING · FULL ROSTER</div>
+            <div className="ra-footnote">
+              RANKED BY PPG · BLENDED WITH PROJECTION UNDER 4 GP · LEAGUE SCORING · FULL ROSTER
+            </div>
           </>
         )}
       </div>

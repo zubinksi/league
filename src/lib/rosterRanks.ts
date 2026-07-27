@@ -9,9 +9,15 @@ import { playerShortName } from '../api/players';
  * best remaining RB/WR/TE), then rank each slot across the league by points
  * per game in this league's scoring. Full roster is considered, not just
  * current starters — this analyzes what a team owns.
+ *
+ * Small samples are handled by shrinking toward the preseason projection:
+ *   blended = (actualPts + w · projPPG) / (gp + w),  w = max(0, BLEND_GP − gp)
+ * Week 1 rates players at their projected pace; from BLEND_GP games on the
+ * value is pure actual PPG.
  */
 
-export const MIN_GP = 4;
+export const BLEND_GP = 4;
+const PROJECTION_GAMES = 17;
 export const RADAR_SLOTS = ['QB', 'RB1', 'RB2', 'WR1', 'WR2', 'TE', 'FLX'] as const;
 export const ALL_SLOTS = [...RADAR_SLOTS, 'K', 'DEF'] as const;
 
@@ -19,6 +25,7 @@ export interface SlotRank {
   slot: string;
   playerId?: string;
   name?: string;
+  /** Blended PPG (pure actual PPG once gp ≥ BLEND_GP). */
   ppg?: number;
   gp?: number;
   /** 1 = best in league at this slot. Always assigned (empty slot ranks last). */
@@ -37,13 +44,8 @@ interface PoolPlayer {
   gp: number;
 }
 
-const eligible = (p: PoolPlayer) => p.ppg !== undefined && p.gp >= MIN_GP;
-
-/** Eligible players first (by PPG desc), then the rest by PPG desc. */
+/** By blended PPG desc; players with no data at all rank last. */
 function byStrength(a: PoolPlayer, b: PoolPlayer): number {
-  const ea = eligible(a) ? 1 : 0;
-  const eb = eligible(b) ? 1 : 0;
-  if (ea !== eb) return eb - ea;
   return (b.ppg ?? -1) - (a.ppg ?? -1);
 }
 
@@ -52,8 +54,10 @@ export function computeRosterRanks(
   players: PlayerMap,
   weeklyStats: (WeekStats | undefined)[],
   recValue: number,
+  seasonProjections?: WeekStats,
 ): { byRoster: Map<number, TeamRanks>; teams: number } {
-  // Per-player PPG over weeks they actually recorded stats.
+  // Per-player blended PPG: actual production shrunk toward the preseason
+  // projection while the sample is small.
   const production = new Map<string, { ppg: number; gp: number }>();
   const allIds = new Set<string>();
   for (const r of rosters) for (const id of r.players ?? []) allIds.add(id);
@@ -67,7 +71,12 @@ export function computeRosterRanks(
         gp++;
       }
     }
-    if (gp > 0) production.set(id, { ppg: total / gp, gp });
+    const projSeason = projectedPoints(seasonProjections?.[id], recValue);
+    const projPPG = projSeason !== undefined ? projSeason / PROJECTION_GAMES : undefined;
+    const w = projPPG !== undefined ? Math.max(0, BLEND_GP - gp) : 0;
+    if (gp + w > 0) {
+      production.set(id, { ppg: (total + w * (projPPG ?? 0)) / (gp + w), gp });
+    }
   }
 
   const byRoster = new Map<number, TeamRanks>();
@@ -116,16 +125,11 @@ export function computeRosterRanks(
     });
   }
 
-  // League rank per slot label: eligible production first, everyone ranked.
+  // League rank per slot label: blended PPG desc, empty slots last.
   for (const slot of ALL_SLOTS) {
     const entries = [...byRoster.values()]
       .map((t) => t.slots.find((s) => s.slot === slot)!)
-      .sort((a, b) => {
-        const ea = a.ppg !== undefined && (a.gp ?? 0) >= MIN_GP ? 1 : 0;
-        const eb = b.ppg !== undefined && (b.gp ?? 0) >= MIN_GP ? 1 : 0;
-        if (ea !== eb) return eb - ea;
-        return (b.ppg ?? -1) - (a.ppg ?? -1);
-      });
+      .sort((a, b) => (b.ppg ?? -1) - (a.ppg ?? -1));
     entries.forEach((e, i) => {
       e.rank = i + 1;
     });
