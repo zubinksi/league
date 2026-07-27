@@ -35,7 +35,7 @@
 <body>
 <div id="wrap">
   <canvas id="c"></canvas>
-  <div id="hint">swipe ← → · double-tap to juke · (desktop: arrows + space)</div>
+  <div id="hint">swipe ← → to cut · tap to spin · (desktop: arrows + space)</div>
 </div>
 <script>
 // ---------------------------------------------------------------------------
@@ -83,6 +83,48 @@ const LEGS = [
 ];
 const RUN_FRAMES = LEGS.map((legs) => [...BODY, ...legs]);
 
+// Spin move: the body actually rotates — back → side → front → side. Feet stay
+// planted (pivot), so we reuse the together-legs frame for all four.
+const BODY_SIDE = [
+  '................',
+  '......DDDD......',
+  '.....DWWWWD.....',
+  '.....DWWWWD.....',
+  '.....DWWWWD.....',
+  '......DLLD......',
+  '....DDWWWWDD....',
+  '...DWWWWWWWWD...',
+  '...DWWWWWWWWD...',
+  '...DWWWWWWWWD...',
+  '...DWWWWWWWD....',
+  '....DWWWWWD.....',
+  '.....DWWWWD.....',
+];
+const BODY_FRONT = [
+  '................',
+  '.....DDDDDD.....',
+  '....DWWWWWWD....',
+  '....DWDDDDWD....',
+  '....DWDDDDWD....',
+  '.....DLLLLD.....',
+  '...DDWWWWWWDD...',
+  '..DWWWWWWWWWWD..',
+  '..DWWWWWWWWWWD..',
+  '..DWWWWWWWWWWD..',
+  '..DWWWWWWWWWWD..',
+  '...DWWWWWWWWD...',
+  '....DWWWWWWD....',
+];
+const PIVOT = LEGS[1];
+const SPIN_FRAMES = [
+  [...BODY, ...PIVOT],
+  [...BODY_SIDE, ...PIVOT],
+  [...BODY_FRONT, ...PIVOT],
+  [...BODY_SIDE, ...PIVOT],
+];
+// The ball swings around the body as it turns.
+const SPIN_BALL_DX = [0, -5, -8, -3];
+
 // Defender: same silhouette, recessive gray so the carrier stays the hero.
 const toDefender = (rows) => rows.map((r) => r.replace(/W/g, 'G').replace(/L/g, 'G'));
 const DEF_FRAMES = RUN_FRAMES.map(toDefender);
@@ -121,7 +163,7 @@ window.addEventListener('resize', fit);
 fit();
 ctx.imageSmoothingEnabled = false;
 
-function drawSprite(rows, px, py, ballTint) {
+function drawSprite(rows, px, py, ballTint, ballDx) {
   for (let y = 0; y < rows.length; y++) {
     const row = rows[y];
     for (let x = 0; x < row.length; x++) {
@@ -133,7 +175,7 @@ function drawSprite(rows, px, py, ballTint) {
   }
   if (ballTint) {
     ctx.fillStyle = PAL.O;
-    for (const [y, x] of BALL) ctx.fillRect(px + x, py + y, 1, 1);
+    for (const [y, x] of BALL) ctx.fillRect(px + x + (ballDx || 0), py + y, 1, 1);
   }
 }
 
@@ -155,7 +197,7 @@ function reset() {
     });
   }
   game = {
-    rb: { x: VW / 2 - 8, y: WORLD_H - 26, vx: 0, frame: 0, juke: 0 },
+    rb: { x: VW / 2 - 8, y: WORLD_H - 26, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1, clean: false },
     defenders,
     startY: WORLD_H - 26,
     camY: 0,
@@ -167,20 +209,43 @@ function reset() {
 }
 reset();
 
-// ---- input: swipe + double tap -------------------------------------------
-let pStart = null, lastTap = 0;
+// ---- input: swipe to cut, tap to spin ------------------------------------
+// Tap is instant — no double-tap window to wait out, which is what made the
+// old juke feel unresponsive.
+const SPIN_LEN = 30;         // frames the spin lasts (~0.5s)
+const SPIN_CD = 34;          // cooldown after, so it can't be spammed
+const SPIN_IFRAMES = 8;      // last N frames of the spin are vulnerable again
+const CONTACT = 26;          // spin beats a defender only inside this range
+
+let pStart = null;
 function nudge(dir) {
   if (game.state === 'ready') game.state = 'live';
   if (game.state !== 'live') return;
   game.rb.vx += dir * 1.85;
 }
-function juke() {
-  if (game.state === 'ready') game.state = 'live';
-  if (game.state !== 'live' || game.rb.juke > 0) return;
-  game.rb.juke = 26;                                  // ~0.43s of juke
+function spin() {
+  if (game.state === 'ready') { game.state = 'live'; return; }
+  if (game.state !== 'live') return;
+  const rb = game.rb;
+  if (rb.spin > 0 || rb.spinCd > 0) return;
+
+  // Nearest live defender decides both the direction and whether it's clean.
+  let near = null, nd = Infinity;
   for (const d of game.defenders) {
-    const dx = d.x - game.rb.x, dy = d.y - game.rb.y;
-    if (Math.hypot(dx, dy) < 34) d.stumble = 70;      // beaten defenders stall
+    if (d.stumble > 0) continue;
+    const dist = Math.hypot(rb.x - d.x, rb.y - d.y);
+    if (dist < nd) { nd = dist; near = d; }
+  }
+  rb.spin = SPIN_LEN;
+  rb.spinCd = SPIN_LEN + SPIN_CD;
+  rb.clean = !!near && nd < CONTACT;                 // timed into contact
+  rb.spinDir = near && nd < 44 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
+
+  // Only a well-timed spin actually beats anybody.
+  if (rb.clean) {
+    for (const d of game.defenders) {
+      if (Math.hypot(rb.x - d.x, rb.y - d.y) < CONTACT + 6) d.stumble = 95;
+    }
   }
 }
 canvas.addEventListener('pointerdown', (e) => {
@@ -190,20 +255,14 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointerup', (e) => {
   if (!pStart) return;
   const dx = e.clientX - pStart.x;
-  const dt = performance.now() - pStart.t;
-  if (Math.abs(dx) > 18) {
-    nudge(Math.sign(dx));
-  } else if (dt < 260) {
-    const now = performance.now();
-    if (now - lastTap < 300) { juke(); lastTap = 0; }
-    else { lastTap = now; if (game.state === 'ready') game.state = 'live'; }
-  }
+  if (Math.abs(dx) > 18) nudge(Math.sign(dx));
+  else spin();
   pStart = null;
 });
 window.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowLeft') nudge(-1);
   else if (e.key === 'ArrowRight') nudge(1);
-  else if (e.code === 'Space') { e.preventDefault(); juke(); }
+  else if (e.code === 'Space') { e.preventDefault(); spin(); }
   else if (e.key === 'Enter' && game.state !== 'live') reset();
 });
 
@@ -216,12 +275,23 @@ function step() {
   if (g.state !== 'live') { if (g.state === 'ready') g.titleT++; return; }
 
   const rb = g.rb;
-  rb.y -= FORWARD;
-  rb.x += rb.vx;
-  rb.vx *= 0.86;                                    // easing, not stopping dead
+  if (rb.spinCd > 0) rb.spinCd--;
+
+  if (rb.spin > 0) {
+    // Spin arcs hard at first, then settles — and a whiffed spin bleeds
+    // forward momentum, which is what makes timing it a real decision.
+    const p = rb.spin / SPIN_LEN;
+    rb.x += rb.spinDir * 2.5 * p;
+    rb.y -= rb.clean ? FORWARD : FORWARD * 0.45;
+    rb.vx *= 0.7;
+    rb.spin--;
+  } else {
+    rb.y -= FORWARD;
+    rb.x += rb.vx;
+    rb.vx *= 0.86;                                  // easing, not stopping dead
+    rb.frame += 0.22;
+  }
   rb.x = Math.max(6, Math.min(VW - 22, rb.x));
-  rb.frame += 0.22;
-  if (rb.juke > 0) rb.juke--;
 
   for (const d of g.defenders) {
     if (d.stumble > 0) { d.stumble--; continue; }
@@ -231,7 +301,9 @@ function step() {
     d.x += (dx / dist) * d.lateral;
     d.y += (dy / dist) * d.speed;
     d.frame += 0.2;
-    if (Math.hypot(rb.x - d.x, rb.y - d.y) < 9) {
+    // Untouchable through the meat of the spin; vulnerable again as it ends.
+    const spinning = rb.spin > SPIN_IFRAMES;
+    if (!spinning && Math.hypot(rb.x - d.x, rb.y - d.y) < 9) {
       g.state = 'tackled';
       g.yards = Math.max(0, Math.round((g.startY - rb.y) / YARD));
     }
@@ -301,13 +373,19 @@ function render() {
 
   const rb = g.rb;
   const rby = Math.round(rb.y - g.camY);
-  // juke reads as a one-frame ghost trail, no particles, no color
-  if (rb.juke > 14) {
-    ctx.globalAlpha = 0.25;
-    drawSprite(RUN_FRAMES[1], Math.round(rb.x - rb.vx * 3) - 8, rby - 8, false);
+  if (rb.spin > 0) {
+    const step4 = Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 4)) % 4;
+    // one ghost frame trailing the arc — motion, not particles
+    ctx.globalAlpha = 0.22;
+    drawSprite(
+      SPIN_FRAMES[(step4 + 3) % 4],
+      Math.round(rb.x - rb.spinDir * 5) - 8, rby - 8, false,
+    );
     ctx.globalAlpha = 1;
+    drawSprite(SPIN_FRAMES[step4], Math.round(rb.x) - 8, rby - 8, true, SPIN_BALL_DX[step4]);
+  } else {
+    drawSprite(RUN_FRAMES[Math.floor(rb.frame) % 3], Math.round(rb.x) - 8, rby - 8, true, 0);
   }
-  drawSprite(RUN_FRAMES[Math.floor(rb.frame) % 3], Math.round(rb.x) - 8, rby - 8, true);
 
   if (g.state === 'ready') {
     const a = Math.min(1, g.titleT / 20);
