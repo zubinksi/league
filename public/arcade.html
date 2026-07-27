@@ -40,10 +40,12 @@
       rgba(8,9,11,0.9) 0%, rgba(8,9,11,0.74) 45%, rgba(8,9,11,0) 100%);
   }
   #overlay.show { opacity: 1; }
+  /* Pre-snap the scrim must sit behind the TEXT only — a tall gradient washes
+     out the downfield players, which is most of what you need to read. */
   #overlay.presnap {
     justify-content: flex-start; padding-top: 12px;
     background: linear-gradient(180deg,
-      rgba(8,9,11,0.94) 0%, rgba(8,9,11,0.88) 38%, rgba(8,9,11,0) 62%);
+      rgba(8,9,11,0.95) 0%, rgba(8,9,11,0.86) 16%, rgba(8,9,11,0) 30%);
   }
   #overlay.presnap #ttl { font-size: 15px; }
   #ttl { font-size: 18px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: #fbfbfd; }
@@ -119,7 +121,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade1';
+const BUILD = 'arcade2';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -127,7 +129,7 @@ const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
 const PAL = {
   '.': null,
   W: '#ffffff', L: '#c9c9cf', M: '#8f9199',
-  G: '#6d6f76', D: '#26282d', O: '#e8c561',
+  G: '#7d8089', D: '#26282d', O: '#e8c561',
 };
 
 // ---- seeded RNG ----------------------------------------------------------
