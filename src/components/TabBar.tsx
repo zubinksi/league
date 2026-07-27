@@ -5,6 +5,7 @@ const TABS = [
   { to: '/matchup', label: 'MATCHUP', end: false },
   { to: '/team', label: 'TEAM', end: false },
   { to: '/players', label: 'PLAYERS', end: false },
+  { to: '/arcade', label: 'ARCADE', end: false },
 ];
 
 export function TabBar() {

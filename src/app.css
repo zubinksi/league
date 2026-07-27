@@ -1207,3 +1207,17 @@
   color: var(--text-faint);
   text-align: center;
 }
+
+
+/* ---- arcade ---- */
+
+.arcade-page { padding-bottom: 0; }
+
+.arcade-frame {
+  display: block;
+  width: 100%;
+  /* fill what's left under the nav bar, above the tab bar */
+  height: calc(100dvh - 58px - 52px - env(safe-area-inset-bottom));
+  border: 0;
+  background: #08090b;
+}

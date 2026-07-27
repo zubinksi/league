@@ -8,20 +8,27 @@
   :root { --gold: #e8c561; --mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
-    touch-action: manipulation;           /* no double-tap zoom on stray taps */
-    height: 100%; background: #08090b; color: #e9e9ec; font-family: var(--mono);
+    /* The layout always fits the viewport, so nothing here needs to scroll or
+       zoom. touch-action:none is absolute where `manipulation` still let iOS
+       sneak a double-tap zoom through on fast repeated taps. */
+    touch-action: none;
+    height: 100%; overflow: hidden; background: #08090b; color: #e9e9ec;
+    font-family: var(--mono);
     -webkit-user-select: none; user-select: none; overscroll-behavior: none;
+    -webkit-text-size-adjust: 100%;
   }
   #wrap {
-    height: 100dvh; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 8px;
+    height: 100dvh; display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    align-items: center; justify-items: center; gap: 7px; padding: 8px 0;
   }
+  #stage { align-self: center; }
   /* game switcher */
   #tabs { display: flex; gap: 5px; }
   .tab {
     padding: 6px 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
     font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76;
-    cursor: pointer; touch-action: manipulation; transition: color .2s, border-color .2s;
+    cursor: pointer; transition: color .2s, border-color .2s;
   }
   .tab.on { color: #0c0d0f; background: #e9e9ec; border-color: #e9e9ec; }
   #stage { position: relative; }
@@ -67,6 +74,24 @@
     background: rgba(8,9,11,0.93); touch-action: manipulation;
   }
   #picker.show { display: flex; }
+  /* How-to-play, shown once you've picked and before the first snap. */
+  #brief {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px; padding: 0 18px;
+    background: rgba(8,9,11,0.94);
+  }
+  #brief.show { display: flex; }
+  #blist { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
+  .brow { display: flex; align-items: baseline; gap: 11px; }
+  .brow .bk {
+    min-width: 92px; text-align: right; font-size: 9px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--gold);
+  }
+  .brow .bv { font-size: 9.5px; letter-spacing: 0.1em; color: #b6b8be; }
+  .bstart {
+    margin-top: 12px; font-size: 8.5px; letter-spacing: 0.24em;
+    text-transform: uppercase; color: #4a4c52;
+  }
   .ptitle { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #fbfbfd; }
   .pfront { font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
   #plist { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 300px; }
@@ -108,6 +133,11 @@
       <div class="pfront" id="pfront"></div>
       <div id="plist"></div>
     </div>
+    <div id="brief">
+      <div class="ptitle" id="btitle"></div>
+      <div id="blist"></div>
+      <div class="bstart">tap to begin</div>
+    </div>
     <div id="overlay">
       <div id="ttl"></div><div id="sub"></div><div id="attrs"></div><div id="tap"></div>
     </div>
@@ -121,7 +151,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade2';
+const BUILD = 'arcade3';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -301,6 +331,8 @@ const RUN_GAME = (() => {
     key: 'run', label: 'Run', pickTitle: 'Choose your back',
     shell: FRONT.label, attrLabels: ['Speed', 'Power', 'Elusive'],
     hint: 'swipe ← → to cut · tap to spin',
+    controls: [['Swipe ← →', 'cut left or right'], ['Tap', 'spin — time it into contact'],
+               ['Goal', 'four downs to reach the end zone'], ['A score', 'earns a fresh, faster drive']],
     roster: (new URLSearchParams(location.search).get('run') || SAMPLE).split('|').map((r) => {
       const [name, tm, a, b, c] = r.split(':');
       return { name: (name || 'Back').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -359,7 +391,7 @@ const RUN_GAME = (() => {
       g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.62));
     },
     render() {
-      yardLines(g.camY, WORLD_H, DRIVE_YARDS, YARD);
+      yardLines(g.camY, WORLD_H, DRIVE_YARDS + 10, YARD);
       const ly = Math.round(g.los - g.camY);
       if (ly > -2 && ly < VH + 2) {
         ctx.fillStyle = 'rgba(232,197,97,0.45)';
@@ -427,7 +459,11 @@ const RUN_GAME = (() => {
 // GAME 2 — PASS
 // ===========================================================================
 const PASS_GAME = (() => {
-  const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0;
+  // The end zone is ten yards deep, so a red-zone throw still has somewhere to
+  // land. Previously the goal line sat one yard from the top of the world and
+  // short-field throws had nowhere to go.
+  const YARD = 16, EZ = 10 * YARD, DRIVE_YARDS = 21;
+  const WORLD_H = EZ + DRIVE_YARDS * YARD + 30;
   const SPR = 20, HALF = 10, CATCH_R = 11;
   const SAMPLE = 'J. Allen:BUF:0.96:0.68:0.88|C. Stroud:HOU:0.82:0.88:0.62|'
     + 'B. Purdy:SF:0.54:0.93:0.55|D. Maye:NE:0.78:0.72:0.74';
@@ -440,14 +476,25 @@ const PASS_GAME = (() => {
     post: (t, d) => (t < 66 ? { x: 0, y: -t * 0.92 } : { x: d * (t - 66) * 0.6, y: -(61 + (t - 66) * 0.78) }),
     curl: (t) => (t < 58 ? { x: 0, y: -t * 0.88 } : { x: 0, y: -(51 - (t - 58) * 0.3) }),
   };
-  const KEYS = Object.keys(ROUTES);
+  // Near the goal line the field compresses, so the concepts do too: quick
+  // breaks and horizontal-working routes instead of vertical stems.
+  const RED = {
+    quick: (t, d) => (t < 16 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 16) * 0.86, y: -(14 + (t - 16) * 0.44) }),
+    fade: (t, d) => ({ x: d * t * 0.36, y: -t * 0.74 }),
+    drag: (t, d) => (t < 12 ? { x: 0, y: -t * 0.8 } : { x: d * (t - 12) * 1.06, y: -(10 + (t - 12) * 0.14) }),
+    flat: (t, d) => (t < 8 ? { x: 0, y: -t * 0.66 } : { x: d * (t - 8) * 1.18, y: -(5 + (t - 8) * 0.08) }),
+  };
+  const KEYS = Object.keys(ROUTES), RED_KEYS = Object.keys(RED);
+  const BOOK = (r) => (r.red ? RED : ROUTES);
   let A = {}, g = null;
-  const at = (r, t) => { const o = ROUTES[r.route](Math.max(0, t), r.dir); return { x: r.sx + o.x, y: r.sy + o.y }; };
+  const at = (r, t) => { const o = BOOK(r)[r.route](Math.max(0, t), r.dir); return { x: r.sx + o.x, y: r.sy + o.y }; };
 
   return {
     key: 'pass', label: 'Pass', pickTitle: 'Choose your passer',
     shell: SHELL.label, attrLabels: ['Arm', 'Accuracy', 'Poise'],
     hint: 'tap a receiver to throw',
+    controls: [['Tap a receiver', 'throw — the ball leads them'], ['Wait', 'routes need time to break open'],
+               ['Pressure', 'the rush gets home in about three seconds'], ['Careful', 'an interception ends the run']],
     roster: (new URLSearchParams(location.search).get('pass') || SAMPLE).split('|').map((r) => {
       const [name, tm, a, b, c] = r.split(':');
       return { name: (name || 'Passer').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -465,9 +512,12 @@ const PASS_GAME = (() => {
     },
     setup() {
       const rnd = g.rnd;
+      const red = (g.los - EZ) < 13 * YARD;          // goal-to-go territory
       g.receivers = [30, 90, 150].map((x, i) => ({
         id: i, x, y: g.los - 8, sx: x, sy: g.los - 8, dir: x < VW / 2 ? 1 : -1,
-        route: KEYS[Math.floor(rnd() * KEYS.length)], hist: [], frame: rnd() * 3,
+        red,
+        route: (red ? RED_KEYS : KEYS)[Math.floor(rnd() * (red ? RED_KEYS : KEYS).length)],
+        hist: [], frame: rnd() * 3,
         db: { x: x + (rnd() * 8 - 4), y: g.los - 22 - rnd() * 8, frame: rnd() * 3 },
       }));
       g.rushers = [{ x: VW / 2 - 34, y: g.los - 34, frame: 0 }, { x: VW / 2 + 34, y: g.los - 34, frame: 1 }];
@@ -482,7 +532,7 @@ const PASS_GAME = (() => {
       if (kind === 'td') { g.tds++; g.comp++; g.drive++; g.down = 1; g.los = WORLD_H - 30; g.state = 'td'; }
       else if (kind === 'int') g.state = 'gameover';
       else {
-        if (kind === 'complete') { g.comp++; g.los = Math.max(EZ + 20, g.los - gain); }
+        if (kind === 'complete') { g.comp++; g.los = Math.max(EZ + 12, g.los - gain); }
         if (kind === 'sack') g.los = Math.min(WORLD_H - 12, g.los + 3 * YARD);
         g.down++; g.state = g.down > 4 ? 'gameover' : 'result';
       }
@@ -501,7 +551,7 @@ const PASS_GAME = (() => {
       g.t++;
       for (const r of g.receivers) {
         const p = at(r, g.t);
-        r.x = Math.max(10, Math.min(VW - 10, p.x)); r.y = Math.max(EZ + 8, p.y);
+        r.x = Math.max(10, Math.min(VW - 10, p.x)); r.y = Math.max(14, p.y);
         r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
         if (r.hist.length > 60) r.hist.shift();
         const lag = r.hist[Math.max(0, r.hist.length - 1 - SHELL.lag)] || p;
@@ -529,21 +579,23 @@ const PASS_GAME = (() => {
       const gain = g.los - b.y;
       g.ball = null;
       if (recD < CATCH_R && dbD > recD + 3) {
-        if (b.y <= EZ + 16) this.end('td', gain); else this.end('complete', gain);
+        if (b.y <= EZ) this.end('td', gain); else this.end('complete', gain);
       } else if (dbD < CATCH_R && dbD < recD) {
         this.end(g.roll() < 0.62 ? 'int' : 'incomplete', 0);
       } else this.end('incomplete', 0);
     },
     render() {
-      yardLines(g.camY, WORLD_H, DRIVE_YARDS, YARD);
+      yardLines(g.camY, WORLD_H, DRIVE_YARDS + 10, YARD);
       const ly = Math.round(g.los - g.camY);
       if (ly > -2 && ly < VH + 2) {
         ctx.fillStyle = 'rgba(232,197,97,0.45)';
         for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
       }
-      const gy = Math.round(EZ + 16 - g.camY);
-      if (gy > -SPR && gy < VH + SPR) {
+      const gy = Math.round(EZ - g.camY);
+      if (gy > -VH && gy < VH + SPR) {
         ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
+        ctx.fillStyle = 'rgba(255,255,255,0.030)';
+        ctx.fillRect(0, Math.max(0, gy - EZ), VW, Math.min(EZ, gy));
       }
       // routes: a playbook pre-snap, a trace once live
       const pre = g.state === 'ready';
@@ -585,13 +637,13 @@ const PASS_GAME = (() => {
       if (best && bd < 34) this.throwTo(best);
     },
     status() {
-      const t = Math.max(1, Math.round((g.los - EZ - 16) / YARD));
+      const t = Math.max(1, Math.round((g.los - EZ) / YARD));
       const pct = g.att ? Math.round((g.comp / g.att) * 100) : 0;
       return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
         + `<span><b>${g.comp}/${g.att}</b> ${pct}%</span><span class="sc">${g.tds} TD</span>`;
     },
     overlay(pick) {
-      const t = Math.max(1, Math.round((g.los - EZ - 16) / YARD));
+      const t = Math.max(1, Math.round((g.los - EZ) / YARD));
       if (g.state === 'live' || g.state === 'ball') return null;
       if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${ORD[g.down]} & ${t}`, tap: 'tap to snap', attrs: g.drive === 0 && g.down === 1, presnap: true };
       if (g.state === 'result') {
@@ -626,6 +678,8 @@ const KICK_GAME = (() => {
     key: 'kick', label: 'Kick', pickTitle: 'Choose your kicker',
     shell: WIND_LABEL, attrLabels: ['Leg', 'Accuracy', 'Nerve'],
     hint: 'tap to set power · tap to set aim',
+    controls: [['Tap', 'start the power meter'], ['Tap again', 'lock power — longer kicks need more'],
+               ['Third tap', 'lock aim as the marker sweeps'], ['Every make', 'moves you back five yards']],
     roster: (new URLSearchParams(location.search).get('kick') || SAMPLE).split('|').map((r) => {
       const [name, tm, a, b, c] = r.split(':');
       return { name: (name || 'Kicker').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -772,6 +826,10 @@ let pick = null;
 const el = (id) => document.getElementById(id);
 const tabs = el('tabs'), picker = el('picker'), plist = el('plist');
 const overlay = el('overlay'), ttl = el('ttl'), sub = el('sub'), tapEl = el('tap'), attrs = el('attrs');
+const brief = el('brief'), blist = el('blist');
+let briefing = false;
+
+brief.addEventListener('pointerup', () => { briefing = false; paintUI(); });
 
 GAMES.forEach((game) => {
   const t = document.createElement('div');
@@ -797,13 +855,23 @@ function buildPicker() {
       + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
-    d.onclick = () => { pick = p; active.choose(p); paintUI(); };
+    d.onclick = () => {
+      pick = p;
+      active.choose(p);
+      briefing = true;                        // show how-to-play before the first snap
+      el('btitle').textContent = `${active.label} — how to play`;
+      blist.innerHTML = active.controls
+        .map(([k, v]) => `<div class="brow"><span class="bk">${k}</span><span class="bv">${v}</span></div>`)
+        .join('');
+      paintUI();
+    };
     plist.appendChild(d);
   });
 }
 function select(game) {
   active = game;
   pick = null;
+  briefing = false;
   active.reset();
   [...tabs.children].forEach((t, i) => t.classList.toggle('on', GAMES[i] === game));
   el('hint').textContent = game.hint;
@@ -815,6 +883,12 @@ function paintUI() {
   const g = active;
   const inSelect = g.state === 'select';
   picker.classList.toggle('show', inSelect);
+  brief.classList.toggle('show', briefing && !inSelect);
+  if (briefing && !inSelect) {
+    overlay.classList.remove('show'); attrs.classList.remove('show');
+    el('status').innerHTML = g.status();
+    return;
+  }
   el('status').innerHTML = inSelect ? '' : g.status();
   if (inSelect) { overlay.classList.remove('show'); attrs.classList.remove('show'); return; }
 
@@ -846,12 +920,14 @@ function logical(e) {
 canvas.addEventListener('pointerdown', (e) => { pStart = { x: e.clientX, y: e.clientY }; });
 canvas.addEventListener('pointerup', (e) => {
   if (active.state === 'select') { pStart = null; return; }
+  if (briefing) { briefing = false; pStart = null; paintUI(); return; }
   const dx = pStart ? e.clientX - pStart.x : 0;
   active.onUp(logical(e), dx);
   pStart = null;
   paintUI();
 });
 window.addEventListener('keydown', (e) => {
+  if (briefing) { briefing = false; paintUI(); return; }
   if (active.state === 'select') {
     const n = parseInt(e.key, 10);
     if (n >= 1 && n <= active.roster.length) { pick = active.roster[n - 1]; active.choose(pick); paintUI(); }
