@@ -1163,8 +1163,32 @@
   color: var(--accent-live);
 }
 
-.ra-home {
+.ra-name-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px 2px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.ra-name-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ra-name-row .home {
+  color: var(--accent-live);
+}
+
+.ra-name-row .away {
   color: var(--text-mid);
+  text-align: right;
 }
 
 .ra-footnote {

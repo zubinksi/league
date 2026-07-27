@@ -59,9 +59,16 @@ function polygonPath(ranks: (number | undefined)[], teams: number): string {
 
 export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount: number }) {
   const n = RADAR_SLOTS.length;
+  const dual = teams.length === 2;
   const ranksFor = (t: TeamRanks) =>
     RADAR_SLOTS.map((slot) => t.slots.find((s) => s.slot === slot)?.rank);
   const medianFrac = (teamsCount + 1) / (2 * teamsCount);
+
+  // Dual mode keys the first (home) team to gold so the two webs read apart;
+  // single mode stays monochrome.
+  const homeStroke = dual ? 'var(--accent-live)' : 'var(--line-home)';
+  const homeFill = dual ? 'rgba(232,197,97,0.10)' : 'var(--gap-fill)';
+  const homeDot = dual ? '#e8c561' : '#ffffff';
 
   return (
     <svg className="radar" viewBox="0 0 300 280" aria-hidden="true">
@@ -79,17 +86,22 @@ export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount
       {teams[1] && (
         <path
           d={polygonPath(ranksFor(teams[1]), teamsCount)}
-          fill="rgba(235,235,240,0.05)"
-          stroke="var(--line-away)"
+          fill="rgba(255,255,255,0.05)"
+          stroke="rgba(255,255,255,0.85)"
           strokeWidth="1"
           strokeLinejoin="round"
         />
       )}
+      {teams[1] &&
+        ranksFor(teams[1]).map((rank, i) => {
+          const [x, y] = vertex(i, n, rankFrac(rank, teamsCount));
+          return <circle key={`a${i}`} cx={x} cy={y} r="1.8" fill="rgba(255,255,255,0.85)" />;
+        })}
       {teams[0] && (
         <path
           d={polygonPath(ranksFor(teams[0]), teamsCount)}
-          fill="var(--gap-fill)"
-          stroke="var(--line-home)"
+          fill={homeFill}
+          stroke={homeStroke}
           strokeWidth="1"
           strokeLinejoin="round"
         />
@@ -97,7 +109,7 @@ export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount
       {teams[0] &&
         ranksFor(teams[0]).map((rank, i) => {
           const [x, y] = vertex(i, n, rankFrac(rank, teamsCount));
-          return <circle key={i} cx={x} cy={y} r="2" fill="#ffffff" />;
+          return <circle key={i} cx={x} cy={y} r="2" fill={homeDot} />;
         })}
 
       {RADAR_SLOTS.map((slot, i) => {
@@ -151,15 +163,7 @@ export function RosterAnalysisSheet({
         <div className="sheet-grabber" />
         <div className="sheet-header">
           <div className="sheet-name">Roster Analysis</div>
-          <div className="sheet-sub">
-            {dual ? (
-              <>
-                <span className="ra-home">{labels[0]}</span> · <span>{labels[1]}</span>
-              </>
-            ) : (
-              labels[0]
-            )}
-          </div>
+          {!dual && <div className="sheet-sub">{labels[0]}</div>}
         </div>
 
         {loading || present.length === 0 ? (
@@ -172,6 +176,12 @@ export function RosterAnalysisSheet({
               <span>SLOT RANKS</span>
               <span>{dual ? '' : 'PPG'}</span>
             </div>
+            {dual && (
+              <div className="ra-name-row">
+                <span className="home">{labels[0]}</span>
+                <span className="away">{labels[1]}</span>
+              </div>
+            )}
             {dual
               ? present[0].slots.map((home, i) => {
                   const away = present[1].slots[i];
