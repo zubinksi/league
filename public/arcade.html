@@ -1,0 +1,880 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Arcade — mini games</title>
+<style>
+  :root { --gold: #e8c561; --mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    touch-action: manipulation;           /* no double-tap zoom on stray taps */
+    height: 100%; background: #08090b; color: #e9e9ec; font-family: var(--mono);
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none;
+  }
+  #wrap {
+    height: 100dvh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+  }
+  /* game switcher */
+  #tabs { display: flex; gap: 5px; }
+  .tab {
+    padding: 6px 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76;
+    cursor: pointer; touch-action: manipulation; transition: color .2s, border-color .2s;
+  }
+  .tab.on { color: #0c0d0f; background: #e9e9ec; border-color: #e9e9ec; }
+  #stage { position: relative; }
+  canvas {
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    touch-action: none;                   /* the field owns every gesture */
+    background: #08090b; border: 1px solid rgba(255,255,255,0.08); display: block;
+  }
+  /* Type lives in the DOM so it renders at device resolution, not upscaled. */
+  #overlay {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 8px;
+    pointer-events: none; text-align: center; padding: 0 18px;
+    opacity: 0; transition: opacity .24s ease;
+    background: radial-gradient(ellipse 72% 30% at 50% 50%,
+      rgba(8,9,11,0.9) 0%, rgba(8,9,11,0.74) 45%, rgba(8,9,11,0) 100%);
+  }
+  #overlay.show { opacity: 1; }
+  #overlay.presnap {
+    justify-content: flex-start; padding-top: 12px;
+    background: linear-gradient(180deg,
+      rgba(8,9,11,0.94) 0%, rgba(8,9,11,0.88) 38%, rgba(8,9,11,0) 62%);
+  }
+  #overlay.presnap #ttl { font-size: 15px; }
+  #ttl { font-size: 18px; font-weight: 600; letter-spacing: 0.2em; text-transform: uppercase; color: #fbfbfd; }
+  #ttl.gold { color: var(--gold); }
+  #ttl.bad { color: #c96f6f; }
+  #sub { font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: #8a8c92; }
+  #tap { font-size: 8.5px; letter-spacing: 0.24em; text-transform: uppercase; color: #4a4c52; margin-top: 5px; }
+  #attrs { display: none; flex-direction: column; gap: 5px; margin-top: 9px; }
+  #attrs.show { display: flex; }
+  .attr { display: flex; align-items: center; gap: 9px; }
+  .attr .k { width: 62px; text-align: right; font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76; }
+  .attr .bar { display: flex; gap: 2px; }
+  .attr .seg { width: 7px; height: 7px; background: rgba(255,255,255,0.10); }
+  .attr .seg.on { background: #e9e9ec; }
+
+  #picker {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 7px; padding: 0 14px;
+    background: rgba(8,9,11,0.93); touch-action: manipulation;
+  }
+  #picker.show { display: flex; }
+  .ptitle { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #fbfbfd; }
+  .pfront { font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
+  #plist { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 300px; }
+  .pick {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 11px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .pick:hover, .pick:active { border-color: rgba(255,255,255,0.42); }
+  .pick .pn { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #ececed; }
+  .pick .pt { display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 4px; }
+  .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+  .pick .pbar { display: flex; gap: 1px; }
+  .pick .pseg { width: 5px; height: 4px; background: rgba(255,255,255,0.10); }
+  .pick .pseg.on { background: #c9c9cf; }
+
+  #status {
+    display: flex; gap: 15px; align-items: baseline;
+    font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76;
+  }
+  #status b { color: #c9c9cf; font-weight: 600; }
+  #status .sc { color: var(--gold); font-weight: 600; }
+  #foot {
+    display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; justify-content: center;
+    font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase;
+  }
+  #hint { color: #46484e; }
+  #build { color: #2e3035; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <div id="tabs"></div>
+  <div id="status"></div>
+  <div id="stage">
+    <canvas id="c"></canvas>
+    <div id="picker">
+      <div class="ptitle" id="ptitle"></div>
+      <div class="pfront" id="pfront"></div>
+      <div id="plist"></div>
+    </div>
+    <div id="overlay">
+      <div id="ttl"></div><div id="sub"></div><div id="attrs"></div><div id="tap"></div>
+    </div>
+  </div>
+  <div id="foot"><span id="hint"></span><span id="build"></span></div>
+</div>
+<script>
+// ===========================================================================
+// ARCADE — three mini games on one page.
+// Shared: palette, sprites, seeded RNG, canvas fit, overlay/picker chrome.
+// Each game supplies its own sim, render, input, and copy.
+// ===========================================================================
+
+const BUILD = 'arcade1';
+const VW = 180;
+let VH = 260;
+const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
+
+const PAL = {
+  '.': null,
+  W: '#ffffff', L: '#c9c9cf', M: '#8f9199',
+  G: '#6d6f76', D: '#26282d', O: '#e8c561',
+};
+
+// ---- seeded RNG ----------------------------------------------------------
+function hashSeed(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0.5));
+
+// ---- sprites -------------------------------------------------------------
+const BODY32 = [
+  '................................','................................',
+  '..........DDDDDDDDDDDD..........','.........DWWWWWWWWWWWWD.........',
+  '.........DWWWWWWWWWWWWD.........','.........DWWWMMMMMMWWWD.........',
+  '.........DWWWMMMMMMWWWD.........','.........DWWWWWWWWWWWWD.........',
+  '.........DWWWWWWWWWWWWD.........','.........DDWWWWWWWWWWDD.........',
+  '...........DLLLLLLLLD...........','......DDDWWWWWWWWWWWWWWDDD......',
+  '...DDDWWWWWWWWWWWWWWWWWWWWDDD...','...DWWWWWWWWWWWWWWWWWWWWWWWWD...',
+  '...DWWWWWWWWWWWWWWWWWWWWWWWWD...','....DWWWWWWWWWWWWWWWWWWWWWWD....',
+  '....DMWWWWWWWWWWWWWWWWWWWWMD....','.....DWWWWWWWWWWWWWWWWWWWWD.....',
+  '.....DWWWWWWMMMMMMMMWWWWWWD.....','.....DWWWWWWMMMMMMMMWWWWWWD.....',
+  '.....DWWWWWWMMMMMMMMWWWWWWD.....','.....DWWWWWWWWWWWWWWWWWWWWD.....',
+  '......DWWWWWWWWWWWWWWWWWWD......','......DWWWWWWWWWWWWWWWWWWD......',
+  '.......DWWWWWWWWWWWWWWWWD.......','........DWWWWWWWWWWWWWWD........',
+];
+const LEGS32 = [
+  ['.......DLLLLD......DLLLLD.......','.......DLLLLD......DLLLLD.......','......DLLLLD........DLLLLD......','......DLLLD..........DLLLD......','.....DLLLD............DLLLD.....','.....DDDDD............DDDDD.....'],
+  ['..........DLLLLDDLLLLD..........','..........DLLLLDDLLLLD..........','..........DLLLLDDLLLLD..........','..........DLLLDDDLLLD...........','..........DLLDDDDDLLD...........','..........DDDDDDDDDDD...........'],
+  ['.......DLLLLD......DLLLLD.......','......DLLLLD........DLLLLD......','......DLLLLD........DLLLLD......','.....DLLLD............DLLLD.....','....DLLLD..............DLLLD....','....DDDDD..............DDDDD....'],
+];
+const SIDE32 = [
+  '................................','................................',
+  '...........DDDDDDDDDD...........','..........DWWWWWWWWWWD..........',
+  '..........DWWWWWWWWWWD..........','..........DWWWMMMMWWWD..........',
+  '..........DWWWMMMMWWWD..........','..........DWWWWWWWWWWD..........',
+  '..........DWWWWWWWWWWD..........','..........DDWWWWWWWWDD..........',
+  '............DLLLLLLD............','........DDDWWWWWWWWWWDDD........',
+  '.......DWWWWWWWWWWWWWWWWD.......','.......DWWWWWWWWWWWWWWWWD.......',
+  '.......DWWWWWWWWWWWWWWWWD.......','........DWWWWWWWWWWWWWWD........',
+  '........DMWWWWWWWWWWWWMD........','........DWWWWWWWWWWWWWWD........',
+  '........DWWWWWMMMMWWWWWD........','........DWWWWWMMMMWWWWWD........',
+  '........DWWWWWMMMMWWWWWD........','........DWWWWWWWWWWWWWWD........',
+  '.........DWWWWWWWWWWWWD.........','.........DWWWWWWWWWWWWD.........',
+  '..........DWWWWWWWWWWD..........','..........DWWWWWWWWWWD..........',
+];
+const FRONT32 = [
+  '................................','................................',
+  '..........DDDDDDDDDDDD..........','.........DWWWWWWWWWWWWD.........',
+  '.........DWWWWWWWWWWWWD.........','.........DWWDDDDDDDDWWD.........',
+  '.........DWWDDDDDDDDWWD.........','.........DWWDDDDDDDDWWD.........',
+  '.........DWWWWWWWWWWWWD.........','.........DDWWWWWWWWWWDD.........',
+  '...........DLLLLLLLLD...........','......DDDWWWWWWWWWWWWWWDDD......',
+  '...DDDWWWWWWWWWWWWWWWWWWWWDDD...','...DWWWWWWWWWWWWWWWWWWWWWWWWD...',
+  '...DWWWWWWWWWWWWWWWWWWWWWWWWD...','....DWWWWWWWWWWWWWWWWWWWWWWD....',
+  '....DMWWWWWWWWWWWWWWWWWWWWMD....','.....DWWWWWWWWWWWWWWWWWWWWD.....',
+  '.....DWWWWWWMMMMMMMMWWWWWWD.....','.....DWWWWWWMMMMMMMMWWWWWWD.....',
+  '.....DWWWWWWMMMMMMMMWWWWWWD.....','.....DWWWWWWWWWWWWWWWWWWWWD.....',
+  '......DWWWWWWWWWWWWWWWWWWD......','......DWWWWWWWWWWWWWWWWWWD......',
+  '.......DWWWWWWWWWWWWWWWWD.......','........DWWWWWWWWWWWWWWD........',
+];
+const RUN32 = LEGS32.map((l) => [...BODY32, ...l]);
+const DEF32 = RUN32.map((f) => f.map((r) => r.replace(/[WLM]/g, 'G')));
+const PIVOT32 = LEGS32[1];
+const SPIN32 = [[...BODY32, ...PIVOT32], [...SIDE32, ...PIVOT32], [...FRONT32, ...PIVOT32], [...SIDE32, ...PIVOT32]];
+const SPIN_BALL_DX = [0, -9, -17, -7];
+const BALL32 = [[18,27],[18,28],[19,26],[19,27],[19,28],[19,29],[20,26],[20,27],[20,28],[20,29],[21,27],[21,28]];
+
+const BODY20 = [
+  '....................','....................',
+  '......DDDDDDDD......','.....DWWWWWWWWD.....','.....DWWWWWWWWD.....',
+  '.....DWWMMMMWWD.....','.....DDWWWWWWDD.....','.......DLLLLD.......',
+  '...DDWWWWWWWWWWDD...','..DWWWWWWWWWWWWWWD..','..DWWWWWWWWWWWWWWD..',
+  '...DWWWWWWWWWWWWD...','...DWWWWMMMMWWWWD...','...DWWWWMMMMWWWWD...',
+  '....DWWWWWWWWWWD....','.....DWWWWWWWWD.....',
+];
+const LEGS20 = [
+  ['....DLLD....DLLD....','....DLLD....DLLD....','...DLLD......DLLD...','...DDD........DDD...'],
+  ['......DLLDDLLD......','......DLLDDLLD......','......DLLDDLLD......','......DDDDDDD.......'],
+  ['....DLLD....DLLD....','...DLLD......DLLD...','...DLLD......DLLD...','..DDD..........DDD..'],
+];
+const RUN20 = LEGS20.map((l) => [...BODY20, ...l]);
+const DEF20 = RUN20.map((f) => f.map((r) => r.replace(/[WLM]/g, 'G')));
+
+// ---- canvas --------------------------------------------------------------
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const CHROME = 96;
+function fit() {
+  const availW = Math.min(window.innerWidth - 12, 520);
+  const availH = Math.max(220, window.innerHeight - CHROME);
+  const scale = Math.max(1, Math.min(5, Math.floor(availW / VW)));
+  VH = Math.max(180, Math.min(340, Math.floor(availH / scale)));
+  canvas.width = VW; canvas.height = VH;
+  canvas.style.width = VW * scale + 'px';
+  canvas.style.height = VH * scale + 'px';
+  ctx.imageSmoothingEnabled = false;
+}
+window.addEventListener('resize', fit);
+fit();
+
+function sprite(rows, px, py, ballPts, ballDx) {
+  for (let y = 0; y < rows.length; y++) {
+    const row = rows[y];
+    for (let x = 0; x < row.length; x++) {
+      const c = PAL[row[x]];
+      if (!c) continue;
+      ctx.fillStyle = c; ctx.fillRect(px + x, py + y, 1, 1);
+    }
+  }
+  if (ballPts) {
+    ctx.fillStyle = PAL.O;
+    for (const [y, x] of ballPts) ctx.fillRect(px + x + (ballDx || 0), py + y, 1, 1);
+  }
+}
+function yardLines(camY, worldH, yards, yard) {
+  ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
+  for (let i = 0; i <= yards; i++) {
+    const sy = Math.round(worldH - i * yard - camY);
+    if (sy < -2 || sy > VH + 2) continue;
+    if (i % 5 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(0, sy, VW, 1); }
+    else {
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(VW / 2 - 14, sy, 5, 1); ctx.fillRect(VW / 2 + 9, sy, 5, 1);
+    }
+  }
+  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillRect(2, 0, 1, VH); ctx.fillRect(VW - 3, 0, 1, VH);
+}
+
+// ===========================================================================
+// GAME 1 — RUN
+// ===========================================================================
+const RUN_GAME = (() => {
+  const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0;
+  const SPR = 32, HALF = 16;
+  const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IF = 8, TACKLE_R = 17;
+  const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
+    + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
+  const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
+    ? { label: 'Stacked front', spread: 0.64 } : { label: 'Spread front', spread: 1.32 };
+
+  let A = {}, g = null;
+  function setAttrs(p) {
+    A = {
+      FWD: 0.82 + 0.24 * p.a, BREAK: 0.05 + 0.30 * p.b,
+      CONTACT: 32 + 18 * p.c, STUMBLE: 78 + 46 * p.c,
+    };
+  }
+  function defenders(rnd, drive, los) {
+    const ramp = 1 + drive * 0.07, n = drive >= 2 ? 4 : 3, out = [];
+    for (let i = 0; i < n; i++) out.push({
+      x: VW / 2 + (i - (n - 1) / 2) * (52 * FRONT.spread) + Math.floor(rnd() * 14) - 7,
+      y: los - 74 - i * 58 - Math.floor(rnd() * 26),
+      speed: (0.58 + rnd() * 0.28) * ramp, lateral: (0.46 + rnd() * 0.32) * ramp,
+      stumble: 0, frame: rnd() * 3,
+    });
+    return out;
+  }
+  return {
+    key: 'run', label: 'Run', pickTitle: 'Choose your back',
+    shell: FRONT.label, attrLabels: ['Speed', 'Power', 'Elusive'],
+    hint: 'swipe ← → to cut · tap to spin',
+    roster: (new URLSearchParams(location.search).get('run') || SAMPLE).split('|').map((r) => {
+      const [name, tm, a, b, c] = r.split(':');
+      return { name: (name || 'Back').toUpperCase(), team: (tm || '').toUpperCase(),
+               a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)) };
+    }),
+    reset() {
+      g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
+            drive: 0, down: 1, los: WORLD_H - 26, tds: 0, yards: 0, gain: 0, state: 'select' };
+      this.g = g;
+    },
+    choose(p) { setAttrs(p); this.startDown(); g.state = 'ready'; },
+    startDown() {
+      g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1, clean: false, breakCd: 0, stagger: 0 };
+      g.defenders = defenders(g.rnd, g.drive, g.los);
+      g.startY = g.los;
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.rb.y - VH * 0.62));
+      g.state = 'live';
+    },
+    end(kind) {
+      g.gain = Math.max(0, Math.round((g.startY - g.rb.y) / YARD));
+      g.yards += g.gain;
+      if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = WORLD_H - 26; g.state = 'td'; }
+      else if (g.down >= 4) g.state = 'gameover';
+      else { g.down++; g.los = g.rb.y; g.state = 'between'; }
+    },
+    step() {
+      if (g.state !== 'live') return;
+      const rb = g.rb;
+      if (rb.spinCd > 0) rb.spinCd--;
+      if (rb.breakCd > 0) rb.breakCd--;
+      if (rb.stagger > 0) rb.stagger--;
+      if (rb.spin > 0) {
+        const p = rb.spin / SPIN_LEN;
+        rb.x += rb.spinDir * 2.9 * p;
+        rb.y -= rb.clean ? A.FWD : A.FWD * 0.45;
+        rb.vx *= 0.7; rb.spin--;
+      } else {
+        rb.y -= rb.stagger > 0 ? A.FWD * 0.42 : A.FWD;
+        rb.x += rb.vx; rb.vx *= 0.86;
+        rb.frame += rb.stagger > 0 ? 0.12 : 0.22;
+      }
+      rb.x = Math.max(HALF - 4, Math.min(VW - HALF + 4, rb.x));
+      for (const d of g.defenders) {
+        if (d.stumble > 0) { d.stumble--; continue; }
+        const dx = (rb.x + rb.vx * 8) - d.x, dy = rb.y - d.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        d.x += (dx / dist) * d.lateral; d.y += (dy / dist) * d.speed; d.frame += 0.2;
+        if (rb.spin <= SPIN_IF && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
+          if (rb.breakCd <= 0 && g.roll() < A.BREAK) {
+            rb.breakCd = 80; rb.stagger = 22; d.stumble = A.STUMBLE; continue;
+          }
+          this.end('tackled'); return;
+        }
+      }
+      if (rb.y <= EZ + 12) { this.end('td'); return; }
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.62));
+    },
+    render() {
+      yardLines(g.camY, WORLD_H, DRIVE_YARDS, YARD);
+      const ly = Math.round(g.los - g.camY);
+      if (ly > -2 && ly < VH + 2) {
+        ctx.fillStyle = 'rgba(232,197,97,0.45)';
+        for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
+      }
+      const gy = Math.round(EZ + 12 - g.camY);
+      if (gy > -SPR && gy < VH + SPR) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
+        ctx.fillStyle = 'rgba(255,255,255,0.035)';
+        ctx.fillRect(0, Math.max(0, gy - 40), VW, Math.min(40, gy));
+      }
+      for (const d of g.defenders) {
+        const sy = Math.round(d.y - g.camY);
+        if (sy > -SPR && sy < VH + SPR)
+          sprite(DEF32[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF);
+      }
+      const rb = g.rb, ry = Math.round(rb.y - g.camY);
+      if (rb.spin > 0) {
+        const s = Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 4)) % 4;
+        ctx.globalAlpha = 0.22;
+        sprite(SPIN32[(s + 3) % 4], Math.round(rb.x - rb.spinDir * 7) - HALF, ry - HALF);
+        ctx.globalAlpha = 1;
+        sprite(SPIN32[s], Math.round(rb.x) - HALF, ry - HALF, BALL32, SPIN_BALL_DX[s]);
+      } else {
+        sprite(RUN32[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL32, 0);
+      }
+    },
+    onUp(pt, dx) {
+      if (g.state === 'ready' || g.state === 'between' || g.state === 'td') { this.startDown(); return; }
+      if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
+      if (g.state !== 'live') return;
+      if (Math.abs(dx) > 18) { g.rb.vx += Math.sign(dx) * 1.9; return; }
+      const rb = g.rb;
+      if (rb.spin > 0 || rb.spinCd > 0) return;
+      let near = null, nd = Infinity;
+      for (const d of g.defenders) {
+        if (d.stumble > 0) continue;
+        const dist = Math.hypot(rb.x - d.x, rb.y - d.y);
+        if (dist < nd) { nd = dist; near = d; }
+      }
+      rb.spin = SPIN_LEN; rb.spinCd = SPIN_LEN + SPIN_CD;
+      rb.clean = !!near && nd < A.CONTACT;
+      rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
+      if (rb.clean) for (const d of g.defenders)
+        if (Math.hypot(rb.x - d.x, rb.y - d.y) < A.CONTACT + 10) d.stumble = A.STUMBLE;
+    },
+    status() {
+      const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
+      return `<span>DRIVE <b>${g.drive + 1}</b></span><span>DOWN <b>${g.down}</b></span>`
+        + `<span>TO GO <b>${t}</b></span><span class="sc">${g.tds} TD</span>`;
+    },
+    overlay(pick) {
+      const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
+      if (g.state === 'live') return null;
+      if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · opening drive · 1st & ${t}`, tap: 'tap to start', attrs: true };
+      if (g.state === 'between') return { ttl: 'Tackled', sub: `${g.gain} yd gain · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
+      if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
+      return { ttl: 'Turnover on downs', bad: true, sub: `${g.tds} TD · ${g.yards} total yards`, tap: 'tap to play again' };
+    },
+    get state() { return g ? g.state : 'select'; },
+  };
+})();
+
+// ===========================================================================
+// GAME 2 — PASS
+// ===========================================================================
+const PASS_GAME = (() => {
+  const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0;
+  const SPR = 20, HALF = 10, CATCH_R = 11;
+  const SAMPLE = 'J. Allen:BUF:0.96:0.68:0.88|C. Stroud:HOU:0.82:0.88:0.62|'
+    + 'B. Purdy:SF:0.54:0.93:0.55|D. Maye:NE:0.78:0.72:0.74';
+  const SHELL = mulberry32(hashSeed(SEED + '|shell'))() < 0.5
+    ? { label: 'Man coverage', lag: 13, tight: 0.15 } : { label: 'Zone coverage', lag: 26, tight: 0.09 };
+  const ROUTES = {
+    go: (t) => ({ x: 0, y: -t * 0.92 }),
+    slant: (t, d) => (t < 34 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 34) * 0.72, y: -(29 + (t - 34) * 0.58) }),
+    out: (t, d) => (t < 52 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 52) * 1.02, y: -(45 + (t - 52) * 0.22) }),
+    post: (t, d) => (t < 66 ? { x: 0, y: -t * 0.92 } : { x: d * (t - 66) * 0.6, y: -(61 + (t - 66) * 0.78) }),
+    curl: (t) => (t < 58 ? { x: 0, y: -t * 0.88 } : { x: 0, y: -(51 - (t - 58) * 0.3) }),
+  };
+  const KEYS = Object.keys(ROUTES);
+  let A = {}, g = null;
+  const at = (r, t) => { const o = ROUTES[r.route](Math.max(0, t), r.dir); return { x: r.sx + o.x, y: r.sy + o.y }; };
+
+  return {
+    key: 'pass', label: 'Pass', pickTitle: 'Choose your passer',
+    shell: SHELL.label, attrLabels: ['Arm', 'Accuracy', 'Poise'],
+    hint: 'tap a receiver to throw',
+    roster: (new URLSearchParams(location.search).get('pass') || SAMPLE).split('|').map((r) => {
+      const [name, tm, a, b, c] = r.split(':');
+      return { name: (name || 'Passer').toUpperCase(), team: (tm || '').toUpperCase(),
+               a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)) };
+    }),
+    reset() {
+      g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
+            drive: 0, down: 1, los: WORLD_H - 30, tds: 0, comp: 0, att: 0, yards: 0, gain: 0,
+            result: '', state: 'select', t: 0, receivers: [], rushers: [], ball: null };
+      this.g = g;
+    },
+    choose(p) {
+      A = { V: 2.1 + 2.0 * p.a, SCATTER: 11 - 8.5 * p.b, RUSH: 0.32 - 0.14 * p.c };
+      this.setup(); g.state = 'ready';
+    },
+    setup() {
+      const rnd = g.rnd;
+      g.receivers = [30, 90, 150].map((x, i) => ({
+        id: i, x, y: g.los - 8, sx: x, sy: g.los - 8, dir: x < VW / 2 ? 1 : -1,
+        route: KEYS[Math.floor(rnd() * KEYS.length)], hist: [], frame: rnd() * 3,
+        db: { x: x + (rnd() * 8 - 4), y: g.los - 22 - rnd() * 8, frame: rnd() * 3 },
+      }));
+      g.rushers = [{ x: VW / 2 - 34, y: g.los - 34, frame: 0 }, { x: VW / 2 + 34, y: g.los - 34, frame: 1 }];
+      g.qb = { x: VW / 2, y: g.los + 6 };
+      g.ball = null; g.t = 0;
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.74));
+      g.state = 'ready';
+    },
+    end(kind, gain) {
+      g.result = kind; g.gain = Math.round(gain / YARD);
+      g.yards += Math.max(0, g.gain);
+      if (kind === 'td') { g.tds++; g.comp++; g.drive++; g.down = 1; g.los = WORLD_H - 30; g.state = 'td'; }
+      else if (kind === 'int') g.state = 'gameover';
+      else {
+        if (kind === 'complete') { g.comp++; g.los = Math.max(EZ + 20, g.los - gain); }
+        if (kind === 'sack') g.los = Math.min(WORLD_H - 12, g.los + 3 * YARD);
+        g.down++; g.state = g.down > 4 ? 'gameover' : 'result';
+      }
+    },
+    throwTo(rec) {
+      const from = g.qb;
+      let f = Math.hypot(rec.x - from.x, rec.y - from.y) / A.V;
+      for (let i = 0; i < 3; i++) { const p = at(rec, g.t + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
+      const aim = at(rec, g.t + f);
+      const ang = g.roll() * Math.PI * 2, mag = g.roll() * A.SCATTER;
+      g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag, target: rec.id };
+      g.att++; g.state = 'ball';
+    },
+    step() {
+      if (g.state !== 'live' && g.state !== 'ball') return;
+      g.t++;
+      for (const r of g.receivers) {
+        const p = at(r, g.t);
+        r.x = Math.max(10, Math.min(VW - 10, p.x)); r.y = Math.max(EZ + 8, p.y);
+        r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
+        if (r.hist.length > 60) r.hist.shift();
+        const lag = r.hist[Math.max(0, r.hist.length - 1 - SHELL.lag)] || p;
+        r.db.x += (lag.x - r.db.x) * SHELL.tight;
+        r.db.y += (lag.y - r.db.y) * SHELL.tight; r.db.frame += 0.2;
+      }
+      if (g.state === 'live') {
+        for (const d of g.rushers) {
+          const dx = g.qb.x - d.x, dy = g.qb.y - d.y, dist = Math.hypot(dx, dy) || 1;
+          d.x += (dx / dist) * A.RUSH; d.y += (dy / dist) * A.RUSH; d.frame += 0.18;
+          if (dist < 13) { this.end('sack', -3 * YARD); return; }
+        }
+      }
+      if (g.state === 'ball') {
+        const b = g.ball, dx = b.tx - b.x, dy = b.ty - b.y, dist = Math.hypot(dx, dy);
+        if (dist <= A.V) { b.x = b.tx; b.y = b.ty; this.resolve(); }
+        else { b.x += (dx / dist) * A.V; b.y += (dy / dist) * A.V; }
+      }
+    },
+    resolve() {
+      const b = g.ball, rec = g.receivers[b.target];
+      const recD = Math.hypot(rec.x - b.x, rec.y - b.y);
+      let dbD = Infinity;
+      for (const r of g.receivers) dbD = Math.min(dbD, Math.hypot(r.db.x - b.x, r.db.y - b.y));
+      const gain = g.los - b.y;
+      g.ball = null;
+      if (recD < CATCH_R && dbD > recD + 3) {
+        if (b.y <= EZ + 16) this.end('td', gain); else this.end('complete', gain);
+      } else if (dbD < CATCH_R && dbD < recD) {
+        this.end(g.roll() < 0.62 ? 'int' : 'incomplete', 0);
+      } else this.end('incomplete', 0);
+    },
+    render() {
+      yardLines(g.camY, WORLD_H, DRIVE_YARDS, YARD);
+      const ly = Math.round(g.los - g.camY);
+      if (ly > -2 && ly < VH + 2) {
+        ctx.fillStyle = 'rgba(232,197,97,0.45)';
+        for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
+      }
+      const gy = Math.round(EZ + 16 - g.camY);
+      if (gy > -SPR && gy < VH + SPR) {
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
+      }
+      // routes: a playbook pre-snap, a trace once live
+      const pre = g.state === 'ready';
+      ctx.fillStyle = pre ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.10)';
+      for (const r of g.receivers) {
+        for (let t = 0; t < 150; t += (pre ? 1 : 3)) {
+          const p = at(r, t), sy = Math.round(p.y - g.camY);
+          if (sy < -2 || sy > VH + 2) continue;
+          ctx.fillRect(Math.round(p.x), sy, pre ? 2 : 1, 1);
+        }
+        if (pre) {
+          const e = at(r, 150), ey = Math.round(e.y - g.camY);
+          ctx.fillRect(Math.round(e.x) - 2, ey + 2, 5, 1);
+          ctx.fillRect(Math.round(e.x) - 1, ey + 3, 3, 1);
+          ctx.fillRect(Math.round(e.x), ey + 4, 1, 1);
+        }
+      }
+      for (const r of g.receivers) sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF);
+      for (const r of g.receivers) sprite(RUN20[Math.floor(r.frame) % 3], Math.round(r.x) - HALF, Math.round(r.y - g.camY) - HALF);
+      for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF);
+      sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF);
+      if (g.ball) {
+        const by = Math.round(g.ball.y - g.camY);
+        ctx.fillStyle = PAL.O;
+        ctx.fillRect(Math.round(g.ball.x) - 1, by, 3, 2);
+        ctx.fillRect(Math.round(g.ball.x), by - 1, 1, 4);
+      }
+    },
+    onUp(pt) {
+      if (g.state === 'ready') { g.state = 'live'; return; }
+      if (g.state === 'result' || g.state === 'td') { this.setup(); return; }
+      if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
+      if (g.state !== 'live') return;
+      let best = null, bd = 1e9;
+      for (const r of g.receivers) {
+        const d = Math.hypot(r.x - pt.x, r.y - pt.y);
+        if (d < bd) { bd = d; best = r; }
+      }
+      if (best && bd < 34) this.throwTo(best);
+    },
+    status() {
+      const t = Math.max(1, Math.round((g.los - EZ - 16) / YARD));
+      const pct = g.att ? Math.round((g.comp / g.att) * 100) : 0;
+      return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
+        + `<span><b>${g.comp}/${g.att}</b> ${pct}%</span><span class="sc">${g.tds} TD</span>`;
+    },
+    overlay(pick) {
+      const t = Math.max(1, Math.round((g.los - EZ - 16) / YARD));
+      if (g.state === 'live' || g.state === 'ball') return null;
+      if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${ORD[g.down]} & ${t}`, tap: 'tap to snap', attrs: g.drive === 0 && g.down === 1, presnap: true };
+      if (g.state === 'result') {
+        if (g.result === 'complete') return { ttl: 'Complete', sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
+        if (g.result === 'sack') return { ttl: 'Sacked', bad: true, sub: `${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
+        return { ttl: 'Incomplete', sub: `${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
+      }
+      if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.gain} yd strike`, tap: 'tap to continue' };
+      return { ttl: g.result === 'int' ? 'Intercepted' : 'Turnover on downs', bad: true,
+               sub: `${g.tds} TD · ${g.comp}/${g.att} · ${g.yards} yards`, tap: 'tap to play again' };
+    },
+    get state() { return g ? g.state : 'select'; },
+  };
+})();
+
+// ===========================================================================
+// GAME 3 — KICK
+// ===========================================================================
+const KICK_GAME = (() => {
+  const PPY = 4;                              // logical px per yard downfield
+  const SPR = 20, HALF = 10;
+  const SAMPLE = 'B. Aubrey:DAL:0.95:0.86:0.80|H. Butker:KC:0.82:0.90:0.86|'
+    + 'J. Tucker:BAL:0.88:0.94:0.72|C. Boswell:PIT:0.74:0.92:0.78';
+  const wr = mulberry32(hashSeed(SEED + '|wind'));
+  const WIND = Math.round((wr() * 2 - 1) * 10) / 10;          // -1 .. 1
+  const WIND_LABEL = Math.abs(WIND) < 0.22 ? 'No wind'
+    : `${Math.abs(WIND) > 0.66 ? 'Strong' : 'Light'} wind ${WIND < 0 ? 'left' : 'right'}`;
+  const POST_HALF = 13;                        // half the gap between uprights
+
+  let A = {}, g = null;
+  return {
+    key: 'kick', label: 'Kick', pickTitle: 'Choose your kicker',
+    shell: WIND_LABEL, attrLabels: ['Leg', 'Accuracy', 'Nerve'],
+    hint: 'tap to set power · tap to set aim',
+    roster: (new URLSearchParams(location.search).get('kick') || SAMPLE).split('|').map((r) => {
+      const [name, tm, a, b, c] = r.split(':');
+      return { name: (name || 'Kicker').toUpperCase(), team: (tm || '').toUpperCase(),
+               a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)) };
+    }),
+    reset() {
+      g = { dist: 25, made: 0, longest: 0, state: 'select', phase: 'power',
+            power: 0, powerDir: 1, aim: 0, aimDir: 1, lockedPower: 0, lockedAim: 0,
+            ball: null, result: '' };
+      this.g = g;
+    },
+    choose(p) {
+      A = { MAX: 38 + 27 * p.a, AIMSPD: 0.030 - 0.014 * p.b, PWRSPD: 0.026 - 0.010 * p.c };
+      this.setup(); g.state = 'ready';
+    },
+    setup() {
+      g.phase = 'power'; g.power = 0; g.powerDir = 1; g.aim = 0; g.aimDir = 1;
+      g.ball = null; g.state = 'ready';
+    },
+    kick() {
+      // required power scales with distance against this kicker's max range
+      const need = g.dist / A.MAX;
+      const short = g.lockedPower < need;
+      // aim error plus wind drift over the flight
+      const drift = g.lockedAim * 30 + WIND * (g.dist / 60) * 26;
+      g.ball = { t: 0, drift, short, need };
+      g.state = 'flight';
+    },
+    step() {
+      if (g.state === 'aiming' || g.state === 'charging') {
+        if (g.phase === 'power') {
+          g.power += g.powerDir * A.PWRSPD;
+          if (g.power >= 1) { g.power = 1; g.powerDir = -1; }
+          if (g.power <= 0) { g.power = 0; g.powerDir = 1; }
+        } else {
+          g.aim += g.aimDir * A.AIMSPD;
+          if (g.aim >= 1) { g.aim = 1; g.aimDir = -1; }
+          if (g.aim <= -1) { g.aim = -1; g.aimDir = 1; }
+        }
+        return;
+      }
+      if (g.state !== 'flight') return;
+      const b = g.ball;
+      b.t += 0.016;
+      const reach = b.short ? (g.lockedPower / b.need) : 1;
+      if (b.t >= reach || b.t >= 1) {
+        if (b.short) { g.result = 'short'; g.state = 'miss'; }
+        else if (Math.abs(b.drift) > POST_HALF) { g.result = b.drift < 0 ? 'wide left' : 'wide right'; g.state = 'miss'; }
+        else {
+          g.made++; g.longest = Math.max(g.longest, g.dist);
+          g.dist += 5; g.result = 'good'; g.state = 'good';
+        }
+      }
+    },
+    render() {
+      ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
+      const groundY = VH - 34;
+      const postY = groundY - g.dist * PPY;
+      // yard ticks between the spot and the posts
+      for (let y = 5; y < g.dist; y += 5) {
+        const sy = Math.round(groundY - y * PPY);
+        ctx.fillStyle = 'rgba(255,255,255,0.07)';
+        ctx.fillRect(VW / 2 - 12, sy, 4, 1); ctx.fillRect(VW / 2 + 8, sy, 4, 1);
+      }
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.fillRect(2, 0, 1, VH); ctx.fillRect(VW - 3, 0, 1, VH);
+
+      // uprights: crossbar plus two posts
+      const cx = VW / 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillRect(cx - POST_HALF, Math.round(postY), POST_HALF * 2, 1);
+      ctx.fillRect(cx - POST_HALF, Math.round(postY) - 26, 1, 26);
+      ctx.fillRect(cx + POST_HALF, Math.round(postY) - 26, 1, 26);
+      ctx.fillStyle = 'rgba(255,255,255,0.22)';
+      ctx.fillRect(cx, Math.round(postY), 1, groundY - postY);       // the line of the kick
+
+      // kicker
+      sprite(RUN20[0], Math.round(cx) - HALF - 8, groundY - HALF);
+
+      if (g.state === 'flight' || g.state === 'good' || g.state === 'miss') {
+        const b = g.ball;
+        const prog = Math.min(1, b.t / (b.short ? (g.lockedPower / b.need) : 1));
+        const y = groundY + (postY - groundY) * prog;
+        const x = cx + b.drift * prog;
+        const hgt = Math.sin(prog * Math.PI);                         // reads as height
+        const r = 1 + Math.round(hgt * 1.6);
+        ctx.fillStyle = PAL.O;
+        ctx.fillRect(Math.round(x) - r, Math.round(y) - r, r * 2, r * 2);
+      } else {
+        ctx.fillStyle = PAL.O;
+        ctx.fillRect(Math.round(cx) - 1, groundY - 1, 3, 2);
+      }
+
+      // meters — hairline, only while they matter
+      if (g.state === 'aiming' || g.state === 'charging' || g.state === 'ready') {
+        const mx = VW - 14, top = 40, h = VH - 110;
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        ctx.fillRect(mx, top, 1, h); ctx.fillRect(mx - 3, top, 7, 1); ctx.fillRect(mx - 3, top + h, 7, 1);
+        const pv = g.phase === 'power' ? g.power : g.lockedPower;
+        ctx.fillStyle = g.phase === 'power' ? '#ffffff' : 'rgba(255,255,255,0.42)';
+        ctx.fillRect(mx - 4, Math.round(top + h - pv * h), 9, 1);
+
+        const by = VH - 18, bw = 88;
+        ctx.fillStyle = 'rgba(255,255,255,0.16)';
+        ctx.fillRect(cx - bw / 2, by, bw, 1);
+        ctx.fillRect(cx, by - 3, 1, 7);
+        const av = g.phase === 'aim' ? g.aim : g.lockedAim;
+        if (g.phase === 'aim' || g.state !== 'ready') {
+          ctx.fillStyle = g.phase === 'aim' ? '#ffffff' : 'rgba(255,255,255,0.42)';
+          ctx.fillRect(Math.round(cx + av * (bw / 2)) - 1, by - 4, 3, 9);
+        }
+      }
+    },
+    onUp() {
+      if (g.state === 'ready') { g.state = 'charging'; g.phase = 'power'; return; }
+      if (g.state === 'charging') { g.lockedPower = g.power; g.phase = 'aim'; g.state = 'aiming'; return; }
+      if (g.state === 'aiming') { g.lockedAim = g.aim; this.kick(); return; }
+      if (g.state === 'good') { this.setup(); return; }
+      if (g.state === 'miss') { this.reset(); g.state = 'select'; return; }
+    },
+    status() {
+      return `<span>FROM <b>${g.dist}</b> YD</span><span>MADE <b>${g.made}</b></span>`
+        + `<span class="sc">LONG ${g.longest || '—'}</span>`;
+    },
+    overlay(pick) {
+      if (g.state === 'charging' || g.state === 'aiming' || g.state === 'flight') return null;
+      if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${g.dist} yard attempt`, tap: 'tap to start power', attrs: g.made === 0 };
+      if (g.state === 'good') return { ttl: 'Good', gold: true, sub: `${g.dist - 5} yd · back to ${g.dist}`, tap: 'tap for the next one' };
+      return { ttl: g.result === 'short' ? 'Short' : g.result === 'wide left' ? 'Wide left' : 'Wide right',
+               bad: true, sub: `${g.made} made · long ${g.longest || 0} yd`, tap: 'tap to play again' };
+    },
+    get state() { return g ? g.state : 'select'; },
+  };
+})();
+
+// ===========================================================================
+// SHELL — tabs, picker, overlay, loop
+// ===========================================================================
+const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
+const GAMES = [RUN_GAME, PASS_GAME, KICK_GAME];
+let active = GAMES[0];
+let pick = null;
+
+const el = (id) => document.getElementById(id);
+const tabs = el('tabs'), picker = el('picker'), plist = el('plist');
+const overlay = el('overlay'), ttl = el('ttl'), sub = el('sub'), tapEl = el('tap'), attrs = el('attrs');
+
+GAMES.forEach((game) => {
+  const t = document.createElement('div');
+  t.className = 'tab'; t.textContent = game.label;
+  t.onclick = () => select(game);
+  tabs.appendChild(t);
+});
+
+function segs(v, n, cls) {
+  const on = Math.max(1, Math.round(v * n));
+  let s = '';
+  for (let i = 0; i < n; i++) s += `<span class="${cls}${i < on ? ' on' : ''}"></span>`;
+  return s;
+}
+function buildPicker() {
+  el('ptitle').textContent = active.pickTitle;
+  el('pfront').textContent = `${active.shell} this week`;
+  plist.innerHTML = '';
+  active.roster.forEach((p) => {
+    const d = document.createElement('div');
+    d.className = 'pick';
+    d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">${p.team}</span></span>`
+      + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
+      + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
+      + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
+    d.onclick = () => { pick = p; active.choose(p); paintUI(); };
+    plist.appendChild(d);
+  });
+}
+function select(game) {
+  active = game;
+  pick = null;
+  active.reset();
+  [...tabs.children].forEach((t, i) => t.classList.toggle('on', GAMES[i] === game));
+  el('hint').textContent = game.hint;
+  buildPicker();
+  paintUI();
+}
+
+function paintUI() {
+  const g = active;
+  const inSelect = g.state === 'select';
+  picker.classList.toggle('show', inSelect);
+  el('status').innerHTML = inSelect ? '' : g.status();
+  if (inSelect) { overlay.classList.remove('show'); attrs.classList.remove('show'); return; }
+
+  const o = g.overlay(pick || g.roster[0]);
+  ttl.classList.remove('gold', 'bad');
+  overlay.classList.toggle('presnap', !!(o && o.presnap));
+  if (!o) { overlay.classList.remove('show'); attrs.classList.remove('show'); return; }
+  ttl.textContent = o.ttl;
+  if (o.gold) ttl.classList.add('gold');
+  if (o.bad) ttl.classList.add('bad');
+  sub.textContent = o.sub || '';
+  tapEl.textContent = o.tap || '';
+  if (o.attrs && pick) {
+    attrs.innerHTML = g.attrLabels.map((label, i) =>
+      `<div class="attr"><span class="k">${label}</span><span class="bar">`
+      + segs([pick.a, pick.b, pick.c][i], 10, 'seg') + '</span></div>').join('');
+  }
+  attrs.classList.toggle('show', !!(o.attrs && pick));
+  overlay.classList.add('show');
+}
+
+// ---- input ---------------------------------------------------------------
+let pStart = null;
+function logical(e) {
+  const r = canvas.getBoundingClientRect();
+  const camY = active.g && active.g.camY ? active.g.camY : 0;
+  return { x: ((e.clientX - r.left) / r.width) * VW, y: ((e.clientY - r.top) / r.height) * VH + camY };
+}
+canvas.addEventListener('pointerdown', (e) => { pStart = { x: e.clientX, y: e.clientY }; });
+canvas.addEventListener('pointerup', (e) => {
+  if (active.state === 'select') { pStart = null; return; }
+  const dx = pStart ? e.clientX - pStart.x : 0;
+  active.onUp(logical(e), dx);
+  pStart = null;
+  paintUI();
+});
+window.addEventListener('keydown', (e) => {
+  if (active.state === 'select') {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= active.roster.length) { pick = active.roster[n - 1]; active.choose(pick); paintUI(); }
+    return;
+  }
+  if (e.key === 'ArrowLeft') { active.onUp({ x: 0, y: 0 }, -40); paintUI(); }
+  else if (e.key === 'ArrowRight') { active.onUp({ x: 0, y: 0 }, 40); paintUI(); }
+  else if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); active.onUp({ x: VW / 2, y: 0 }, 0); paintUI(); }
+});
+
+// ---- loop ----------------------------------------------------------------
+let acc = 0, last = performance.now();
+function frame(now) {
+  acc += Math.min(100, now - last); last = now;
+  const before = active.state;
+  while (acc >= 1000 / 60) { if (active.state !== 'select') active.step(); acc -= 1000 / 60; }
+  if (before !== active.state) paintUI();
+  if (active.state !== 'select' && active.g) active.render();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+el('build').textContent = `build ${BUILD}`;
+select(GAMES[0]);
+window.__active = () => active;
+</script>
+</body>
+</html>
