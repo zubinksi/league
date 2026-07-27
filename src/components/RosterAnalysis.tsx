@@ -64,11 +64,11 @@ export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount
     RADAR_SLOTS.map((slot) => t.slots.find((s) => s.slot === slot)?.rank);
   const medianFrac = (teamsCount + 1) / (2 * teamsCount);
 
-  // Dual mode keys the first (home) team to gold so the two webs read apart;
-  // single mode stays monochrome.
-  const homeStroke = dual ? 'var(--accent-live)' : 'var(--line-home)';
-  const homeFill = dual ? 'rgba(232,197,97,0.10)' : 'var(--gap-fill)';
-  const homeDot = dual ? '#e8c561' : '#ffffff';
+  // Dual mode keys the teams to purple (home) and blue (away) so the webs
+  // read apart; single mode stays monochrome.
+  const homeStroke = dual ? 'var(--accent-home)' : 'var(--line-home)';
+  const homeFill = dual ? 'rgba(163,124,235,0.10)' : 'var(--gap-fill)';
+  const homeDot = dual ? 'var(--accent-home)' : '#ffffff';
 
   return (
     <svg className="radar" viewBox="0 0 300 280" aria-hidden="true">
@@ -86,8 +86,8 @@ export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount
       {teams[1] && (
         <path
           d={polygonPath(ranksFor(teams[1]), teamsCount)}
-          fill="rgba(255,255,255,0.05)"
-          stroke="rgba(255,255,255,0.85)"
+          fill="rgba(108,158,235,0.08)"
+          stroke="var(--accent-away)"
           strokeWidth="1"
           strokeLinejoin="round"
         />
@@ -95,7 +95,7 @@ export function RadarWeb({ teams, teamsCount }: { teams: TeamRanks[]; teamsCount
       {teams[1] &&
         ranksFor(teams[1]).map((rank, i) => {
           const [x, y] = vertex(i, n, rankFrac(rank, teamsCount));
-          return <circle key={`a${i}`} cx={x} cy={y} r="1.8" fill="rgba(255,255,255,0.85)" />;
+          return <circle key={`a${i}`} cx={x} cy={y} r="1.8" fill="var(--accent-away)" />;
         })}
       {teams[0] && (
         <path

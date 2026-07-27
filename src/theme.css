@@ -35,6 +35,10 @@
   --accent-live: oklch(0.82 0.15 85);
   --accent-live-hex: #e8c561;
 
+  /* Team comparison colors (matchup radar): home purple, away blue. */
+  --accent-home: oklch(0.72 0.15 295);
+  --accent-away: oklch(0.74 0.12 240);
+
   --font-ui: 'Geist Sans', 'Geist', system-ui, -apple-system, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
 }

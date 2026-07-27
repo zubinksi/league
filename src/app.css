@@ -1183,11 +1183,11 @@
 }
 
 .ra-name-row .home {
-  color: var(--accent-live);
+  color: var(--accent-home);
 }
 
 .ra-name-row .away {
-  color: var(--text-mid);
+  color: var(--accent-away);
   text-align: right;
 }
 
