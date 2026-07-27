@@ -151,7 +151,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade3';
+const BUILD = 'arcade4-truck';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -305,6 +305,7 @@ const RUN_GAME = (() => {
   const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0;
   const SPR = 32, HALF = 16;
   const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IF = 8, TACKLE_R = 17;
+  const TRUCK_LEN = 24, TRUCK_CD = 46;
   const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
     + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
   const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
@@ -315,6 +316,9 @@ const RUN_GAME = (() => {
     A = {
       FWD: 0.82 + 0.24 * p.a, BREAK: 0.05 + 0.30 * p.b,
       CONTACT: 32 + 18 * p.c, STUMBLE: 78 + 46 * p.c,
+      // Trucking is POWER made active: a bruiser runs through people, a
+      // scatback who tries it gets stopped cold.
+      TRUCK: 0.22 + 0.68 * p.b,
     };
   }
   function defenders(rnd, drive, los) {
@@ -330,9 +334,10 @@ const RUN_GAME = (() => {
   return {
     key: 'run', label: 'Run', pickTitle: 'Choose your back',
     shell: FRONT.label, attrLabels: ['Speed', 'Power', 'Elusive'],
-    hint: 'swipe ← → to cut · tap to spin',
+    hint: 'swipe ← → cut · ↑ truck · tap spin',
     controls: [['Swipe ← →', 'cut left or right'], ['Tap', 'spin — time it into contact'],
-               ['Goal', 'four downs to reach the end zone'], ['A score', 'earns a fresh, faster drive']],
+               ['Swipe ↑', 'truck — power runs through, speed gets stopped'],
+               ['Goal', 'four downs to reach the end zone']],
     roster: (new URLSearchParams(location.search).get('run') || SAMPLE).split('|').map((r) => {
       const [name, tm, a, b, c] = r.split(':');
       return { name: (name || 'Back').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -345,13 +350,15 @@ const RUN_GAME = (() => {
     },
     choose(p) { setAttrs(p); this.startDown(); g.state = 'ready'; },
     startDown() {
-      g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1, clean: false, breakCd: 0, stagger: 0 };
+      g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
+               clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0 };
       g.defenders = defenders(g.rnd, g.drive, g.los);
       g.startY = g.los;
       g.camY = Math.max(0, Math.min(WORLD_H - VH, g.rb.y - VH * 0.62));
       g.state = 'live';
     },
     end(kind) {
+      g.how = kind;
       g.gain = Math.max(0, Math.round((g.startY - g.rb.y) / YARD));
       g.yards += g.gain;
       if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = WORLD_H - 26; g.state = 'td'; }
@@ -364,7 +371,15 @@ const RUN_GAME = (() => {
       if (rb.spinCd > 0) rb.spinCd--;
       if (rb.breakCd > 0) rb.breakCd--;
       if (rb.stagger > 0) rb.stagger--;
-      if (rb.spin > 0) {
+      if (rb.truckCd > 0) rb.truckCd--;
+      if (rb.truck > 0) {
+        rb.y -= A.FWD * 1.42;                    // lowered shoulder, straight ahead
+        rb.x += rb.vx * 0.4;
+        rb.vx *= 0.6;
+        rb.frame += 0.3;
+        rb.truck--;
+        if (rb.truck === 0) rb.stagger = 14;     // and it costs you afterwards
+      } else if (rb.spin > 0) {
         const p = rb.spin / SPIN_LEN;
         rb.x += rb.spinDir * 2.9 * p;
         rb.y -= rb.clean ? A.FWD : A.FWD * 0.45;
@@ -381,6 +396,15 @@ const RUN_GAME = (() => {
         const dist = Math.hypot(dx, dy) || 1;
         d.x += (dx / dist) * d.lateral; d.y += (dy / dist) * d.speed; d.frame += 0.2;
         if (rb.spin <= SPIN_IF && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
+          if (rb.truck > 0) {
+            // Committed to contact: run him over, or get stood up for a loss.
+            if (g.roll() < A.TRUCK) {
+              d.stumble = A.STUMBLE * 1.5;
+              rb.truck = 0; rb.stagger = 26;
+              continue;
+            }
+            this.end('stuffed'); return;
+          }
           if (rb.breakCd <= 0 && g.roll() < A.BREAK) {
             rb.breakCd = 80; rb.stagger = 22; d.stumble = A.STUMBLE; continue;
           }
@@ -409,7 +433,14 @@ const RUN_GAME = (() => {
           sprite(DEF32[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF);
       }
       const rb = g.rb, ry = Math.round(rb.y - g.camY);
-      if (rb.spin > 0) {
+      if (rb.truck > 0) {
+        for (let i = 2; i >= 1; i--) {
+          ctx.globalAlpha = 0.10 * i;
+          sprite(RUN32[Math.floor(rb.frame + i) % 3], Math.round(rb.x) - HALF, ry - HALF + i * 5);
+        }
+        ctx.globalAlpha = 1;
+        sprite(RUN32[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL32, 0);
+      } else if (rb.spin > 0) {
         const s = Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 4)) % 4;
         ctx.globalAlpha = 0.22;
         sprite(SPIN32[(s + 3) % 4], Math.round(rb.x - rb.spinDir * 7) - HALF, ry - HALF);
@@ -419,12 +450,20 @@ const RUN_GAME = (() => {
         sprite(RUN32[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL32, 0);
       }
     },
-    onUp(pt, dx) {
+    onUp(pt, dx, dy) {
       if (g.state === 'ready' || g.state === 'between' || g.state === 'td') { this.startDown(); return; }
       if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
       if (g.state !== 'live') return;
-      if (Math.abs(dx) > 18) { g.rb.vx += Math.sign(dx) * 1.9; return; }
       const rb = g.rb;
+      // swipe up = truck. Distinct axis from the cut, so nothing collides.
+      if (dy < -18 && Math.abs(dy) > Math.abs(dx)) {
+        if (rb.truck <= 0 && rb.truckCd <= 0 && rb.spin <= 0) {
+          rb.truck = TRUCK_LEN; rb.truckCd = TRUCK_LEN + TRUCK_CD;
+        }
+        return;
+      }
+      if (Math.abs(dx) > 18) { rb.vx += Math.sign(dx) * 1.9; return; }
+      if (rb.truck > 0) return;
       if (rb.spin > 0 || rb.spinCd > 0) return;
       let near = null, nd = Infinity;
       for (const d of g.defenders) {
@@ -447,7 +486,7 @@ const RUN_GAME = (() => {
       const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
       if (g.state === 'live') return null;
       if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · opening drive · 1st & ${t}`, tap: 'tap to start', attrs: true };
-      if (g.state === 'between') return { ttl: 'Tackled', sub: `${g.gain} yd gain · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
+      if (g.state === 'between') return { ttl: g.how === 'stuffed' ? 'Stood up' : 'Tackled', sub: `${g.gain} yd gain · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
       return { ttl: 'Turnover on downs', bad: true, sub: `${g.tds} TD · ${g.yards} total yards`, tap: 'tap to play again' };
     },
@@ -922,7 +961,8 @@ canvas.addEventListener('pointerup', (e) => {
   if (active.state === 'select') { pStart = null; return; }
   if (briefing) { briefing = false; pStart = null; paintUI(); return; }
   const dx = pStart ? e.clientX - pStart.x : 0;
-  active.onUp(logical(e), dx);
+  const dy = pStart ? e.clientY - pStart.y : 0;
+  active.onUp(logical(e), dx, dy);
   pStart = null;
   paintUI();
 });
@@ -933,9 +973,10 @@ window.addEventListener('keydown', (e) => {
     if (n >= 1 && n <= active.roster.length) { pick = active.roster[n - 1]; active.choose(pick); paintUI(); }
     return;
   }
-  if (e.key === 'ArrowLeft') { active.onUp({ x: 0, y: 0 }, -40); paintUI(); }
-  else if (e.key === 'ArrowRight') { active.onUp({ x: 0, y: 0 }, 40); paintUI(); }
-  else if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); active.onUp({ x: VW / 2, y: 0 }, 0); paintUI(); }
+  if (e.key === 'ArrowLeft') { active.onUp({ x: 0, y: 0 }, -40, 0); paintUI(); }
+  else if (e.key === 'ArrowRight') { active.onUp({ x: 0, y: 0 }, 40, 0); paintUI(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); active.onUp({ x: 0, y: 0 }, 0, -40); paintUI(); }
+  else if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); active.onUp({ x: VW / 2, y: 0 }, 0, 0); paintUI(); }
 });
 
 // ---- loop ----------------------------------------------------------------
