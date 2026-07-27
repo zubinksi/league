@@ -30,12 +30,18 @@
   #hint {
     font-size: 9.5px; letter-spacing: 0.16em; color: #55575e; text-transform: uppercase;
   }
+  /* Build stamp lives outside the canvas, so the field keeps its no-HUD rule. */
+  #build {
+    font-size: 9px; letter-spacing: 0.16em; color: #34363b; text-transform: uppercase;
+    margin-top: -8px;
+  }
 </style>
 </head>
 <body>
 <div id="wrap">
   <canvas id="c"></canvas>
   <div id="hint">swipe ← → to cut · tap to spin · (desktop: arrows + space)</div>
+  <div id="build"></div>
 </div>
 <script>
 // ---------------------------------------------------------------------------
@@ -44,6 +50,7 @@
 // sprites are string arrays, so the whole game is a few KB of code.
 // ---------------------------------------------------------------------------
 
+const BUILD = 'g3-spin24';             // bump when sprites/mechanics change
 const VW = 180, VH = 260;              // logical (pixel-art) viewport
 const YARD = 16;                       // logical px per yard
 const FIELD_YARDS = 25;
@@ -54,7 +61,8 @@ const ENDZONE_Y = 0;
 const PAL = {
   '.': null,
   W: '#ffffff',   // ball carrier
-  L: '#c9c9cf',   // carrier shading
+  L: '#c9c9cf',   // carrier shading (light)
+  M: '#8f9199',   // carrier shading (mid) — reads against white at small scale
   G: '#6d6f76',   // defenders
   D: '#26282d',   // outline
   O: '#e8c561',   // the football
@@ -80,8 +88,8 @@ const BODY = [
   '..DWWWWWWWWWWWWWWWWWWD..',
   '..DWWWWWWWWWWWWWWWWWWD..',
   '...DWWWWWWWWWWWWWWWWD...',
-  '...DWWWWWLLLLLLWWWWWD...',
-  '...DWWWWWLLLLLLWWWWWD...',
+  '...DWWWWWMMMMMMWWWWWD...',
+  '...DWWWWWMMMMMMWWWWWD...',
   '...DWWWWWWWWWWWWWWWWD...',
   '....DWWWWWWWWWWWWWWD....',
   '.....DWWWWWWWWWWWWD.....',
@@ -128,8 +136,8 @@ const BODY_SIDE = [
   '.....DWWWWWWWWWWWWD.....',
   '.....DWWWWWWWWWWWWD.....',
   '......DWWWWWWWWWWD......',
-  '......DWWWWLLWWWWD......',
-  '......DWWWWLLWWWWD......',
+  '......DWWWWMMWWWWD......',
+  '......DWWWWMMWWWWD......',
   '......DWWWWWWWWWWD......',
   '.......DWWWWWWWWD.......',
   '.......DWWWWWWWWD.......',
@@ -149,8 +157,8 @@ const BODY_FRONT = [
   '..DWWWWWWWWWWWWWWWWWWD..',
   '..DWWWWWWWWWWWWWWWWWWD..',
   '...DWWWWWWWWWWWWWWWWD...',
-  '...DWWWWWLLLLLLWWWWWD...',
-  '...DWWWWWLLLLLLWWWWWD...',
+  '...DWWWWWMMMMMMWWWWWD...',
+  '...DWWWWWMMMMMMWWWWWD...',
   '...DWWWWWWWWWWWWWWWWD...',
   '....DWWWWWWWWWWWWWWD....',
   '.....DWWWWWWWWWWWWD.....',
@@ -166,7 +174,7 @@ const SPIN_FRAMES = [
 const SPIN_BALL_DX = [0, -7, -13, -5];
 
 // Defender: same silhouette, recessive gray so the carrier stays the hero.
-const toDefender = (rows) => rows.map((r) => r.replace(/W/g, 'G').replace(/L/g, 'G'));
+const toDefender = (rows) => rows.map((r) => r.replace(/[WLM]/g, 'G'));
 const DEF_FRAMES = RUN_FRAMES.map(toDefender);
 
 // Ball tucked under the right arm — the only gold on screen.
@@ -457,6 +465,9 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// Build stamp — so "which version am I looking at?" is never a guess.
+document.getElementById('build').textContent = `sprites ${SPR}×${SPR} · build ${BUILD}`;
 
 // expose for screenshots/tests
 window.__game = () => game;
