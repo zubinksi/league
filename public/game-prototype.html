@@ -64,6 +64,40 @@
   .attr .bar { display: flex; gap: 2px; }
   .attr .seg { width: 7px; height: 7px; background: rgba(255,255,255,0.10); }
   .attr .seg.on { background: #e9e9ec; }
+  /* Back selection — the one screen that takes input. */
+  #picker {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 7px; padding: 0 14px;
+    background: rgba(8,9,11,0.92);
+  }
+  #picker.show { display: flex; }
+  .ptitle {
+    font-size: 13px; font-weight: 600; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #fbfbfd;
+  }
+  .pfront {
+    font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 6px;
+  }
+  #plist { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 300px; }
+  .pick {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 9px 11px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
+    cursor: pointer;
+  }
+  .pick:hover, .pick:active { border-color: rgba(255,255,255,0.42); }
+  .pick .pn {
+    display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #ececed;
+  }
+  .pick .pt {
+    display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76;
+    text-transform: uppercase; margin-top: 4px;
+  }
+  .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
+  .pick .pbar { display: flex; gap: 1px; }
+  .pick .pseg { width: 5px; height: 4px; background: rgba(255,255,255,0.10); }
+  .pick .pseg.on { background: #c9c9cf; }
+
   /* Drive state sits above the field, never on it. */
   #status {
     display: flex; gap: 16px; align-items: baseline;
@@ -84,6 +118,11 @@
   <div id="status"></div>
   <div id="stage">
     <canvas id="c"></canvas>
+    <div id="picker">
+      <div class="ptitle">Choose your back</div>
+      <div class="pfront" id="pfront"></div>
+      <div id="plist"></div>
+    </div>
     <div id="overlay">
       <div id="ttl"></div>
       <div id="sub"></div>
@@ -101,7 +140,7 @@
 // Four downs to score; a touchdown earns a fresh, faster drive.
 // ---------------------------------------------------------------------------
 
-const BUILD = 'g6-attrs';
+const BUILD = 'g7-pick';
 const VW = 180;                        // logical width — fixed, gameplay depends on it
 let VH = 260;                          // logical height — sized to the device in fit()
 const YARD = 16;                       // logical px per yard
@@ -312,27 +351,47 @@ function drawSprite(rows, px, py, ballTint, ballDx) {
   }
 }
 
-// ---- the carrier inherits your best running back ------------------------
-// The app passes these; standalone falls back to a league-average back.
+// ---- the carrier is a back you pick off your own roster ------------------
+// The app passes ?roster=name:team:spd:pow:elu|... ; standalone uses a sample.
 const Q = new URLSearchParams(location.search);
 const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0.5));
-const RB = {
-  name: (Q.get('rb') || 'The Back').toUpperCase(),
-  team: (Q.get('tm') || '').toUpperCase(),
-  spd: clamp01(parseFloat(Q.get('spd'))),   // yards per carry  → top speed
-  pow: clamp01(parseFloat(Q.get('pow'))),   // listed weight    → breaks tackles
-  elu: clamp01(parseFloat(Q.get('elu'))),   // receiving work   → spin quality
-};
+
+const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
+  + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
+
+const ROSTER = (Q.get('roster') || SAMPLE).split('|').map((row) => {
+  const [name, tm, spd, pow, elu] = row.split(':');
+  return {
+    name: (name || 'The Back').toUpperCase(),
+    team: (tm || '').toUpperCase(),
+    spd: clamp01(parseFloat(spd)),
+    pow: clamp01(parseFloat(pow)),
+    elu: clamp01(parseFloat(elu)),
+  };
+});
+
+let RB = ROSTER[0];
+// Attributes move real numbers, but modestly — skill still decides the run.
+let FORWARD, BREAK_ODDS, CONTACT, STUMBLE;
+function applyAttrs() {
+  FORWARD = 0.82 + 0.24 * RB.spd;          // 0.82 .. 1.06
+  BREAK_ODDS = 0.05 + 0.30 * RB.pow;       // 5% .. 35% to shrug a tackle
+  CONTACT = 32 + 18 * RB.elu;              // spin's effective reach
+  STUMBLE = 78 + 46 * RB.elu;              // how long a beaten defender stalls
+}
+applyAttrs();
 
 // ---- game ----------------------------------------------------------------
 const SEED = Q.get('seed') || 'WK15';
 const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IFRAMES = 8;
-// Attributes move real numbers, but modestly — skill still decides the run.
-const FORWARD = 0.82 + 0.24 * RB.spd;          // 0.82 .. 1.06
-const BREAK_ODDS = 0.05 + 0.30 * RB.pow;       // 5% .. 35% to shrug a tackle
-const CONTACT = 32 + 18 * RB.elu;              // spin's effective reach
-const STUMBLE = 78 + 46 * RB.elu;              // how long a beaten defender stalls
 const TACKLE_R = 17;
+
+// The week's seed also sets the defensive front, so which back suits the
+// matchup changes week to week — a bunched front rewards speed to the edge,
+// a spread front rewards power up the middle.
+const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
+  ? { key: 'stacked', label: 'Stacked front', spread: 0.64 }
+  : { key: 'spread', label: 'Spread front', spread: 1.32 };
 
 let game;
 
@@ -342,7 +401,8 @@ function makeDefenders(rnd, drive) {
   const list = [];
   for (let i = 0; i < count; i++) {
     list.push({
-      x: 28 + i * (124 / (count - 1)) + Math.floor(rnd() * 16) - 8,
+      x: VW / 2 + (i - (count - 1) / 2) * (52 * FRONT.spread)
+         + Math.floor(rnd() * 14) - 7,
       y: WORLD_H - 100 - i * 58 - Math.floor(rnd() * 26),
       speed: (0.58 + rnd() * 0.28) * ramp,
       lateral: (0.46 + rnd() * 0.32) * ramp,
@@ -369,7 +429,7 @@ function newGame() {
     yards: 0,
   };
   startDown();
-  game.state = 'ready';
+  game.state = 'select';
 }
 
 function startDown() {
@@ -411,6 +471,7 @@ newGame();
 let pStart = null;
 function advance() {
   const g = game;
+  if (g.state === 'select') return;                       // the picker owns this screen
   if (g.state === 'ready' || g.state === 'between' || g.state === 'td') { startDown(); paintUI(); }
   else if (g.state === 'gameover') { newGame(); paintUI(); }
 }
@@ -450,6 +511,11 @@ canvas.addEventListener('pointerup', (e) => {
   pStart = null;
 });
 window.addEventListener('keydown', (e) => {
+  if (game.state === 'select') {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= ROSTER.length) choose(n - 1);
+    return;
+  }
   if (e.key === 'ArrowLeft') nudge(-1);
   else if (e.key === 'ArrowRight') nudge(1);
   else if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); spin(); }
@@ -573,6 +639,9 @@ const sub = document.getElementById('sub');
 const tap = document.getElementById('tap');
 const status = document.getElementById('status');
 const attrs = document.getElementById('attrs');
+const picker = document.getElementById('picker');
+const plist = document.getElementById('plist');
+document.getElementById('pfront').textContent = `${FRONT.label} this week`;
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
 
 const SEGS = 10;
@@ -582,8 +651,30 @@ function attrRow(label, v) {
   for (let i = 0; i < SEGS; i++) bar += `<span class="seg${i < on ? ' on' : ''}"></span>`;
   return `<div class="attr"><span class="k">${label}</span><span class="bar">${bar}</span></div>`;
 }
-attrs.innerHTML =
-  attrRow('Speed', RB.spd) + attrRow('Power', RB.pow) + attrRow('Elusive', RB.elu);
+function miniBar(v) {
+  const on = Math.max(1, Math.round(v * 8));
+  let out = '';
+  for (let i = 0; i < 8; i++) out += `<span class="pseg${i < on ? ' on' : ''}"></span>`;
+  return `<span class="pbar">${out}</span>`;
+}
+ROSTER.forEach((b, i) => {
+  const el = document.createElement('div');
+  el.className = 'pick';
+  el.innerHTML =
+    `<span><span class="pn">${b.name}</span><span class="pt">${b.team}</span></span>` +
+    `<span class="pbars">${miniBar(b.spd)}${miniBar(b.pow)}${miniBar(b.elu)}</span>`;
+  el.onclick = () => choose(i);
+  plist.appendChild(el);
+});
+
+function choose(i) {
+  RB = ROSTER[i] || ROSTER[0];
+  applyAttrs();
+  attrs.innerHTML =
+    attrRow('Speed', RB.spd) + attrRow('Power', RB.pow) + attrRow('Elusive', RB.elu);
+  game.state = 'ready';
+  paintUI();
+}
 
 function toGo(g) { return Math.max(1, Math.round((g.los - ENDZONE_Y - 12) / YARD)); }
 
@@ -596,6 +687,12 @@ function paintUI() {
     `<span class="sc">${g.touchdowns} TD</span>`;
 
   ttl.classList.remove('gold');
+  picker.classList.toggle('show', g.state === 'select');
+  if (g.state === 'select') {
+    attrs.classList.remove('show');
+    overlay.classList.remove('show');
+    return;
+  }
   if (g.state === 'ready') {
     ttl.textContent = RB.name;
     sub.textContent = `${RB.team ? RB.team + ' · ' : ''}opening drive · 1st & ${toGo(g)}`;
