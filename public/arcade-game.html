@@ -151,7 +151,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade10-pass';
+const BUILD = 'arcade11-wind';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -763,7 +763,9 @@ const KICK_GAME = (() => {
     shell: WIND_LABEL, attrLabels: ['Leg', 'Accuracy', 'Nerve'],
     hint: 'tap to set power · tap to set aim',
     controls: [['Tap', 'start the power meter'], ['Tap again', 'lock power — longer kicks need more'],
-               ['Third tap', 'lock aim as the marker sweeps'], ['Every make', 'moves you back five yards']],
+               ['Third tap', 'lock aim as the marker sweeps'],
+               ['Wind', 'read the streamers — aim into it'],
+               ['Every make', 'moves you back five yards']],
     roster: (new URLSearchParams(location.search).get('kick') || SAMPLE).split('|').map((r) => {
       const [name, tm, a, b, c] = r.split(':');
       return { name: (name || 'Kicker').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -840,6 +842,19 @@ const KICK_GAME = (() => {
       ctx.fillStyle = 'rgba(255,255,255,0.22)';
       ctx.fillRect(cx, Math.round(postY), 1, groundY - postY);       // the line of the kick
 
+      // Streamers on the uprights: which way it is blowing and how hard,
+      // the way a kicker actually reads it before lining one up.
+      const calm = Math.abs(WIND) < 0.22;
+      const fdir = WIND < 0 ? -1 : 1;
+      const flen = calm ? 2 : Math.round(3 + Math.abs(WIND) * 7);
+      const ftop = Math.round(postY) - 26;
+      ctx.fillStyle = calm ? 'rgba(255,255,255,0.26)' : PAL.O;
+      for (const px of [cx - POST_HALF, cx + POST_HALF]) {
+        for (let i = 1; i <= flen; i++) {
+          ctx.fillRect(px + fdir * i, ftop + (i > flen * 0.55 ? 1 : 0), 1, 1);
+        }
+      }
+
       // kicker
       sprite(RUN20[0], Math.round(cx) - HALF - 8, groundY - HALF);
 
@@ -885,7 +900,13 @@ const KICK_GAME = (() => {
       if (g.state === 'miss') { this.reset(); g.state = 'select'; return; }
     },
     status() {
-      return `<span>FROM <b>${g.dist}</b> YD</span><span>MADE <b>${g.made}</b></span>`
+      // Wind is worth more than half the gap between the posts on a long
+      // attempt, so it has to be readable for the whole session — naming it
+      // once on the pick screen just reads as the aim being broken.
+      const w = Math.abs(WIND) < 0.22 ? 'CALM'
+        : `${WIND < 0 ? '←' : '→'} ${Math.abs(WIND).toFixed(1)}`;
+      return `<span>FROM <b>${g.dist}</b> YD</span><span>WIND <b>${w}</b></span>`
+        + `<span>MADE <b>${g.made}</b></span>`
         + `<span class="sc">LONG ${g.longest || '—'}</span>`;
     },
     overlay(pick) {
