@@ -102,6 +102,10 @@
   }
   .pick:hover, .pick:active { border-color: rgba(255,255,255,0.42); }
   .pick .pn { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #ececed; }
+  .pick .pchip {
+    display: inline-block; width: 5px; height: 5px; border-radius: 1px;
+    margin-right: 6px; vertical-align: middle;
+  }
   .pick .pt { display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 4px; }
   .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
   .pick .pbar { display: flex; gap: 1px; }
@@ -151,7 +155,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade12-pass';
+const BUILD = 'arcade13-kits';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -161,6 +165,48 @@ const PAL = {
   W: '#ffffff', L: '#c9c9cf', M: '#8f9199',
   G: '#7d8089', D: '#26282d', O: '#e8c561',
 };
+
+// ---- team jerseys --------------------------------------------------------
+// Only the player you picked is coloured; defenders are the same sprite with
+// W/L/M flattened to G, so they stay monochrome for free and your guy is the
+// one coloured thing on the field.
+//
+// These are recognisable rather than accurate. Real primaries are frequently
+// unusable here: the field is #08090b, so Raiders black, Ravens #241773 and
+// Seahawks navy all vanish into it. Each team gets one identity colour held in
+// a legible lightness band, kept clear of the defender grey and of the gold
+// the ball and the live accent own. Teams never appear side by side — you only
+// ever see your own — so two similar blues cost nothing.
+const DEFAULT_KIT = { W: '#ffffff', L: '#c9c9cf', M: '#8f9199' };
+const TEAM_JERSEY = {
+  ARI: '#d9455f', ATL: '#e2515a', BAL: '#7b5ce0', BUF: '#4a86ee',
+  CAR: '#3fb3e8', CHI: '#e8823f', CIN: '#f26a2e', CLE: '#b0793f',
+  DAL: '#6e9ae0', DEN: '#ee6a32', DET: '#4faeee', GB:  '#45ae68',
+  HOU: '#d8434f', IND: '#4f96ee', JAX: '#34afa6', KC:  '#ee4550',
+  LAC: '#56c6ee', LAR: '#5a87ee', LV:  '#c6c9d0', MIA: '#35c4b8',
+  MIN: '#8657e0', NE:  '#5a79c8', NO:  '#efe1ae', NYG: '#5a7be0',
+  NYJ: '#3cb673', PHI: '#35948c', PIT: '#ebd69b', SEA: '#7fd34a',
+  SF:  '#e2545a', TB:  '#dc4a32', TEN: '#46a6e0', WAS: '#b04a55',
+};
+
+const hex2rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const rgb2hex = (c) => '#' + c.map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+const mix = (a, b, t) => {
+  const [ar, ag, ab] = hex2rgb(a), [br, bg, bb] = hex2rgb(b);
+  return rgb2hex([ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t]);
+};
+
+const jerseyOf = (team) => TEAM_JERSEY[(team || '').toUpperCase()] || null;
+
+/** Swap the three uniform tones. G (defenders), O (ball) and D (outline) are
+ *  untouched, so nothing else on the field can be affected. */
+function setJersey(team) {
+  const base = jerseyOf(team);
+  if (!base) { Object.assign(PAL, DEFAULT_KIT); return; }
+  PAL.W = mix(base, '#ffffff', 0.38);   // highlight
+  PAL.L = base;                          // the jersey
+  PAL.M = mix(base, '#191b1f', 0.42);    // shadow, reads as the accent
+}
 
 // ---- seeded RNG ----------------------------------------------------------
 function hashSeed(str) {
@@ -279,6 +325,13 @@ function sprite(rows, px, py, ballPts, ballDx) {
     }
   }
   if (ballPts) {
+    // Dark halo first: gold on a gold-ish jersey would otherwise disappear.
+    ctx.fillStyle = PAL.D;
+    for (const [y, x] of ballPts) {
+      const bx = px + x + (ballDx || 0), by = py + y;
+      ctx.fillRect(bx - 1, by, 1, 1); ctx.fillRect(bx + 1, by, 1, 1);
+      ctx.fillRect(bx, by - 1, 1, 1); ctx.fillRect(bx, by + 1, 1, 1);
+    }
     ctx.fillStyle = PAL.O;
     for (const [y, x] of ballPts) ctx.fillRect(px + x + (ballDx || 0), py + y, 1, 1);
   }
@@ -945,12 +998,16 @@ function buildPicker() {
   active.roster.forEach((p) => {
     const d = document.createElement('div');
     d.className = 'pick';
-    d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">${p.team}</span></span>`
+    const kit = jerseyOf(p.team);
+    d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">`
+      + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
+      + `${p.team}</span></span>`
       + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
     d.onclick = () => {
       pick = p;
+      setJersey(p.team);
       active.choose(p);
       briefing = true;                        // show how-to-play before the first snap
       el('btitle').textContent = `${active.label} — how to play`;
@@ -965,6 +1022,7 @@ function buildPicker() {
 function select(game) {
   active = game;
   pick = null;
+  setJersey(null);
   briefing = false;
   active.reset();
   [...tabs.children].forEach((t, i) => t.classList.toggle('on', GAMES[i] === game));
