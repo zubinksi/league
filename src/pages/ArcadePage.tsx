@@ -19,8 +19,7 @@ import {
   isShared,
   loadScores,
   recordScore,
-  seasonStandings,
-  weekBoard,
+  allTimeBoard,
   weekStatus,
   type GameKey,
   type ScoreEntry,
@@ -73,6 +72,7 @@ export function ArcadePage() {
         rosterId: picked,
         game,
         value: Number(d.value) || 0,
+        tie: Number(d.tie) || 0,
         detail: String(d.detail ?? ''),
         player: String(d.player ?? ''),
         team: String(d.team ?? ''),
@@ -108,11 +108,7 @@ export function ArcadePage() {
     () => (picked === null ? null : weekStatus(scores, week, picked)),
     [scores, week, picked],
   );
-  const rows = useMemo(() => weekBoard(scores, week, board), [scores, week, board]);
-  const season = useMemo(
-    () => seasonStandings(scores, rosters.data?.length ?? 10),
-    [scores, rosters.data],
-  );
+  const rows = useMemo(() => allTimeBoard(scores, board), [scores, board]);
 
   return (
     <div className="page arcade-page">
@@ -136,7 +132,7 @@ export function ArcadePage() {
             {boardOpen && (
               <div className="arc-panel">
                 <div className="arc-panel-head">
-                  <span>WEEK {week} BOARD</span>
+                  <span>{GAME_LABEL[board]} · ALL TIME</span>
                   <button className="arc-close" onClick={() => setBoardOpen(false)} aria-label="Close">
                     ×
                   </button>
@@ -163,7 +159,10 @@ export function ArcadePage() {
                       <div key={r.rosterId} className={`arc-row${r.rosterId === picked ? ' me' : ''}`}>
                         <span className="rk">{r.rank}</span>
                         <span className="nm">{nameOf(r.rosterId)}</span>
-                        <span className="pl">{r.player}</span>
+                        <span className="pl">
+                          {r.player}
+                          {r.detail ? ` · ${r.detail}` : ''}
+                        </span>
                         <span className="vl">
                           {r.value}
                           <i>{GAME_UNIT[board]}</i>
@@ -172,29 +171,6 @@ export function ArcadePage() {
                     ))
                   ) : (
                     <div className="state-note">Nothing banked yet</div>
-                  )}
-                </div>
-
-                <div className="arc-panel-head sub">
-                  <span>SEASON</span>
-                </div>
-                <div className="arc-board">
-                  {season.length ? (
-                    season.map((r, i) => (
-                      <div key={r.rosterId} className={`arc-row${r.rosterId === picked ? ' me' : ''}`}>
-                        <span className="rk">{i + 1}</span>
-                        <span className="nm">{nameOf(r.rosterId)}</span>
-                        <span className="pl">
-                          {r.wins} win{r.wins === 1 ? '' : 's'}
-                        </span>
-                        <span className="vl">
-                          {r.points}
-                          <i>PTS</i>
-                        </span>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="state-note">No results yet</div>
                   )}
                 </div>
 

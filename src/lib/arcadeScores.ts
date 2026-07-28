@@ -5,10 +5,11 @@
  * it is practice. That is what makes a board worth reading — unlimited
  * attempts would just rank whoever replayed the most.
  *
- * Weekly boards rank on raw score. Season standings rank on where you finished
- * each week, not on points, so they survive players' ratings drifting upward
- * through the season. Late scores beating early ones is then a storyline
- * rather than a broken leaderboard.
+ * Boards are all-time and per game: one row per team, their best run ever.
+ * Ratings now climb across a season by design, so a late score beating an
+ * early one is the system working, and an all-time best is the honest frame
+ * for it. Each board ranks on the number worth bragging about and breaks ties
+ * on the finer one, because touchdowns alone would tie half a league.
  *
  * Storage is an adapter. Local is the default and works with no backend; point
  * VITE_ARCADE_API at a deployment (see worker/arcade-scores.js) and the same
@@ -19,13 +20,16 @@ export type GameKey = 'run' | 'pass' | 'kick';
 export const GAMES: GameKey[] = ['run', 'pass', 'kick'];
 export const GAME_LABEL: Record<GameKey, string> = { run: 'RUN', pass: 'PASS', kick: 'KICK' };
 /** Units differ per game, so the board can label the number it is ranking. */
-export const GAME_UNIT: Record<GameKey, string> = { run: 'YD', pass: 'YD', kick: 'MADE' };
+export const GAME_UNIT: Record<GameKey, string> = { run: 'TD', pass: 'TD', kick: 'MADE' };
 
 export interface ScoreEntry {
   week: number;
   rosterId: number;
   game: GameKey;
+  /** The headline number: touchdowns, or field goals made. */
   value: number;
+  /** Tiebreak — yards, or longest make. */
+  tie: number;
   detail: string;
   player: string;
   team: string;
@@ -99,55 +103,36 @@ export async function recordScore(
 export interface BoardRow {
   rosterId: number;
   value: number;
+  tie: number;
   detail: string;
   player: string;
   team: string;
+  week: number;
   rank: number;
 }
 
-/** One game's board for one week, best first. */
-export function weekBoard(all: ScoreEntry[], week: number, game: GameKey): BoardRow[] {
-  const rows = all
-    .filter((e) => e.week === week && e.game === game)
-    .sort((a, b) => b.value - a.value);
-  let rank = 0;
-  let prev: number | null = null;
-  return rows.map((e, i) => {
-    if (prev === null || e.value !== prev) rank = i + 1;
-    prev = e.value;
-    return { rosterId: e.rosterId, value: e.value, detail: e.detail, player: e.player, team: e.team, rank };
-  });
-}
+const better = (a: ScoreEntry, b: ScoreEntry) => b.value - a.value || b.tie - a.tie;
 
-export interface SeasonRow {
-  rosterId: number;
-  points: number;
-  played: number;
-  wins: number;
-}
-
-/**
- * Season standings from weekly finishes. A week you win is worth the size of
- * the field, second is one less, and so on — so a good week counts the same in
- * week 2 as in week 15 no matter how the scores inflate.
- */
-export function seasonStandings(all: ScoreEntry[], fieldSize: number): SeasonRow[] {
-  const totals = new Map<number, SeasonRow>();
-  const weeks = [...new Set(all.map((e) => e.week))];
-  for (const week of weeks) {
-    for (const game of GAMES) {
-      const board = weekBoard(all, week, game);
-      if (!board.length) continue;
-      for (const row of board) {
-        const cur = totals.get(row.rosterId) ?? { rosterId: row.rosterId, points: 0, played: 0, wins: 0 };
-        cur.points += Math.max(1, fieldSize - row.rank + 1);
-        cur.played += 1;
-        if (row.rank === 1) cur.wins += 1;
-        totals.set(row.rosterId, cur);
-      }
-    }
+/** One game, all time, one row per team — their best run ever. */
+export function allTimeBoard(all: ScoreEntry[], game: GameKey): BoardRow[] {
+  const best = new Map<number, ScoreEntry>();
+  for (const e of all) {
+    if (e.game !== game) continue;
+    const cur = best.get(e.rosterId);
+    if (!cur || better(e, cur) < 0) best.set(e.rosterId, e);
   }
-  return [...totals.values()].sort((a, b) => b.points - a.points || b.wins - a.wins);
+  const rows = [...best.values()].sort(better);
+  let rank = 0;
+  let prev: string | null = null;
+  return rows.map((e, i) => {
+    const key = `${e.value}:${e.tie}`;
+    if (prev === null || key !== prev) rank = i + 1;
+    prev = key;
+    return {
+      rosterId: e.rosterId, value: e.value, tie: e.tie, detail: e.detail,
+      player: e.player, team: e.team, week: e.week, rank,
+    };
+  });
 }
 
 /** Which games this roster has already banked for the week. */

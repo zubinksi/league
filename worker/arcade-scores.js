@@ -44,16 +44,19 @@ function clean(raw) {
   const week = Number(raw?.week);
   const rosterId = Number(raw?.rosterId);
   const value = Number(raw?.value);
+  const tie = Number(raw?.tie ?? 0);
   if (!Number.isInteger(week) || week < 1 || week > 22) return null;
   if (!Number.isInteger(rosterId) || rosterId < 1 || rosterId > 64) return null;
   if (!GAMES.includes(raw?.game)) return null;
   if (!Number.isFinite(value) || value < 0 || value > 100000) return null;
+  if (!Number.isFinite(tie) || tie < 0 || tie > 100000) return null;
   const str = (v, n) => String(v ?? '').slice(0, n);
   return {
     week,
     rosterId,
     game: raw.game,
     value: Math.round(value * 10) / 10,
+    tie: Math.round(tie * 10) / 10,
     detail: str(raw.detail, 24),
     player: str(raw.player, 24),
     team: str(raw.team, 4),
