@@ -36,6 +36,9 @@ export function ArcadePage() {
   const [picked, setPicked] = useState<number | null>(getMyRosterId());
   const [scores, setScores] = useState<ScoreEntry[]>([]);
   const [board, setBoard] = useState<GameKey>('run');
+  const [boardOpen, setBoardOpen] = useState(false);
+  // Mirrors the game the iframe is on, so BOARD opens what you're playing.
+  const [playing, setPlaying] = useState<GameKey>('run');
   const [flash, setFlash] = useState<string>('');
 
   const week = defaultWeek(league.data, state.data);
@@ -61,8 +64,9 @@ export function ArcadePage() {
     if (picked === null) return;
     const onMessage = async (e: MessageEvent) => {
       const d = e.data;
-      if (!d || d.source !== 'arcade' || d.type !== 'score') return;
-      if (!GAMES.includes(d.game)) return;
+      if (!d || d.source !== 'arcade' || !GAMES.includes(d.game)) return;
+      if (d.type === 'game') { setPlaying(d.game as GameKey); return; }
+      if (d.type !== 'score') return;
       const game = d.game as GameKey;
       const { counted } = await recordScore({
         week,
@@ -124,84 +128,99 @@ export function ArcadePage() {
           {status && (
             <div className="arc-slots">
               {GAMES.map((g) => (
-                <div key={g} className={`arc-slot${status[g] ? ' done' : ''}`}>
+                <button
+                  key={g}
+                  className={`arc-slot${status[g] ? ' done' : ''}`
+                    + `${boardOpen && board === g ? ' on' : ''}`}
+                  onClick={() => {
+                    if (boardOpen && board === g) setBoardOpen(false);
+                    else { setBoard(g); setBoardOpen(true); }
+                  }}
+                >
                   <span className="k">{GAME_LABEL[g]}</span>
                   <span className="v">
                     {status[g] ? `${status[g]!.value} ${GAME_UNIT[g]}` : 'OPEN'}
                   </span>
-                </div>
+                </button>
               ))}
+              <button
+                className={`arc-open${boardOpen ? ' on' : ''}`}
+                onClick={() => {
+                  if (!boardOpen) setBoard(playing);
+                  setBoardOpen((o) => !o);
+                }}
+              >
+                {boardOpen ? 'CLOSE' : 'BOARD'}
+              </button>
             </div>
           )}
           {flash && <div className="arc-flash">{flash}</div>}
 
-          {src ? (
-            <iframe className="arcade-frame" src={src} title="Arcade" />
-          ) : (
-            <div className="state-note">Building your roster</div>
-          )}
-
-          <div className="section-header league-head">
-            <span>WEEK {week} BOARD</span>
-          </div>
-          <div className="arc-tabs">
-            {GAMES.map((g) => (
-              <button
-                key={g}
-                className={`arc-tab${board === g ? ' on' : ''}`}
-                onClick={() => setBoard(g)}
-              >
-                {GAME_LABEL[g]}
-              </button>
-            ))}
-          </div>
-          <div className="arc-board">
-            {rows.length ? (
-              rows.map((r) => (
-                <div key={r.rosterId} className={`arc-row${r.rosterId === picked ? ' me' : ''}`}>
-                  <span className="rk">{r.rank}</span>
-                  <span className="nm">{nameOf(r.rosterId)}</span>
-                  <span className="pl">{r.player}</span>
-                  <span className="vl">
-                    {r.value}
-                    <i>{GAME_UNIT[board]}</i>
-                  </span>
-                </div>
-              ))
+          <div className="arc-stage">
+            {src ? (
+              <iframe className="arcade-frame" src={src} title="Arcade" />
             ) : (
-              <div className="state-note">Nothing banked yet</div>
+              <div className="state-note">Building your roster</div>
+            )}
+
+            {boardOpen && (
+              <div className="arc-panel">
+                <div className="arc-panel-head">
+                  <span>WEEK {week} · {GAME_LABEL[board]}</span>
+                  <button className="arc-close" onClick={() => setBoardOpen(false)} aria-label="Close">
+                    ×
+                  </button>
+                </div>
+                <div className="arc-board">
+                  {rows.length ? (
+                    rows.map((r) => (
+                      <div key={r.rosterId} className={`arc-row${r.rosterId === picked ? ' me' : ''}`}>
+                        <span className="rk">{r.rank}</span>
+                        <span className="nm">{nameOf(r.rosterId)}</span>
+                        <span className="pl">{r.player}</span>
+                        <span className="vl">
+                          {r.value}
+                          <i>{GAME_UNIT[board]}</i>
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="state-note">Nothing banked yet</div>
+                  )}
+                </div>
+
+                <div className="arc-panel-head sub">
+                  <span>SEASON</span>
+                </div>
+                <div className="arc-board">
+                  {season.length ? (
+                    season.map((r, i) => (
+                      <div key={r.rosterId} className={`arc-row${r.rosterId === picked ? ' me' : ''}`}>
+                        <span className="rk">{i + 1}</span>
+                        <span className="nm">{nameOf(r.rosterId)}</span>
+                        <span className="pl">
+                          {r.wins} win{r.wins === 1 ? '' : 's'}
+                        </span>
+                        <span className="vl">
+                          {r.points}
+                          <i>PTS</i>
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="state-note">No results yet</div>
+                  )}
+                </div>
+
+                {!isShared() && (
+                  <p className="arc-note">
+                    Scores are saved on this device only. Point VITE_ARCADE_API at a deployment
+                    of worker/arcade-scores.js to share one board across the league.
+                  </p>
+                )}
+              </div>
             )}
           </div>
-
-          <div className="section-header league-head">
-            <span>SEASON</span>
-          </div>
-          <div className="arc-board">
-            {season.length ? (
-              season.map((r, i) => (
-                <div key={r.rosterId} className={`arc-row${r.rosterId === picked ? ' me' : ''}`}>
-                  <span className="rk">{i + 1}</span>
-                  <span className="nm">{nameOf(r.rosterId)}</span>
-                  <span className="pl">
-                    {r.wins} win{r.wins === 1 ? '' : 's'}
-                  </span>
-                  <span className="vl">
-                    {r.points}
-                    <i>PTS</i>
-                  </span>
-                </div>
-              ))
-            ) : (
-              <div className="state-note">No results yet</div>
-            )}
-          </div>
-
-          {!isShared() && (
-            <p className="arc-note">
-              Scores are saved on this device only. Point VITE_ARCADE_API at a deployment of
-              worker/arcade-scores.js to share one board across the league.
-            </p>
-          )}
         </>
       )}
     </div>

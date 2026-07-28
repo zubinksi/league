@@ -1388,22 +1388,26 @@
   background: #08090b;
 }
 
-/* ---- Arcade: weekly slots, boards ---- */
+/* ---- Arcade: weekly slots, board panel ---- */
 
 .arc-slots {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  padding: 0 20px 10px;
-  background: transparent;
+  grid-template-columns: repeat(3, 1fr) auto;
+  align-items: stretch;
+  gap: 10px;
+  padding: 2px 20px 10px;
 }
 
+/* Each slot is its own tap target and the board's game selector. */
 .arc-slot {
   display: flex;
   flex-direction: column;
+  align-items: center;      /* centred so the row reads as three equal blocks */
   gap: 3px;
-  padding: 6px 0;
+  padding: 7px 4px 6px;
   border-top: 1px solid var(--divider-header);
+  text-align: center;
+  transition: border-color 0.18s, background 0.18s;
 }
 
 .arc-slot .k {
@@ -1420,10 +1424,37 @@
   letter-spacing: 0.06em;
   color: #4d4f55;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Banked is the only state worth calling out. */
 .arc-slot.done .v { color: var(--accent-live); }
+
+.arc-slot.on {
+  border-top-color: var(--accent-live);
+  background: rgba(232, 197, 97, 0.06);
+}
+
+.arc-slot.on .k { color: var(--text-mid); }
+
+.arc-open {
+  align-self: center;
+  margin-top: 4px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.arc-open.on {
+  color: #0c0d0f;
+  background: #e9e9ec;
+  border-color: #e9e9ec;
+}
 
 .arc-flash {
   margin: 0 20px 8px;
@@ -1437,26 +1468,48 @@
   background: rgba(232, 197, 97, 0.06);
 }
 
-.arc-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 4px 20px 10px;
+/* The board takes the game's space rather than sitting below it — nothing to
+   scroll past, and the game is idle while you're reading anyway. */
+.arc-stage { position: relative; }
+
+.arc-panel {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: #0b0c0e;
+  border-top: 1px solid var(--divider-header);
 }
 
-.arc-tab {
-  padding: 5px 13px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 999px;
+.arc-panel::-webkit-scrollbar { width: 0; }
+
+.arc-panel-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 20px 9px;
+  background: #0b0c0e;
+  border-bottom: 1px solid var(--divider-header);
   font-family: var(--font-mono);
-  font-size: 8.5px;
+  font-size: 10px;
+  font-weight: 500;
   letter-spacing: 0.2em;
   color: var(--text-dim);
 }
 
-.arc-tab.on {
-  color: #0c0d0f;
-  background: #e9e9ec;
-  border-color: #e9e9ec;
+.arc-panel-head.sub {
+  position: static;
+  padding-top: 22px;
+}
+
+.arc-close {
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 2px;
+  color: var(--text-dim);
 }
 
 .arc-row {

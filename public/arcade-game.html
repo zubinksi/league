@@ -160,7 +160,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade15-score';
+const BUILD = 'arcade16-board';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1040,6 +1040,10 @@ function select(game) {
   el('hint').textContent = game.hint;
   buildPicker();
   paintUI();
+  // Let the host follow along, so its board can default to what you're playing.
+  try {
+    parent.postMessage({ source: 'arcade', type: 'game', game: game.key }, '*');
+  } catch { /* standalone */ }
 }
 
 function paintUI() {
