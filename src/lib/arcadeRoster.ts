@@ -5,16 +5,18 @@ import type { WeekStats, StatMap } from '../api/stats';
 /**
  * Turns a real roster into arcade characters — three ratings in 0..1 each.
  *
- * Two rules shape every mapping here. Recent weeks count for more, so a back
- * on a heater actually plays like one: season-to-date averages stabilise as
- * the year goes on and stop moving exactly when you'd want them to, so weeks
- * are decayed by half-life instead of summed flat. And rate stats over small
- * samples are pulled toward the league mean, so one missed kick out of thirty
- * doesn't swing a rating by a third.
+ * Ratings come from counting stats that only ever accumulate, so a player
+ * climbs through named tiers across the season and never slides back. Rate
+ * stats were the obvious choice and the wrong one: an average moves less and
+ * less as the sample grows, so ratings went flat exactly when a season should
+ * feel like it is going somewhere.
  *
- * Ranges are deliberately wider than the league's real spread. Normalising
- * over the exact range everyone occupies clips both tails, which made every
- * roster look identical in the middle.
+ * Nobody starts at zero, because some players are simply better than others in
+ * week one. Last season's totals carry over at a discount — enough to set a
+ * starting tier, not so much that there is nothing left to climb.
+ *
+ * A tier sets the band and progress within it interpolates, so the ladder is
+ * legible without every player at a tier sharing one identical number.
  */
 
 export interface ArcadePlayer {
@@ -23,14 +25,19 @@ export interface ArcadePlayer {
   a: number;
   b: number;
   c: number;
-  /** Change in overall rating over the last few weeks: +1 up, -1 down, 0 flat. */
+  /** Tier index 0..4 per attribute; the game holds the names. */
+  ta: number;
+  tb: number;
+  tc: number;
+  /** 1 when any attribute gained a tier in the last few weeks. */
   trend: number;
 }
 
-/** Weeks back at which a game counts half as much as the latest one. */
-const HALF_LIFE = 4;
-/** Weeks dropped to compute the "before" rating that the trend compares to. */
+/** How much of last season carries in. Sets a floor without capping the climb. */
+const PRIOR_WEIGHT = 0.4;
+/** Weeks dropped to decide whether a tier was gained recently. */
 const TREND_LOOKBACK = 3;
+const TIERS = 5;
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
 
@@ -39,159 +46,119 @@ const norm = (v: number | undefined, lo: number, hi: number, fallback = 0.5): nu
   return clamp01((v - lo) / (hi - lo));
 };
 
-const per = (num: number | undefined, den: number | undefined): number | undefined =>
-  num !== undefined && den !== undefined && den > 0 ? num / den : undefined;
-
-/**
- * Rate pulled toward a prior, with the prior worth `k` attempts. Small samples
- * sit near the league mean and earn their way out as attempts accumulate.
- */
-const shrunk = (
-  made: number | undefined,
-  att: number | undefined,
-  prior: number,
-  k: number,
-): number | undefined => {
-  if (att === undefined || !Number.isFinite(att) || att <= 0) return undefined;
-  return ((made ?? 0) + prior * k) / (att + k);
-};
-
-const mix = (a: number, b: number, t: number) => a * (1 - t) + b * t;
-
-/** First defined value — lets a mapping prefer a richer stat and fall back. */
-const firstOf = (...vals: (number | undefined)[]): number | undefined =>
-  vals.find((v) => v !== undefined && Number.isFinite(v));
-
-interface Weighted {
-  totals: StatMap;
-  /** Sum of week weights, i.e. games played measured in "recent-equivalents". */
-  games: number;
+/** Cumulative stat → tier plus a value that keeps climbing inside the tier. */
+function ladder(value: number, steps: number[]): { tier: number; value: number } {
+  let i = 0;
+  while (i + 1 < steps.length && value >= steps[i + 1]) i++;
+  const lo = steps[i];
+  const hi = steps[i + 1] ?? lo * 1.3 + 1;
+  const frac = hi > lo ? Math.min(1, Math.max(0, (value - lo) / (hi - lo))) : 1;
+  return { tier: i, value: Math.min(0.98, ((i + frac) / TIERS)) };
 }
 
-/**
- * Totals with recent weeks weighted more heavily. weekly[i] is week i+1, so
- * the last entry is the most recent.
- */
-function weightedTotals(id: string, weekly: (WeekStats | undefined)[]): Weighted {
+const num = (v: number | undefined) => (Number.isFinite(v) ? (v as number) : 0);
+
+/** Sum of every week so far. Monotonic by construction. */
+function cumulative(id: string, weekly: (WeekStats | undefined)[]): StatMap {
   const out: StatMap = {};
-  let games = 0;
-  for (let i = 0; i < weekly.length; i++) {
-    const s = weekly[i]?.[id];
+  for (const w of weekly) {
+    const s = w?.[id];
     if (!s) continue;
-    const weeksAgo = weekly.length - 1 - i;
-    const w = Math.pow(0.5, weeksAgo / HALF_LIFE);
-    for (const [k, v] of Object.entries(s)) out[k] = (out[k] ?? 0) + v * w;
-    games += w;
+    for (const [k, v] of Object.entries(s)) out[k] = (out[k] ?? 0) + v;
   }
-  return { totals: out, games };
+  return out;
 }
 
-type Rating = { a: number; b: number; c: number };
-
-function ratePlayer(position: string, w: Weighted, weight: number | undefined): Rating | null {
-  const t = w.totals;
-  const gp = Math.max(0.6, w.games);
-
-  if (position === 'RB') {
-    // Power blends listed size with goal-line work, so it is no longer a
-    // biographical constant — the move it drives can move during the season.
-    const size = norm(weight, 196, 244);
-    const scoring = norm(per(t.rush_td, gp), 0.05, 0.85);
-    return {
-      a: norm(per(t.rush_yd, t.rush_att), 3.0, 5.8), // yards per carry
-      b: clamp01(mix(size, scoring, 0.45)),
-      // Work in space: catches plus yards per touch. Not literally broken
-      // tackles — Sleeper does not expose those — but it separates a scatback
-      // from a between-the-tackles grinder, which is what the rating drives.
-      c: clamp01(
-        mix(
-          norm(per(t.rec, gp), 0.4, 5.5),
-          norm(per((t.rush_yd ?? 0) + (t.rec_yd ?? 0), (t.rush_att ?? 0) + (t.rec ?? 0)), 3.2, 7.0),
-          0.4,
-        ),
-      ),
-    };
-  }
-
-  if (position === 'QB') {
-    return {
-      a: norm(per(t.pass_yd, t.pass_att), 5.4, 9.2), // yards per attempt
-      b: norm(shrunk(t.pass_cmp, t.pass_att, 0.645, 40), 0.53, 0.75),
-      // Escapability: what the rating actually drives is how long the pocket
-      // holds, so it keys off scrambling, and off avoiding sacks where the
-      // feed reports them.
-      c: clamp01(
-        mix(
-          norm(per(t.rush_yd, gp), 0, 42),
-          norm(per(t.pass_sack, t.pass_att), 0.11, 0.03), // inverted: fewer is better
-          t.pass_sack !== undefined ? 0.4 : 0,
-        ),
-      ),
-    };
-  }
-
-  // WR and TE share a stat shape, so they share a rating and a picker.
-  if (position === 'WR' || position === 'TE') {
-    return {
-      // How far downfield he works — a deep threat runs his stem faster.
-      a: norm(per(t.rec_yd, t.rec), 7.5, 16.5),
-      // Catch rate is a real skill stat rather than a proxy, but targets come
-      // in slowly, so it leans on the prior until the sample earns its way out.
-      b: norm(shrunk(t.rec, t.rec_tgt, 0.655, 20), 0.50, 0.80),
-      // Target share is trust, and trust is a player who gets open.
-      c: norm(per(t.rec_tgt, gp), 2, 10),
-    };
-  }
-
-  if (position === 'K') {
-    // Leg is range, not workload. Attempt volume measured how often the
-    // offence stalled, so a kicker on a bad team got a bigger leg.
-    const longMakes = firstOf(
-      per((t.fgm_50p ?? 0) * 2 + (t.fgm_40_49 ?? 0), gp),
-      per(t.fgm_40p, gp),
-    );
-    const longest = firstOf(t.fgm_lng, t.fg_lng);
-    return {
-      a: longMakes !== undefined
-        ? norm(longMakes, 0.1, 1.6)
-        : longest !== undefined
-          ? norm(longest, 42, 58)
-          : 0.5,
-      b: norm(shrunk(t.fgm, t.fga, 0.84, 12), 0.70, 0.96),
-      c: norm(shrunk(t.xpm, t.xpa, 0.955, 25), 0.90, 1),
-    };
-  }
-
-  return null;
+/** This season's totals with last season folded in at a discount. */
+function seeded(current: StatMap, prior: StatMap | undefined): StatMap {
+  if (!prior) return current;
+  const out: StatMap = { ...current };
+  for (const [k, v] of Object.entries(prior)) out[k] = (out[k] ?? 0) + v * PRIOR_WEIGHT;
+  return out;
 }
 
-const overall = (r: Rating) => r.a + r.b + r.c;
+interface Rung {
+  stat: (t: StatMap) => number;
+  steps: number[];
+}
+interface Ladders { a: Rung; b: Rung; c: Rung }
+
+/**
+ * One ladder per attribute. Thresholds are full-season counting numbers, so a
+ * star tops out around the fantasy playoffs and a rotational piece is still
+ * climbing — which is the point, everyone has somewhere to go.
+ */
+const LADDERS: Record<string, Ladders> = {
+  RB: {
+    a: { stat: (t) => num(t.rush_yd), steps: [0, 300, 650, 1000, 1400] },
+    b: { stat: (t) => num(t.rush_td), steps: [0, 3, 6, 10, 14] },
+    c: { stat: (t) => num(t.rec), steps: [0, 15, 35, 60, 90] },
+  },
+  QB: {
+    a: { stat: (t) => num(t.pass_yd), steps: [0, 1200, 2400, 3500, 4500] },
+    b: { stat: (t) => num(t.pass_cmp), steps: [0, 120, 240, 350, 430] },
+    c: { stat: (t) => num(t.rush_yd), steps: [0, 100, 250, 450, 700] },
+  },
+  WR: {
+    a: { stat: (t) => num(t.rec_yd), steps: [0, 350, 700, 1050, 1400] },
+    b: { stat: (t) => num(t.rec), steps: [0, 25, 50, 75, 100] },
+    c: { stat: (t) => num(t.rec_tgt), steps: [0, 40, 80, 120, 160] },
+  },
+  K: {
+    // Range, not workload: long makes only, with fifty-plus worth double.
+    a: { stat: (t) => num(t.fgm_40_49) + num(t.fgm_50p) * 2, steps: [0, 3, 7, 12, 18] },
+    b: { stat: (t) => num(t.fgm), steps: [0, 8, 16, 25, 32] },
+    c: { stat: (t) => num(t.xpm), steps: [0, 15, 30, 45, 58] },
+  },
+};
+LADDERS.TE = LADDERS.WR;
+
+type Rated = { a: number; b: number; c: number; ta: number; tb: number; tc: number };
+
+function ratePlayer(position: string, totals: StatMap, weight: number | undefined): Rated | null {
+  const l = LADDERS[position];
+  if (!l) return null;
+  const a = ladder(l.a.stat(totals), l.a.steps);
+  const b = ladder(l.b.stat(totals), l.b.steps);
+  const c = ladder(l.c.stat(totals), l.c.steps);
+  // Size still says something about a back that touchdowns do not, so it
+  // nudges the value without moving the tier he has actually earned.
+  const bulk = position === 'RB' ? (norm(weight, 196, 244) - 0.5) * 0.10 : 0;
+  return {
+    a: a.value, b: clamp01(b.value + bulk), c: c.value,
+    ta: a.tier, tb: b.tier, tc: c.tier,
+  };
+}
+
+const tierSum = (r: Rated) => r.ta + r.tb + r.tc;
+const rankOf = (p: ArcadePlayer) => p.a + p.b + p.c;
 
 export function buildArcadeRosters(
   playerIds: string[],
   players: PlayerMap,
   weekly: (WeekStats | undefined)[],
+  priorSeason?: WeekStats,
 ): { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] } {
   const run: ArcadePlayer[] = [];
   const pass: ArcadePlayer[] = [];
   const recv: ArcadePlayer[] = [];
   const kick: ArcadePlayer[] = [];
-  const earlier = weekly.slice(0, Math.max(1, weekly.length - TREND_LOOKBACK));
+  const earlier = weekly.slice(0, Math.max(0, weekly.length - TREND_LOOKBACK));
 
   for (const id of playerIds) {
     const meta = players[id];
     if (!meta?.position) continue;
     const weight = meta.weight ? parseInt(meta.weight, 10) : undefined;
-    const now = ratePlayer(meta.position, weightedTotals(id, weekly), weight);
+    const prior = priorSeason?.[id];
+    const now = ratePlayer(meta.position, seeded(cumulative(id, weekly), prior), weight);
     if (!now) continue;
-    const before = ratePlayer(meta.position, weightedTotals(id, earlier), weight);
+    const before = ratePlayer(meta.position, seeded(cumulative(id, earlier), prior), weight);
 
-    const delta = before ? overall(now) - overall(before) : 0;
     const entry: ArcadePlayer = {
       name: playerShortName(meta, id),
       team: meta.team ?? '',
       ...now,
-      trend: delta > 0.06 ? 1 : delta < -0.06 ? -1 : 0,
+      trend: before && tierSum(now) > tierSum(before) ? 1 : 0,
     };
     if (meta.position === 'RB') run.push(entry);
     else if (meta.position === 'QB') pass.push(entry);
@@ -200,7 +167,7 @@ export function buildArcadeRosters(
   }
 
   // Strongest first, so the default pick is the obvious one.
-  const byRating = (x: ArcadePlayer, y: ArcadePlayer) => overall(y) - overall(x);
+  const byRating = (x: ArcadePlayer, y: ArcadePlayer) => rankOf(y) - rankOf(x);
   run.sort(byRating);
   pass.sort(byRating);
   recv.sort(byRating);
@@ -212,7 +179,8 @@ const encode = (list: ArcadePlayer[], limit = 6): string =>
   list
     .slice(0, limit)
     .map((p) =>
-      [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2), p.trend].join(':'),
+      [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2), p.trend, p.ta, p.tb, p.tc]
+        .join(':'),
     )
     .join('|');
 

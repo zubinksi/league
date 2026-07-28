@@ -69,6 +69,10 @@
   .attr .bar { display: flex; gap: 2px; }
   .attr .seg { width: 7px; height: 7px; background: rgba(255,255,255,0.10); }
   .attr .seg.on { background: #e9e9ec; }
+  .attr .lv {
+    min-width: 84px; text-align: left; font-size: 8px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--gold);
+  }
 
   /* Pre-snap route menu: choosing the concept is what snaps the ball. */
   #prompt {
@@ -117,6 +121,9 @@
     text-transform: uppercase; color: var(--gold);
   }
   .brow .bv { font-size: 9.5px; letter-spacing: 0.1em; color: #b6b8be; }
+  .brow.blv { margin-bottom: 4px; }
+  .brow.blv .bk { color: #ececed; }
+  .brow.blv .bv { color: var(--gold); font-size: 9px; letter-spacing: 0.13em; text-transform: uppercase; }
   .bstart {
     margin-top: 12px; font-size: 8.5px; letter-spacing: 0.24em;
     text-transform: uppercase; color: #4a4c52;
@@ -194,7 +201,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade20-yac';
+const BUILD = 'arcade21-tiers';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -246,6 +253,33 @@ function setJersey(team) {
   PAL.L = base;                          // the jersey
   PAL.M = mix(base, '#191b1f', 0.42);    // shadow, reads as the accent
 }
+
+// Named tiers, one ladder per attribute. The host sends a tier index and the
+// names live here, so the query string stays short.
+const TIER_NAMES = {
+  run: [
+    ['Plodder', 'Strider', 'Burst', 'Breakaway', 'Home Run'],
+    ['Arm Tackle', 'Grinder', 'Bruiser', 'Battering Ram', 'Freight Train'],
+    ['Stone Hands', 'Outlet', 'Mismatch', 'Weapon', 'Joystick'],
+  ],
+  pass: [
+    ['Checkdown', 'Rhythm', 'Gunslinger', 'Cannon', 'Howitzer'],
+    ['Scattershot', 'Steady', 'Sharp', 'Surgeon', 'Sniper'],
+    ['Statue', 'Mobile', 'Escape Artist', 'Dual Threat', 'Houdini'],
+  ],
+  recv: [
+    ['Possession', 'Chain Mover', 'Stretch', 'Deep Threat', 'Afterburner'],
+    ['Bricks', 'Reliable', 'Sure Hands', 'Velcro', 'Glue'],
+    ['Decoy', 'Option', 'Target', 'Focal Point', 'Alpha'],
+  ],
+  kick: [
+    ['Short Range', 'Reliable', 'Big Leg', 'Cannon', 'Moon Shot'],
+    ['Shaky', 'Steady', 'Automatic', 'Ice', 'Perfect'],
+    ['Nervy', 'Composed', 'Cool', 'Clutch', 'Ice Water'],
+  ],
+};
+const tierName = (param, i, tier) =>
+  ((TIER_NAMES[param] || [])[i] || [])[Math.max(0, Math.min(4, tier))] || '';
 
 // ---- seeded RNG ----------------------------------------------------------
 function hashSeed(str) {
@@ -1147,15 +1181,17 @@ if (window.parent !== window) {
   tabs.appendChild(b);
 }
 
-// `name:team:a:b:c:trend` — trend is -1/0/1 for how the rating has moved over
-// the last few weeks, so a player on a heater is visible before you pick him.
+// `name:team:a:b:c:trend:ta:tb:tc` — trend flags a tier gained in the last few
+// weeks, so a player who just levelled up is visible before you pick him.
 function parseRoster(param, sample) {
   return (new URLSearchParams(location.search).get(param) || sample).split('|').map((r) => {
-    const [name, tm, a, b, c, tr] = r.split(':');
+    const [name, tm, a, b, c, tr, ta, tb, tc] = r.split(':');
+    const tier = (v) => Math.max(0, Math.min(4, parseInt(v, 10) || 0));
     return {
       name: (name || 'Player').toUpperCase(), team: (tm || '').toUpperCase(),
       a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)),
       trend: Math.max(-1, Math.min(1, parseInt(tr, 10) || 0)),
+      tiers: [tier(ta), tier(tb), tier(tc)].map((t, i) => tierName(param, i, t)),
     };
   });
 }
@@ -1200,9 +1236,16 @@ function buildPicker() {
       }
       briefing = true;                        // show how-to-play before the first snap
       el('btitle').textContent = `${active.label} — how to play`;
-      blist.innerHTML = active.controls
-        .map(([k, v]) => `<div class="brow"><span class="bk">${k}</span><span class="bv">${v}</span></div>`)
-        .join('');
+      const levels = [];
+      for (const [who, labels] of [[pick, active.attrLabels], [pick2, active.attrLabels2]]) {
+        if (!who || !labels) continue;
+        levels.push(`<div class="brow blv"><span class="bk">${who.name}</span>`
+          + `<span class="bv">${(who.tiers || []).filter(Boolean).join(' · ')}</span></div>`);
+      }
+      blist.innerHTML = levels.join('')
+        + active.controls
+          .map(([k, v]) => `<div class="brow"><span class="bk">${k}</span><span class="bv">${v}</span></div>`)
+          .join('');
       paintUI();
     };
     plist.appendChild(d);
@@ -1259,9 +1302,10 @@ function paintUI() {
   sub.textContent = o.sub || '';
   tapEl.textContent = o.tap || '';
   if (o.attrs && pick) {
-    attrs.innerHTML = g.attrLabels.map((label, i) =>
+    attrs.innerHTML = (g.attrLabels || []).map((label, i) =>
       `<div class="attr"><span class="k">${label}</span><span class="bar">`
-      + segs([pick.a, pick.b, pick.c][i], 10, 'seg') + '</span></div>').join('');
+      + segs([pick.a, pick.b, pick.c][i], 10, 'seg') + '</span>'
+      + `<span class="lv">${(pick.tiers || [])[i] || ''}</span></div>`).join('');
   }
   attrs.classList.toggle('show', !!(o.attrs && pick));
   overlay.classList.add('show');

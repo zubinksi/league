@@ -56,6 +56,19 @@ export function useSeasonTotals(season: string | undefined) {
   });
 }
 
+/** Last season's totals. They seed every player's opening tier, so nobody
+ *  starts a season at zero when some players are plainly better than others. */
+export function usePriorSeasonTotals(season: string | undefined) {
+  const prior = season ? String(Number(season) - 1) : undefined;
+  return useQuery({
+    queryKey: ['seasonStats', prior],
+    queryFn: () => fetchSeasonStats(prior!),
+    enabled: !!prior && Number.isFinite(Number(prior)),
+    staleTime: DAY,
+    gcTime: DAY,
+  });
+}
+
 /** Season projections, used for their ADP fields (fixed after drafts — daily). */
 export function useSeasonAdp(season: string | undefined) {
   return useQuery({

@@ -6,6 +6,7 @@ import {
   useLeague,
   useNflState,
   usePlayers,
+  usePriorSeasonTotals,
   useRosters,
   useUsers,
 } from '../hooks/useLeagueData';
@@ -41,6 +42,7 @@ export function ArcadePage() {
 
   const week = defaultWeek(league.data, state.data);
   const weekly = useWeeklyStatsAll(league.data?.season, week, picked !== null);
+  const prior = usePriorSeasonTotals(league.data?.season);
 
   useEffect(() => {
     let live = true;
@@ -96,11 +98,11 @@ export function ArcadePage() {
     if (picked === null || !rosters.data || !players.data || weekly.loading) return null;
     const mine = rosters.data.find((r) => r.roster_id === picked);
     if (!mine) return null;
-    const built = buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly);
+    const built = buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data);
     // Everyone in the league gets the same defense, coverage and wind each week.
     const seed = `${LEAGUE_ID}-W${week}`;
     return `/arcade-game.html?${arcadeQuery(built, seed)}`;
-  }, [picked, rosters.data, players.data, weekly.loading, weekly.weekly, week]);
+  }, [picked, rosters.data, players.data, weekly.loading, weekly.weekly, prior.data, week]);
 
   const status = useMemo(
     () => (picked === null ? null : weekStatus(scores, week, picked)),

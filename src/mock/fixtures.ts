@@ -334,7 +334,21 @@ export function mockFetch(url: string): unknown {
     return isSeasonUrl(url, 'projections') ? seasonProjectionsFixture : projections;
   }
   if (url.includes('/stats/nfl/')) {
-    if (isSeasonUrl(url, 'stats')) return seasonStatsFixture();
+    if (isSeasonUrl(url, 'stats')) {
+      const year = Number((url.match(/(\d{4})(?:\?|$)/) || [])[1]);
+      // A prior season, scaled per player so opening tiers actually differ.
+      if (year && year < Number(SEASON)) {
+        const out: Record<string, any> = {};
+        for (const [id, st] of Object.entries(seasonStatsFixture())) {
+          const f = 0.55 + ((parseInt(id, 36) % 70) / 70) * 0.85;
+          out[id] = Object.fromEntries(
+            Object.entries(st as Record<string, number>).map(([k, v]) => [k, Math.round(v * f * 10) / 10]),
+          );
+        }
+        return out;
+      }
+      return seasonStatsFixture();
+    }
     return statsForWeek(weekFromUrl(url, /\/stats\/nfl\/(?:regular\/)?\d{4}\/(\d+)/));
   }
   if (url.includes('/users')) return users;
