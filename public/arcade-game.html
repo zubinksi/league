@@ -194,7 +194,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade18-duo';
+const BUILD = 'arcade20-yac';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -682,7 +682,8 @@ const PASS_GAME = (() => {
     roster2: parseRoster('recv', SAMPLE_WR),
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
-            drive: 0, down: 1, los: WORLD_H - 30, tds: 0, comp: 0, att: 0, yards: 0, gain: 0,
+            drive: 0, down: 1, los: WORLD_H - 30, marker: WORLD_H - 30 - 10 * YARD,
+            tds: 0, comp: 0, att: 0, yards: 0, gain: 0, firstDown: false,
             result: '', state: 'select', t: 0, wr: null, rushers: [], ball: null, edge: 0 };
       this.g = g;
     },
@@ -735,16 +736,32 @@ const PASS_GAME = (() => {
       g.t = 0;
       g.state = 'live';
     },
+    /** Ten yards ahead, or the goal line once you are inside it. */
+    lineToGain(from) { return Math.max(EZ, from - 10 * YARD); },
     end(kind, gain) {
       g.result = kind; g.gain = Math.round(gain / YARD);
       g.yards += Math.max(0, g.gain);
-      if (kind === 'td') { g.tds++; g.comp++; g.drive++; g.down = 1; g.los = WORLD_H - 30; g.state = 'td'; }
-      else if (kind === 'int') g.state = 'gameover';
-      else {
-        if (kind === 'complete') { g.comp++; g.los = Math.max(EZ + 12, g.los - gain); }
-        if (kind === 'sack') g.los = Math.min(WORLD_H - 12, g.los + 3 * YARD);
-        g.down++; g.state = g.down > 4 ? 'gameover' : 'result';
+      g.firstDown = false;
+      if (kind === 'td') {
+        g.tds++; g.comp++; g.drive++; g.down = 1;
+        g.los = WORLD_H - 30; g.marker = this.lineToGain(g.los);
+        g.state = 'td'; return;
       }
+      if (kind === 'int') { g.state = 'gameover'; return; }
+      if (kind === 'complete') { g.comp++; g.los = Math.max(EZ + 12, g.los - gain); }
+      if (kind === 'sack') g.los = Math.min(WORLD_H - 12, g.los + 3 * YARD);
+      // Moving the chains resets the count. Without this a drive was four
+      // plays and out, so stringing completions together still ended in a
+      // turnover and the down marker was measuring the whole field.
+      if (g.los <= g.marker) {
+        g.down = 1;
+        g.marker = this.lineToGain(g.los);
+        g.firstDown = true;
+        g.state = 'result';
+        return;
+      }
+      g.down++;
+      g.state = g.down > 4 ? 'gameover' : 'result';
     },
     throwTo() {
       const rec = g.wr, from = g.qb;
@@ -759,6 +776,7 @@ const PASS_GAME = (() => {
       g.att++; g.state = 'ball';
     },
     step() {
+      if (g.state === 'yac') { this.runAfterCatch(); return; }
       if (g.state !== 'live' && g.state !== 'ball') return;
       g.t++;
       const r = g.wr;
@@ -788,6 +806,24 @@ const PASS_GAME = (() => {
         else { b.x += (dx / dist) * A.V; b.y += (dy / dist) * A.V; }
       }
     },
+    /** Pursuit is a shade quicker than the runner, so the head start he caught
+     *  it with is what decides the yards — and a burner can still house it. */
+    runAfterCatch() {
+      const r = g.wr;
+      g.yacFrames++;
+      r.y -= 0.92 + 0.56 * W.SPEED;
+      r.x += Math.sign(VW / 2 - r.x) * 0.34;      // works back to the grass
+      r.x = Math.max(10, Math.min(VW - 10, r.x));
+      r.frame += 0.24;
+      for (const d of [r.db, g.safety]) {
+        const dx = r.x - d.x, dy = r.y - d.y, dist = Math.hypot(dx, dy) || 1;
+        d.x += (dx / dist) * 1.54; d.y += (dy / dist) * 1.54; d.frame += 0.22;
+        if (dist < 12) { this.end('complete', g.los - r.y); return; }
+      }
+      if (r.y <= EZ) { this.end('td', g.los - r.y); return; }
+      if (g.yacFrames > 150) { this.end('complete', g.los - r.y); return; }
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, r.y - VH * 0.58));
+    },
     resolve() {
       const b = g.ball, rec = g.wr;
       const recD = Math.hypot(rec.x - b.x, rec.y - b.y);
@@ -804,14 +840,27 @@ const PASS_GAME = (() => {
       if (sep < 15 && g.roll() < 0.46 * (1 - sep / 15) * (1.3 - 0.6 * W.HANDS)) {
         this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
-      if (b.y <= EZ) this.end('td', gain); else this.end('complete', gain);
+      if (b.y <= EZ) { this.end('td', gain); return; }
+      // He caught it clean and keeps running. This is not a phase you steer —
+      // an earlier version let you drive the receiver and that made the game
+      // trivial. The yards come from the separation the route already earned,
+      // so a wide-open catch breaks free and a contested one dies on contact.
+      rec.x = b.x; rec.y = b.y;
+      g.yacFrames = 0;
+      g.safety = { x: VW / 2 + (g.roll() * 34 - 17), y: Math.max(EZ + 8, b.y - 74), frame: 0 };
+      g.state = 'yac';
     },
     render() {
       yardLines(g.camY, WORLD_H, DRIVE_YARDS + 10, YARD);
       const ly = Math.round(g.los - g.camY);
       if (ly > -2 && ly < VH + 2) {
-        ctx.fillStyle = 'rgba(232,197,97,0.45)';
+        ctx.fillStyle = 'rgba(255,255,255,0.20)';
         for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
+      }
+      const my = Math.round(g.marker - g.camY);
+      if (g.marker > EZ && my > -2 && my < VH + 2) {
+        ctx.fillStyle = 'rgba(232,197,97,0.72)';
+        ctx.fillRect(0, my, VW, 1);
       }
       const gy = Math.round(EZ - g.camY);
       if (gy > -VH && gy < VH + SPR) {
@@ -830,12 +879,22 @@ const PASS_GAME = (() => {
         }
       }
       sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF);
-      for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF);
+      if (g.state === 'yac' && g.safety)
+        sprite(DEF20[Math.floor(g.safety.frame) % 3], Math.round(g.safety.x) - HALF, Math.round(g.safety.y - g.camY) - HALF);
+      if (g.state !== 'yac')
+        for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF);
       // Each of your two players wears his own club's colours.
       setJersey(g.wrTeam);
       sprite(RUN20[Math.floor(r.frame) % 3], Math.round(r.x) - HALF, Math.round(r.y - g.camY) - HALF);
+      if (g.state === 'yac') {
+        // The ball is his now.
+        const ry = Math.round(r.y - g.camY);
+        ctx.fillStyle = PAL.D; ctx.fillRect(Math.round(r.x) + 3, ry + 1, 4, 4);
+        ctx.fillStyle = PAL.O; ctx.fillRect(Math.round(r.x) + 4, ry + 2, 2, 2);
+      }
       setJersey(g.qbTeam);
-      sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF);
+      if (g.state !== 'yac')
+        sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF);
       if (g.ball) {
         const by = Math.round(g.ball.y - g.camY);
         ctx.fillStyle = PAL.D;
@@ -847,22 +906,23 @@ const PASS_GAME = (() => {
       }
     },
     onUp() {
-      if (g.state === 'ready') return;               // the route menu snaps it
+      if (g.state === 'ready' || g.state === 'yac') return;   // both play themselves
       if (g.state === 'result' || g.state === 'td') { this.setup(); return; }
       if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
       if (g.state === 'live') this.throwTo();
     },
     score() { return { value: g.yards, detail: `${g.comp}/${g.att}` }; },
     status() {
-      const t = Math.max(1, Math.round((g.los - EZ) / YARD));
+      const t = g.marker <= EZ ? 'GOAL' : Math.max(1, Math.round((g.los - g.marker) / YARD));
       const pct = g.att ? Math.round((g.comp / g.att) * 100) : 0;
       return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
         + `<span><b>${g.comp}/${g.att}</b> ${pct}%</span><span class="sc">${g.tds} TD</span>`;
     },
     overlay() {
-      const t = Math.max(1, Math.round((g.los - EZ) / YARD));
-      if (g.state === 'live' || g.state === 'ball' || g.state === 'ready') return null;
+      const t = g.marker <= EZ ? 'GOAL' : Math.max(1, Math.round((g.los - g.marker) / YARD));
+      if (g.state === 'live' || g.state === 'ball' || g.state === 'ready' || g.state === 'yac') return null;
       if (g.state === 'result') {
+        if (g.firstDown) return { ttl: 'First down', gold: true, sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
         if (g.result === 'complete') return { ttl: 'Complete', sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
         if (g.result === 'sack') return { ttl: 'Sacked', bad: true, sub: `${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
         return { ttl: 'Incomplete', sub: `${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
