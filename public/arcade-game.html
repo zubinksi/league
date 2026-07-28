@@ -211,7 +211,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade24-gaps';
+const BUILD = 'arcade25-drive';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -516,7 +516,17 @@ const RUN_GAME = (() => {
             drive: 0, down: 1, los: WORLD_H - 26, tds: 0, yards: 0, gain: 0, state: 'select' };
       this.g = g;
     },
-    choose(p) { setAttrs(p); this.startDown(); },
+    // Attributes without a play. A drive sets these once and then asks for
+    // carries one at a time.
+    attach(p) { setAttrs(p); g.backTeam = p.team; },
+    choose(p) { this.attach(p); this.startDown(); },
+    /** Line up a single carry this many yards from the goal line. */
+    startAt(losYards, driveNo) {
+      g.los = GOAL + Math.round(losYards * YARD);
+      g.drive = driveNo || 0;
+      this.startDown();
+    },
+    outcome() { return { kind: g.how, gain: g.gain }; },
     startDown() {
       g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
                clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0,
@@ -672,6 +682,9 @@ const RUN_GAME = (() => {
         if (sy > -SPR && sy < VH + SPR)
           sprite(DEF32[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF);
       }
+      // Set here rather than at pick time: inside a drive the pass play has
+      // repainted the kit for its own two players since our last carry.
+      setJersey(g.backTeam);
       const rb = g.rb, ry = Math.round(rb.y - g.camY);
       if (rb.truck > 0) {
         for (let i = 2; i >= 1; i--) {
@@ -823,6 +836,7 @@ const PASS_GAME = (() => {
                ['Careful', 'an interception ends the run']],
     roster: parseRoster('pass', SAMPLE_QB),
     roster2: parseRoster('recv', SAMPLE_WR),
+    chemPair: [0, 1],
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
             drive: 0, down: 1, los: WORLD_H - 30, marker: WORLD_H - 30 - 10 * YARD,
@@ -836,12 +850,19 @@ const PASS_GAME = (() => {
       g.qbTeam = p.team;
     },
     /** Stage two: the target. Sharing a club with the passer is the bonus. */
-    choose2(p) {
+    attach2(p) {
       W = { SPEED: 0.86 + 0.30 * p.a, HANDS: p.b, ROUTE: p.c };
       g.wrTeam = p.team;
       g.chem = !!(p.team && p.team === g.qbTeam);
+    },
+    choose2(p) { this.attach2(p); this.setup(); },
+    /** Line up a single snap this many yards from the goal line. */
+    startAt(losYards) {
+      g.los = EZ + Math.round(losYards * YARD);
+      g.marker = this.lineToGain(g.los);
       this.setup();
     },
+    outcome() { return { kind: g.result, gain: g.gain }; },
     setup() {
       const rnd = g.rnd;
       const red = (g.los - EZ) < 13 * YARD;          // goal-to-go territory
@@ -1263,14 +1284,153 @@ const KICK_GAME = (() => {
 // SHELL — tabs, picker, overlay, loop
 // ===========================================================================
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
-const GAMES = [RUN_GAME, PASS_GAME, KICK_GAME];
+// ===========================================================================
+// GAME 4 — DRIVE
+//
+// One drive, both play types. The controller owns down, distance and field
+// position; each play is handed to the run or the pass engine, which keeps
+// its own world, its own sprite scale and its own tuned contact maths. They
+// share YARD, so the only thing crossing the boundary is a yard count — no
+// physics is merged, and neither engine learns about the other.
+// ===========================================================================
+const DRIVE_GAME = (() => {
+  const START = 21, TO_GO = 10;
+  // States in which the engine still has the ball. Anything else means the
+  // play is over and the drive takes back control.
+  const PLAYING = ['presnap', 'ready', 'live', 'ball', 'yac'];
+  let g = null, cur = null;
+
+  return {
+    key: 'drive', label: 'Drive',
+    pickTitle: 'Choose your back',
+    pickTitle2: 'Choose your passer',
+    pickTitle3: 'Choose your target',
+    shell: `${RUN_GAME.shell} · ${PASS_GAME.shell}`,
+    attrLabels: RUN_GAME.attrLabels,
+    attrLabels2: PASS_GAME.attrLabels,
+    attrLabels3: PASS_GAME.attrLabels2,
+    hint: 'call the play · then run it',
+    controls: [['Call it', 'run or pass, every down'],
+               ['The front', 'is set before you call — look at it first'],
+               ['Run', 'reliable, and the short-yardage answer'],
+               ['Pass', 'streaky, and how you cover ground'],
+               ['Goal', 'move the chains and score — a stop ends the run']],
+    roster: RUN_GAME.roster,
+    roster2: PASS_GAME.roster,
+    roster3: PASS_GAME.roster2,
+    chemPair: [1, 2],
+    reset() {
+      RUN_GAME.reset();
+      PASS_GAME.reset();
+      cur = null;
+      g = { losYards: START, down: 1, toGo: TO_GO, driveNo: 0,
+            tds: 0, yards: 0, gain: 0, how: '', first: false,
+            calls: { run: 0, pass: 0 }, state: 'select' };
+      this.g = g;
+    },
+    choose(p) { RUN_GAME.attach(p); },
+    choose2(p) { PASS_GAME.choose(p); },
+    choose3(p) { PASS_GAME.attach2(p); this.callPlay(); },
+    /** Between plays: stage the run front so there is something to read, then
+     *  ask for the call. Picking pass re-stages with the pass world. */
+    callPlay() {
+      cur = RUN_GAME;
+      RUN_GAME.startAt(g.losYards, g.driveNo);
+      g.state = 'call';
+    },
+    prompt() {
+      if (g.state === 'call') {
+        return {
+          title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
+          sub: 'call the play',
+          options: [{ key: 'run', label: 'Run' }, { key: 'pass', label: 'Pass' }],
+        };
+      }
+      return g.state === 'play' && cur.prompt ? cur.prompt() : null;
+    },
+    pickOption(key) {
+      if (g.state === 'call') {
+        if (key === 'pass') { cur = PASS_GAME; PASS_GAME.startAt(g.losYards); }
+        g.calls[key === 'pass' ? 'pass' : 'run']++;
+        g.play = key === 'pass' ? 'pass' : 'run';
+        g.state = 'play';
+        return;
+      }
+      if (cur.pickOption) cur.pickOption(key);
+    },
+    step() {
+      if (g.state !== 'play' || !cur) return;
+      cur.step();
+      if (!PLAYING.includes(cur.state)) this.settle();
+    },
+    /** The engine reports in yards; the chains are ours. */
+    settle() {
+      const o = cur.outcome();
+      g.how = o.kind;
+      g.gain = o.gain || 0;
+      g.yards += Math.max(0, g.gain);
+      g.first = false;
+      if (o.kind === 'td') {
+        g.tds++; g.driveNo++;
+        g.losYards = START; g.down = 1; g.toGo = TO_GO;
+        g.state = 'td'; return;
+      }
+      if (o.kind === 'int') { g.state = 'gameover'; return; }
+      g.losYards = Math.max(1, g.losYards - g.gain);
+      g.toGo -= g.gain;
+      if (g.toGo <= 0) {
+        g.down = 1;
+        g.toGo = Math.min(TO_GO, g.losYards);
+        g.first = true;
+        g.state = 'result'; return;
+      }
+      g.down++;
+      g.state = g.down > 4 ? 'gameover' : 'result';
+    },
+    render() { if (cur) cur.render(); },
+    /** Whichever engine has the ball. */
+    get engine() { return cur; },
+    onUp(pt, dx, dy) {
+      if (g.state === 'result' || g.state === 'td') { this.callPlay(); return; }
+      if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
+      if (g.state === 'play' && cur.onUp) cur.onUp(pt, dx, dy);
+    },
+    score() {
+      return { value: g.tds, tie: g.yards, detail: `${g.yards} yd · ${g.calls.run}r/${g.calls.pass}p` };
+    },
+    status() {
+      const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
+      return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
+        + `<span>BALL ON <b>${g.losYards}</b></span><span class="sc">${g.tds} TD</span>`;
+    },
+    overlay() {
+      if (g.state === 'call' || g.state === 'play') return null;
+      const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
+      const NAME = { td: 'Touchdown', tackled: 'Tackled', stuffed: 'Stood up',
+                     complete: 'Complete', incomplete: 'Incomplete', sack: 'Sacked' };
+      if (g.state === 'result') {
+        const ttl = g.first ? 'First down' : (NAME[g.how] || 'Stopped');
+        return { ttl, gold: g.first, bad: g.how === 'sack' || g.how === 'stuffed',
+                 sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for the next call' };
+      }
+      if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
+      return { ttl: g.how === 'int' ? 'Intercepted' : 'Turnover on downs', bad: true,
+               sub: `${g.tds} TD · ${g.yards} yards · ${g.calls.run}r/${g.calls.pass}p`,
+               tap: 'tap to play again' };
+    },
+    get state() { return g ? g.state : 'select'; },
+  };
+
+})();
+
+const GAMES = [RUN_GAME, PASS_GAME, KICK_GAME, DRIVE_GAME];
 let active = GAMES[0];
 let pick = null;
 
 const el = (id) => document.getElementById(id);
 const tabs = el('tabs'), picker = el('picker'), plist = el('plist');
 const promptEl = el('prompt'), propts = el('propts');
-let pick2 = null, pickStage = 0;
+let pick2 = null, pickStage = 0, picks = [];
 const overlay = el('overlay'), ttl = el('ttl'), sub = el('sub'), tapEl = el('tap'), attrs = el('attrs');
 const brief = el('brief'), blist = el('blist');
 let briefing = false;
@@ -1317,19 +1477,31 @@ function segs(v, n, cls) {
   for (let i = 0; i < n; i++) s += `<span class="${cls}${i < on ? ' on' : ''}"></span>`;
   return s;
 }
+/** A game asks for one, two or three players; the picker walks the stages it
+ *  declares. chemPair names which two of them are the battery. */
+function stagesOf(gm) {
+  const out = [{ title: gm.pickTitle, list: gm.roster, choose: gm.choose }];
+  if (gm.roster2 && gm.roster2.length)
+    out.push({ title: gm.pickTitle2, list: gm.roster2, choose: gm.choose2 });
+  if (gm.roster3 && gm.roster3.length)
+    out.push({ title: gm.pickTitle3, list: gm.roster3, choose: gm.choose3 });
+  return out;
+}
 function buildPicker() {
-  const two = !!(active.roster2 && active.roster2.length);
-  const second = pickStage === 1;
-  const list = second ? active.roster2 : active.roster;
-  el('ptitle').textContent = second ? active.pickTitle2 : active.pickTitle;
-  el('pfront').textContent = second && pick
-    ? `${pick.name} throwing · ${pick.team} target = chemistry`
+  const stages = stagesOf(active);
+  const st = stages[pickStage] || stages[0];
+  // The stage that pairs with an earlier pick, and who that pick was.
+  const pair = active.chemPair;
+  const mate = pair && pickStage === pair[1] ? picks[pair[0]] : null;
+  el('ptitle').textContent = st.title;
+  el('pfront').textContent = mate
+    ? `${mate.name} throwing · ${mate.team} target = chemistry`
     : `${active.shell} this week`;
   plist.innerHTML = '';
-  list.forEach((p) => {
+  st.list.forEach((p) => {
     const d = document.createElement('div');
     // A target who shares a club with the passer already picked.
-    const chem = second && pick && p.team && p.team === pick.team;
+    const chem = !!(mate && p.team && p.team === mate.team);
     d.className = chem ? 'pick chem' : 'pick';
     const kit = jerseyOf(p.team);
     d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">`
@@ -1342,27 +1514,23 @@ function buildPicker() {
       + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
     d.onclick = () => {
-      if (!second) {
-        pick = p;
-        setJersey(p.team);
-        active.choose(p);
-        // A two-part game asks for the second player before it starts.
-        if (two) { pickStage = 1; buildPicker(); paintUI(); return; }
-      } else {
-        pick2 = p;
-        active.choose2(p);
+      picks[pickStage] = p;
+      pick = picks[0]; pick2 = picks[1];
+      if (pickStage === 0) setJersey(p.team);
+      st.choose.call(active, p);
+      // More players to field before the first snap.
+      if (pickStage < stages.length - 1) {
+        pickStage++; buildPicker(); paintUI(); return;
       }
       briefing = true;                        // show how-to-play before the first snap
       el('btitle').textContent = `${active.label} — how to play`;
-      const levels = [];
-      for (const [who, labels] of [[pick, active.attrLabels], [pick2, active.attrLabels2]]) {
-        if (!who || !labels) continue;
-        levels.push(`<div class="brow blv"><span class="bk">${who.name}</span>`
-          + `<span class="bv">${(who.tiers || []).filter(Boolean).join(' · ')}</span></div>`);
-      }
-      if (pick && pick2 && pick.team && pick.team === pick2.team) {
+      const levels = picks.filter(Boolean).map((who) =>
+        `<div class="brow blv"><span class="bk">${who.name}</span>`
+        + `<span class="bv">${(who.tiers || []).filter(Boolean).join(' · ')}</span></div>`);
+      const a = pair && picks[pair[0]], b = pair && picks[pair[1]];
+      if (a && b && a.team && a.team === b.team) {
         levels.push(`<div class="brow blv"><span class="bk">Chemistry</span>`
-          + `<span class="bv">${pick.team} battery · truer ball</span></div>`);
+          + `<span class="bv">${a.team} battery · truer ball</span></div>`);
       }
       blist.innerHTML = levels.join('')
         + active.controls
@@ -1375,6 +1543,7 @@ function buildPicker() {
 }
 function select(game) {
   active = game;
+  picks = [];
   pick = null;
   pick2 = null;
   pickStage = 0;
