@@ -1581,6 +1581,30 @@
   color: var(--text-faint);
 }
 
+/* A same-club passer and target you already own. */
+.rp-chem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 20px 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(232, 197, 97, 0.28);
+  border-radius: 7px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.rp-chem-k { color: var(--accent-live); }
+.rp-chem-v {
+  color: var(--text-strong);
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-size: 9.5px;
+}
+.rp-chem-t { margin-left: auto; color: var(--text-faint); }
+
 .rp-card {
   padding: 11px 20px 12px;
   border-bottom: 1px solid var(--divider-row);

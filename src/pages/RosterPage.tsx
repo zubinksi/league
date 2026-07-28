@@ -75,6 +75,16 @@ function PlayerCard({ p, rank }: { p: ArcadePlayer; rank?: number }) {
   );
 }
 
+/** Passer + target on the same NFL club. Picking both in the pass game puts
+ *  the ball where he is going, so it is worth knowing you have one. */
+function batteries(pass: ArcadePlayer[], recv: ArcadePlayer[]) {
+  const out: { key: string; qb: ArcadePlayer; wr: ArcadePlayer }[] = [];
+  for (const qb of pass)
+    for (const wr of recv)
+      if (qb.team && qb.team === wr.team) out.push({ key: `${qb.id}-${wr.id}`, qb, wr });
+  return out;
+}
+
 export function RosterPage() {
   const league = useLeague();
   const rosters = useRosters();
@@ -120,6 +130,16 @@ export function RosterPage() {
             Every ladder counts a stat that only goes up, so a player climbs across the season and
             never slides back. Last season sets the opening rung.
           </p>
+          {batteries(built.pass, built.recv).map(({ key, qb, wr }) => (
+            <div className="rp-chem" key={key}>
+              <i className="rp-kit" style={{ background: teamKit(qb.team) ?? 'transparent' }} />
+              <span className="rp-chem-k">Chemistry</span>
+              <span className="rp-chem-v">
+                {qb.name} → {wr.name}
+              </span>
+              <span className="rp-chem-t">{qb.team}</span>
+            </div>
+          ))}
           {GROUPS.map(({ key, label }) =>
             built[key].length ? (
               <div key={key}>

@@ -120,6 +120,9 @@ const HOME_BENCH: FixturePlayer[] = [
   { id: 'p_charbonnet', first: 'Zach', last: 'Charbonnet', pos: 'RB', team: 'SEA', proj: 9.4, adp: 96.7 },
   { id: 'p_pitts', first: 'Kyle', last: 'Pitts', pos: 'TE', team: 'ATL', pts: 4.2, proj: 8.6, adp: 61.5,
     stats: { rec: 2, rec_yd: 22 } },
+  // Maye's teammate, so the fixture roster exercises the arcade's chemistry pair.
+  { id: 'p_henry', first: 'Hunter', last: 'Henry', pos: 'TE', team: 'NE', pts: 9.1, proj: 9.8, adp: 88.4,
+    stats: { rec: 5, rec_yd: 61, rec_td: 0 } },
 ];
 
 const AWAY_BENCH: FixturePlayer[] = [

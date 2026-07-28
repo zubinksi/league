@@ -148,6 +148,11 @@
     margin-right: 6px; vertical-align: middle;
   }
   .pick .pt { display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 4px; }
+  .pick.chem { border-color: rgba(232,197,97,0.44); }
+  .pick .pchem {
+    margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
+    color: var(--gold);
+  }
   .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
   .pick .pbar { display: flex; gap: 1px; }
   .pick .pseg { width: 5px; height: 4px; background: rgba(255,255,255,0.10); }
@@ -159,6 +164,11 @@
   }
   #status b { color: #c9c9cf; font-weight: 600; }
   #status .sc { color: var(--gold); font-weight: 600; }
+  /* The battery is live — shown as the club the two of them share. */
+  #status .chem {
+    color: var(--gold); font-weight: 600; letter-spacing: 0.14em;
+    border: 1px solid rgba(232,197,97,0.42); border-radius: 3px; padding: 1px 4px;
+  }
   #foot {
     display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; justify-content: center;
     font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase;
@@ -201,7 +211,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade22-board';
+const BUILD = 'arcade23-chem';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -649,8 +659,10 @@ const PASS_GAME = (() => {
   const SPR = 20, HALF = 10, CATCH_R = 11;
   const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
     + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
+  // One of these shares a club with one of the passers, so the standalone
+  // demo shows the chemistry bonus without a league behind it.
   const SAMPLE_WR = 'J. Chase:CIN:0.88:0.74:0.96:0|A. St. Brown:DET:0.60:0.90:0.88:0|'
-    + 'T. McBride:ARI:0.42:0.86:0.70:0|B. Bowers:LV:0.54:0.84:0.78:0';
+    + 'N. Collins:HOU:0.72:0.82:0.84:0|B. Bowers:LV:0.54:0.84:0.78:0';
   const SHELL = mulberry32(hashSeed(SEED + '|shell'))() < 0.5
     ? { key: 'man', label: 'Man coverage', lag: 7, tight: 0.26 }
     : { key: 'zone', label: 'Zone coverage', lag: 15, tight: 0.17 };
@@ -679,6 +691,14 @@ const PASS_GAME = (() => {
     quick: { man: 0.30, zone: -0.18 }, drag: { man: 0.28, zone: -0.14 },
     fade: { man: -0.04, zone: 0.28 }, flat: { man: 0.20, zone: -0.06 },
   };
+  /**
+   * Chemistry. A passer and a receiver who actually play together on Sunday
+   * have thrown this route a thousand times: the ball arrives where he is
+   * going instead of where he is, and he comes out of the break a half-step
+   * freer. Worth a little more than one attribute tier — enough that stacking
+   * a real battery is a decision, not enough that it plays the game for you.
+   */
+  const CHEM = { edge: 0.10, scatter: 0.84 };
   const MENU = ['slant', 'out', 'go', 'post'];
   const RED_MENU = ['quick', 'drag', 'fade', 'flat'];
   const LABEL = {
@@ -726,10 +746,11 @@ const PASS_GAME = (() => {
       A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.32 - 0.14 * p.c };
       g.qbTeam = p.team;
     },
-    /** Stage two: the target. */
+    /** Stage two: the target. Sharing a club with the passer is the bonus. */
     choose2(p) {
       W = { SPEED: 0.86 + 0.30 * p.a, HANDS: p.b, ROUTE: p.c };
       g.wrTeam = p.team;
+      g.chem = !!(p.team && p.team === g.qbTeam);
       this.setup();
     },
     setup() {
@@ -765,8 +786,10 @@ const PASS_GAME = (() => {
       const outside = route === 'out' || route === 'flat' || route === 'fade';
       r.dir = toCenter * (outside ? -1 : 1);
       const edge = (EDGE[route] || {})[SHELL.key] ?? 0;
-      // A real route runner earns separation on top of the concept itself.
-      g.edge = Math.max(-0.4, Math.min(0.6, edge + (W.ROUTE - 0.5) * 0.3));
+      // A real route runner earns separation on top of the concept itself,
+      // and a familiar battery earns a little more.
+      const chem = g.chem ? CHEM.edge : 0;
+      g.edge = Math.max(-0.4, Math.min(0.6, edge + (W.ROUTE - 0.5) * 0.3 + chem));
       g.t = 0;
       g.state = 'live';
     },
@@ -804,7 +827,8 @@ const PASS_GAME = (() => {
       const aim = at(rec, g.t + f);
       // The miss grows with how far the ball has to travel, so a checkdown is
       // nearly automatic and a deep shot is a genuine risk.
-      const spread = A.SCATTER * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
+      const spread = A.SCATTER * (g.chem ? CHEM.scatter : 1)
+        * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
       g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
       g.att++; g.state = 'ball';
@@ -950,7 +974,9 @@ const PASS_GAME = (() => {
       const t = g.marker <= EZ ? 'GOAL' : Math.max(1, Math.round((g.los - g.marker) / YARD));
       const pct = g.att ? Math.round((g.comp / g.att) * 100) : 0;
       return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
-        + `<span><b>${g.comp}/${g.att}</b> ${pct}%</span><span class="sc">${g.tds} TD</span>`;
+        + `<span><b>${g.comp}/${g.att}</b> ${pct}%</span>`
+        + (g.chem ? `<span class="chem">${g.qbTeam}</span>` : '')
+        + `<span class="sc">${g.tds} TD</span>`;
     },
     overlay() {
       const t = g.marker <= EZ ? 'GOAL' : Math.max(1, Math.round((g.los - g.marker) / YARD));
@@ -1208,16 +1234,19 @@ function buildPicker() {
   const list = second ? active.roster2 : active.roster;
   el('ptitle').textContent = second ? active.pickTitle2 : active.pickTitle;
   el('pfront').textContent = second && pick
-    ? `${pick.name} throwing`
+    ? `${pick.name} throwing · ${pick.team} target = chemistry`
     : `${active.shell} this week`;
   plist.innerHTML = '';
   list.forEach((p) => {
     const d = document.createElement('div');
-    d.className = 'pick';
+    // A target who shares a club with the passer already picked.
+    const chem = second && pick && p.team && p.team === pick.team;
+    d.className = chem ? 'pick chem' : 'pick';
     const kit = jerseyOf(p.team);
     d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">`
       + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
       + `${p.team}`
+      + (chem ? `<b class="pchem">chemistry</b>` : '')
       + (p.trend ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
       + `</span></span>`
       + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
@@ -1241,6 +1270,10 @@ function buildPicker() {
         if (!who || !labels) continue;
         levels.push(`<div class="brow blv"><span class="bk">${who.name}</span>`
           + `<span class="bv">${(who.tiers || []).filter(Boolean).join(' · ')}</span></div>`);
+      }
+      if (pick && pick2 && pick.team && pick.team === pick2.team) {
+        levels.push(`<div class="brow blv"><span class="bk">Chemistry</span>`
+          + `<span class="bv">${pick.team} battery · truer ball</span></div>`);
       }
       blist.innerHTML = levels.join('')
         + active.controls
