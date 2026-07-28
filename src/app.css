@@ -1382,8 +1382,141 @@
 .arcade-frame {
   display: block;
   width: 100%;
-  /* fill what's left under the nav bar, above the tab bar */
-  height: calc(100dvh - 58px - 52px - env(safe-area-inset-bottom));
+  /* fill what's left under the nav bar and slot row, above the tab bar */
+  height: calc(100dvh - 58px - 44px - 52px - env(safe-area-inset-bottom));
   border: 0;
   background: #08090b;
+}
+
+/* ---- Arcade: weekly slots, boards ---- */
+
+.arc-slots {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  padding: 0 20px 10px;
+  background: transparent;
+}
+
+.arc-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 0;
+  border-top: 1px solid var(--divider-header);
+}
+
+.arc-slot .k {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
+}
+
+.arc-slot .v {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #4d4f55;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Banked is the only state worth calling out. */
+.arc-slot.done .v { color: var(--accent-live); }
+
+.arc-flash {
+  margin: 0 20px 8px;
+  padding: 7px 10px;
+  border-left: 2px solid var(--accent-live);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-mid);
+  background: rgba(232, 197, 97, 0.06);
+}
+
+.arc-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px 20px 10px;
+}
+
+.arc-tab {
+  padding: 5px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+}
+
+.arc-tab.on {
+  color: #0c0d0f;
+  background: #e9e9ec;
+  border-color: #e9e9ec;
+}
+
+.arc-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--divider-row);
+}
+
+.arc-row .rk {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.arc-row .nm {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.arc-row .pl {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.arc-row .vl {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-max);
+  font-variant-numeric: tabular-nums;
+}
+
+.arc-row .vl i {
+  margin-left: 4px;
+  font-size: 8px;
+  font-style: normal;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+}
+
+.arc-row.me .nm { color: var(--accent-live); }
+
+.arc-note {
+  padding: 14px 20px 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.7;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
 }

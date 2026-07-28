@@ -160,7 +160,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade14-form';
+const BUILD = 'arcade15-score';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -551,6 +551,7 @@ const RUN_GAME = (() => {
       if (rb.clean) for (const d of g.defenders)
         if (Math.hypot(rb.x - d.x, rb.y - d.y) < A.CONTACT + 10) d.stumble = A.STUMBLE;
     },
+    score() { return { value: g.yards, detail: `${g.tds} TD` }; },
     status() {
       const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
       return `<span>DRIVE <b>${g.drive + 1}</b></span><span>DOWN <b>${g.down}</b></span>`
@@ -759,6 +760,7 @@ const PASS_GAME = (() => {
       }
       if (best && bd < 34) this.throwTo(best);
     },
+    score() { return { value: g.yards, detail: `${g.comp}/${g.att}` }; },
     status() {
       const t = Math.max(1, Math.round((g.los - EZ) / YARD));
       const pct = g.att ? Math.round((g.comp / g.att) * 100) : 0;
@@ -934,6 +936,7 @@ const KICK_GAME = (() => {
       if (g.state === 'good') { this.setup(); return; }
       if (g.state === 'miss') { this.reset(); g.state = 'select'; return; }
     },
+    score() { return { value: g.made, detail: g.longest ? `long ${g.longest} yd` : '' }; },
     status() {
       // Wind is worth more than half the gap between the posts on a long
       // attempt, so it has to be readable for the whole session — naming it
@@ -1100,13 +1103,36 @@ window.addEventListener('keydown', (e) => {
   else if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); active.onUp({ x: VW / 2, y: 0 }, 0, 0); paintUI(); }
 });
 
+/** Terminal states differ per game: the kick run ends on the first miss. */
+const isOver = (g) => g.state === 'gameover' || (g.key === 'kick' && g.state === 'miss');
+
+let reported = '';
+function reportScore() {
+  if (!active.score || !active.g) return;
+  const r = active.score();
+  // Guard against the same finish being posted twice by a repaint.
+  const stamp = `${active.key}:${r.value}:${r.detail}`;
+  if (stamp === reported) return;
+  reported = stamp;
+  try {
+    parent.postMessage({
+      source: 'arcade', type: 'score', game: active.key,
+      value: r.value, detail: r.detail,
+      player: pick ? pick.name : '', team: pick ? pick.team : '', seed: SEED,
+    }, '*');
+  } catch { /* standalone, not embedded */ }
+}
+
 // ---- loop ----------------------------------------------------------------
 let acc = 0, last = performance.now();
 function frame(now) {
   acc += Math.min(100, now - last); last = now;
   const before = active.state;
   while (acc >= 1000 / 60) { if (active.state !== 'select') active.step(); acc -= 1000 / 60; }
-  if (before !== active.state) paintUI();
+  if (before !== active.state) {
+    paintUI();
+    if (isOver(active)) reportScore();
+  }
   if (active.state !== 'select' && active.g) active.render();
   requestAnimationFrame(frame);
 }
