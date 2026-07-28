@@ -1382,30 +1382,33 @@
 .arcade-frame {
   display: block;
   width: 100%;
-  /* fill what's left under the nav bar and slot row, above the tab bar */
-  height: calc(100dvh - 58px - 44px - 52px - env(safe-area-inset-bottom));
+  /* fill what's left under the nav bar, above the tab bar */
+  height: calc(100dvh - 58px - 52px - env(safe-area-inset-bottom));
   border: 0;
   background: #08090b;
 }
 
 /* ---- Arcade: weekly slots, board panel ---- */
 
+/* Your banked scores, shown only inside the board — they double as its game
+   selector, so the page above the game stays completely clear. */
 .arc-slots {
   display: grid;
-  grid-template-columns: repeat(3, 1fr) auto;
+  grid-template-columns: repeat(3, 1fr);
   align-items: stretch;
-  gap: 10px;
-  padding: 2px 20px 10px;
+  gap: 8px;
+  padding: 12px 20px 14px;
+  border-bottom: 1px solid var(--divider-header);
 }
 
-/* Each slot is its own tap target and the board's game selector. */
 .arc-slot {
   display: flex;
   flex-direction: column;
-  align-items: center;      /* centred so the row reads as three equal blocks */
-  gap: 3px;
-  padding: 7px 4px 6px;
-  border-top: 1px solid var(--divider-header);
+  align-items: center;
+  gap: 4px;
+  padding: 8px 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
   text-align: center;
   transition: border-color 0.18s, background 0.18s;
 }
@@ -1431,41 +1434,34 @@
 .arc-slot.done .v { color: var(--accent-live); }
 
 .arc-slot.on {
-  border-top-color: var(--accent-live);
-  background: rgba(232, 197, 97, 0.06);
+  border-color: rgba(232, 197, 97, 0.42);
+  background: rgba(232, 197, 97, 0.07);
 }
 
 .arc-slot.on .k { color: var(--text-mid); }
 
-.arc-open {
-  align-self: center;
-  margin-top: 4px;
-  padding: 6px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  border-radius: 999px;
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.18em;
-  color: var(--text-dim);
-  white-space: nowrap;
-}
-
-.arc-open.on {
-  color: #0c0d0f;
-  background: #e9e9ec;
-  border-color: #e9e9ec;
-}
-
 .arc-flash {
-  margin: 0 20px 8px;
-  padding: 7px 10px;
+  position: absolute;
+  top: 10px;
+  left: 20px;
+  right: 20px;
+  z-index: 2;
+  padding: 8px 11px;
   border-left: 2px solid var(--accent-live);
+  border-radius: 0 4px 4px 0;
   font-family: var(--font-mono);
   font-size: 9.5px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--text-mid);
-  background: rgba(232, 197, 97, 0.06);
+  background: rgba(20, 19, 15, 0.94);
+  animation: arcfade 4.5s ease-out forwards;
+}
+
+@keyframes arcfade {
+  0% { opacity: 0; transform: translateY(-4px); }
+  6%, 80% { opacity: 1; transform: none; }
+  100% { opacity: 0; }
 }
 
 /* The board takes the game's space rather than sitting below it — nothing to

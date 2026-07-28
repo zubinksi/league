@@ -31,6 +31,8 @@
     cursor: pointer; transition: color .2s, border-color .2s;
   }
   .tab.on { color: #0c0d0f; background: #e9e9ec; border-color: #e9e9ec; }
+  /* Set apart: it opens the host's leaderboard rather than switching game. */
+  .tab.board { margin-left: 9px; border-style: dashed; letter-spacing: 0.16em; }
   #stage { position: relative; }
   canvas {
     image-rendering: pixelated; image-rendering: crisp-edges;
@@ -160,7 +162,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade16-board';
+const BUILD = 'arcade17-board';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -981,6 +983,18 @@ GAMES.forEach((game) => {
   tabs.appendChild(t);
 });
 
+// Standings live in the host page, so this only earns its place when embedded.
+if (window.parent !== window) {
+  const b = document.createElement('div');
+  b.className = 'tab board'; b.textContent = 'Board';
+  b.onclick = () => {
+    try {
+      parent.postMessage({ source: 'arcade', type: 'board', game: active.key }, '*');
+    } catch { /* no host */ }
+  };
+  tabs.appendChild(b);
+}
+
 // `name:team:a:b:c:trend` — trend is -1/0/1 for how the rating has moved over
 // the last few weeks, so a player on a heater is visible before you pick him.
 function parseRoster(param, sample) {
@@ -1040,10 +1054,6 @@ function select(game) {
   el('hint').textContent = game.hint;
   buildPicker();
   paintUI();
-  // Let the host follow along, so its board can default to what you're playing.
-  try {
-    parent.postMessage({ source: 'arcade', type: 'game', game: game.key }, '*');
-  } catch { /* standalone */ }
 }
 
 function paintUI() {

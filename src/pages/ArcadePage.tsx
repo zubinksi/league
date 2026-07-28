@@ -37,8 +37,6 @@ export function ArcadePage() {
   const [scores, setScores] = useState<ScoreEntry[]>([]);
   const [board, setBoard] = useState<GameKey>('run');
   const [boardOpen, setBoardOpen] = useState(false);
-  // Mirrors the game the iframe is on, so BOARD opens what you're playing.
-  const [playing, setPlaying] = useState<GameKey>('run');
   const [flash, setFlash] = useState<string>('');
 
   const week = defaultWeek(league.data, state.data);
@@ -65,7 +63,7 @@ export function ArcadePage() {
     const onMessage = async (e: MessageEvent) => {
       const d = e.data;
       if (!d || d.source !== 'arcade' || !GAMES.includes(d.game)) return;
-      if (d.type === 'game') { setPlaying(d.game as GameKey); return; }
+      if (d.type === 'board') { setBoard(d.game as GameKey); setBoardOpen(true); return; }
       if (d.type !== 'score') return;
       const game = d.game as GameKey;
       const { counted } = await recordScore({
@@ -125,52 +123,38 @@ export function ArcadePage() {
         )
       ) : (
         <>
-          {status && (
-            <div className="arc-slots">
-              {GAMES.map((g) => (
-                <button
-                  key={g}
-                  className={`arc-slot${status[g] ? ' done' : ''}`
-                    + `${boardOpen && board === g ? ' on' : ''}`}
-                  onClick={() => {
-                    if (boardOpen && board === g) setBoardOpen(false);
-                    else { setBoard(g); setBoardOpen(true); }
-                  }}
-                >
-                  <span className="k">{GAME_LABEL[g]}</span>
-                  <span className="v">
-                    {status[g] ? `${status[g]!.value} ${GAME_UNIT[g]}` : 'OPEN'}
-                  </span>
-                </button>
-              ))}
-              <button
-                className={`arc-open${boardOpen ? ' on' : ''}`}
-                onClick={() => {
-                  if (!boardOpen) setBoard(playing);
-                  setBoardOpen((o) => !o);
-                }}
-              >
-                {boardOpen ? 'CLOSE' : 'BOARD'}
-              </button>
-            </div>
-          )}
-          {flash && <div className="arc-flash">{flash}</div>}
-
           <div className="arc-stage">
             {src ? (
               <iframe className="arcade-frame" src={src} title="Arcade" />
             ) : (
               <div className="state-note">Building your roster</div>
             )}
+            {flash && <div className="arc-flash">{flash}</div>}
 
             {boardOpen && (
               <div className="arc-panel">
                 <div className="arc-panel-head">
-                  <span>WEEK {week} · {GAME_LABEL[board]}</span>
+                  <span>WEEK {week} BOARD</span>
                   <button className="arc-close" onClick={() => setBoardOpen(false)} aria-label="Close">
                     ×
                   </button>
                 </div>
+                {status && (
+                  <div className="arc-slots">
+                    {GAMES.map((g) => (
+                      <button
+                        key={g}
+                        className={`arc-slot${status[g] ? ' done' : ''}${board === g ? ' on' : ''}`}
+                        onClick={() => setBoard(g)}
+                      >
+                        <span className="k">{GAME_LABEL[g]}</span>
+                        <span className="v">
+                          {status[g] ? `${status[g]!.value} ${GAME_UNIT[g]}` : 'OPEN'}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="arc-board">
                   {rows.length ? (
                     rows.map((r) => (
