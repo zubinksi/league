@@ -21,6 +21,8 @@ import type { WeekStats, StatMap } from '../api/stats';
 
 export interface AttrDetail {
   label: string;
+  /** This rung was crossed in the last few weeks. */
+  levelled: boolean;
   /** What the ladder counts, for the roster page to name it. */
   unit: string;
   tier: number;
@@ -33,6 +35,8 @@ export interface AttrDetail {
 }
 
 export interface ArcadePlayer {
+  /** Sleeper player id, so callers can join back to other data. */
+  id: string;
   name: string;
   team: string;
   position: string;
@@ -47,6 +51,9 @@ export interface ArcadePlayer {
   trend: number;
   /** Ladder detail, for showing progress outside the game. */
   attrs: AttrDetail[];
+  /** This season's real production, for context. Excludes the prior-season
+   *  seed, which belongs in the ladder but would be a lie on a stat line. */
+  summary: string;
 }
 
 /** How much of last season carries in. Sets a floor without capping the climb. */
@@ -74,6 +81,7 @@ function ladder(rung: Rung, stat: number): AttrDetail {
   const need = top ? null : Math.max(0, Math.ceil(hi - stat));
   return {
     label: rung.label,
+    levelled: false,
     unit: need === 1 ? rung.unitOne ?? rung.unit : rung.unit,
     tier: i,
     name: names[i],
@@ -175,6 +183,23 @@ function ratePlayer(position: string, totals: StatMap, weight: number | undefine
 }
 
 const tierSum = (r: Rated) => r.ta + r.tb + r.tc;
+
+const whole = (v: number) => Math.round(v).toLocaleString();
+
+/** Season line, in the shape that suits the position. */
+function summarise(position: string, t: StatMap): string {
+  if (position === 'QB') {
+    return `${whole(num(t.pass_yd))} YD · ${whole(num(t.pass_td))} TD · ${whole(num(t.pass_int))} INT`;
+  }
+  if (position === 'RB') {
+    return `${whole(num(t.rush_att))} CAR · ${whole(num(t.rush_yd))} YD · `
+      + `${whole(num(t.rush_td) + num(t.rec_td))} TD`;
+  }
+  if (position === 'WR' || position === 'TE') {
+    return `${whole(num(t.rec))} REC · ${whole(num(t.rec_yd))} YD · ${whole(num(t.rec_td))} TD`;
+  }
+  return `${whole(num(t.fgm))}/${whole(num(t.fga))} FG · ${whole(num(t.xpm))} XP`;
+}
 const rankOf = (p: ArcadePlayer) => p.a + p.b + p.c;
 
 export function buildArcadeRosters(
@@ -194,15 +219,23 @@ export function buildArcadeRosters(
     if (!meta?.position) continue;
     const weight = meta.weight ? parseInt(meta.weight, 10) : undefined;
     const prior = priorSeason?.[id];
-    const now = ratePlayer(meta.position, seeded(cumulative(id, weekly), prior), weight);
+    const thisSeason = cumulative(id, weekly);
+    const now = ratePlayer(meta.position, seeded(thisSeason, prior), weight);
     if (!now) continue;
     const before = ratePlayer(meta.position, seeded(cumulative(id, earlier), prior), weight);
+    // Per rung, so the bar can mark the one just crossed rather than the card
+    // carrying a single badge for the whole player.
+    if (before) {
+      now.attrs.forEach((a, i) => { a.levelled = a.tier > before.attrs[i].tier; });
+    }
 
     const entry: ArcadePlayer = {
+      id,
       name: playerShortName(meta, id),
       team: meta.team ?? '',
       position: meta.position,
       ...now,
+      summary: summarise(meta.position, thisSeason),
       trend: before && tierSum(now) > tierSum(before) ? 1 : 0,
     };
     if (meta.position === 'RB') run.push(entry);

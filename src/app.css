@@ -1582,7 +1582,7 @@
 }
 
 .rp-card {
-  padding: 12px 20px 13px;
+  padding: 11px 20px 12px;
   border-bottom: 1px solid var(--divider-row);
 }
 
@@ -1590,7 +1590,6 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 9px;
 }
 
 .rp-kit {
@@ -1606,30 +1605,43 @@
   font-weight: 600;
   letter-spacing: -0.01em;
   color: var(--text-strong);
+  white-space: nowrap;
 }
 
 .rp-team {
   font-family: var(--font-mono);
   font-size: 8.5px;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.16em;
   color: var(--text-faint);
+  white-space: nowrap;
 }
 
-.rp-up {
+/* The single nearest rung, rather than one line per ladder. */
+.rp-next {
   margin-left: auto;
   font-family: var(--font-mono);
   font-size: 8px;
-  letter-spacing: 0.16em;
-  color: var(--accent-live);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #55575d;
+  white-space: nowrap;
 }
 
-/* label · bar · earned tier · what the next rung costs */
+.rp-season {
+  margin: 3px 0 8px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .rp-attr {
   display: grid;
-  grid-template-columns: 58px 1fr 92px;
+  grid-template-columns: 54px minmax(0, 1fr) 96px;
   align-items: center;
   gap: 9px;
-  padding: 3px 0;
+  padding: 2px 0;
 }
 
 .rp-label {
@@ -1640,39 +1652,40 @@
   color: var(--text-faint);
 }
 
-.rp-bar {
+/* Five rungs: gaps do the tick work, so the bar reads as levels. */
+.rp-rungs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+}
+
+.rp-rungs i {
   display: block;
-  height: 4px;
-  border-radius: 2px;
+  height: 5px;
+  border-radius: 1px;
   background: rgba(255, 255, 255, 0.07);
   overflow: hidden;
 }
 
-.rp-bar i {
+.rp-rungs i b {
   display: block;
   height: 100%;
   background: #c9c9cf;
   transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* The rung just crossed, so recent movement lives on the bar itself. */
+.rp-rungs i.fresh { background: rgba(232, 197, 97, 0.18); }
+.rp-rungs i.fresh b { background: var(--accent-live); }
+
 .rp-tier {
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 600;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--accent-live);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.rp-next {
-  grid-column: 2 / 4;
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #4d4f55;
-  margin-top: -1px;
 }

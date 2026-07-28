@@ -278,14 +278,18 @@ function statsForWeek(week: number): Record<string, any> {
   const out: Record<string, any> = {};
   ALL_PLAYERS.forEach((p, idx) => {
     const factor = 0.45 + (((week * 31 + idx * 17) % 90) / 90) * 1.1;
-    const base = p.stats ?? {};
+    // No stat line means no production. Falling back to the projection here
+    // handed players fantasy points with none of the categories behind them,
+    // which real data can never do — points are derived from the categories.
+    const base = p.stats;
+    if (!base) return;
     const scaled: Record<string, number> = {};
     for (const [k, v] of Object.entries(base)) {
       scaled[k] = k.includes('att') || k === 'rec' || k.includes('cmp')
         ? Math.max(1, Math.round(v * factor))
         : Math.round(v * factor * 10) / 10;
     }
-    scaled.pts_ppr = Math.round((p.pts ?? p.proj) * factor * 10) / 10;
+    scaled.pts_ppr = Math.round((p.pts ?? 0) * factor * 10) / 10;
     out[p.id] = scaled;
   });
   return out;

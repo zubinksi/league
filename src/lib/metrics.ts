@@ -40,6 +40,31 @@ export function positionRank(
   return above + 1;
 }
 
+/** Every player's rank within their own position, in one pass. Cheaper than
+ *  calling positionRank per player when a whole roster needs ranking. */
+export function positionRanks(
+  stats: WeekStats | undefined,
+  players: PlayerMap,
+  recValue: number,
+): Map<string, number> {
+  const out = new Map<string, number>();
+  if (!stats) return out;
+  const byPos = new Map<string, { id: string; pts: number }[]>();
+  for (const [id, s] of Object.entries(stats)) {
+    const pos = players[id]?.position;
+    const pts = projectedPoints(s, recValue);
+    if (!pos || pts === undefined) continue;
+    const list = byPos.get(pos);
+    if (list) list.push({ id, pts });
+    else byPos.set(pos, [{ id, pts }]);
+  }
+  for (const list of byPos.values()) {
+    list.sort((a, b) => b.pts - a.pts);
+    list.forEach((e, i) => out.set(e.id, i + 1));
+  }
+  return out;
+}
+
 /** Rank of a player's fantasy points across ALL positions (1 = best). */
 export function overallRank(
   stats: WeekStats | undefined,
