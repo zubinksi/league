@@ -130,6 +130,19 @@ function ratePlayer(position: string, w: Weighted, weight: number | undefined): 
     };
   }
 
+  // WR and TE share a stat shape, so they share a rating and a picker.
+  if (position === 'WR' || position === 'TE') {
+    return {
+      // How far downfield he works — a deep threat runs his stem faster.
+      a: norm(per(t.rec_yd, t.rec), 7.5, 16.5),
+      // Catch rate is a real skill stat rather than a proxy, but targets come
+      // in slowly, so it leans on the prior until the sample earns its way out.
+      b: norm(shrunk(t.rec, t.rec_tgt, 0.655, 20), 0.50, 0.80),
+      // Target share is trust, and trust is a player who gets open.
+      c: norm(per(t.rec_tgt, gp), 2, 10),
+    };
+  }
+
   if (position === 'K') {
     // Leg is range, not workload. Attempt volume measured how often the
     // offence stalled, so a kicker on a bad team got a bigger leg.
@@ -158,9 +171,10 @@ export function buildArcadeRosters(
   playerIds: string[],
   players: PlayerMap,
   weekly: (WeekStats | undefined)[],
-): { run: ArcadePlayer[]; pass: ArcadePlayer[]; kick: ArcadePlayer[] } {
+): { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] } {
   const run: ArcadePlayer[] = [];
   const pass: ArcadePlayer[] = [];
+  const recv: ArcadePlayer[] = [];
   const kick: ArcadePlayer[] = [];
   const earlier = weekly.slice(0, Math.max(1, weekly.length - TREND_LOOKBACK));
 
@@ -181,6 +195,7 @@ export function buildArcadeRosters(
     };
     if (meta.position === 'RB') run.push(entry);
     else if (meta.position === 'QB') pass.push(entry);
+    else if (meta.position === 'WR' || meta.position === 'TE') recv.push(entry);
     else kick.push(entry);
   }
 
@@ -188,13 +203,14 @@ export function buildArcadeRosters(
   const byRating = (x: ArcadePlayer, y: ArcadePlayer) => overall(y) - overall(x);
   run.sort(byRating);
   pass.sort(byRating);
+  recv.sort(byRating);
   kick.sort(byRating);
-  return { run, pass, kick };
+  return { run, pass, recv, kick };
 }
 
-const encode = (list: ArcadePlayer[]): string =>
+const encode = (list: ArcadePlayer[], limit = 6): string =>
   list
-    .slice(0, 6)
+    .slice(0, limit)
     .map((p) =>
       [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2), p.trend].join(':'),
     )
@@ -203,12 +219,14 @@ const encode = (list: ArcadePlayer[]): string =>
 /** Query string the arcade page reads. Omits a game with no eligible players
  *  so it falls back to its sample roster rather than rendering empty. */
 export function arcadeQuery(
-  rosters: { run: ArcadePlayer[]; pass: ArcadePlayer[]; kick: ArcadePlayer[] },
+  rosters: { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] },
   seed: string,
 ): string {
   const q = new URLSearchParams({ seed });
   if (rosters.run.length) q.set('run', encode(rosters.run));
   if (rosters.pass.length) q.set('pass', encode(rosters.pass));
+  // Receivers are the deepest group on a roster, so the list runs longer.
+  if (rosters.recv.length) q.set('recv', encode(rosters.recv, 8));
   if (rosters.kick.length) q.set('kick', encode(rosters.kick));
   return q.toString();
 }

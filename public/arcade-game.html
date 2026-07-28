@@ -70,6 +70,33 @@
   .attr .seg { width: 7px; height: 7px; background: rgba(255,255,255,0.10); }
   .attr .seg.on { background: #e9e9ec; }
 
+  /* Pre-snap route menu: choosing the concept is what snaps the ball. */
+  #prompt {
+    /* Anchored to the top: pre-snap the players are down by the line, and the
+       alignment you're reading is the whole point of choosing a route. */
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: flex-start; gap: 7px;
+    padding: 14px 14px 0; text-align: center;
+    background: linear-gradient(180deg,
+      rgba(8,9,11,0.92) 0%, rgba(8,9,11,0.72) 34%, rgba(8,9,11,0) 58%);
+  }
+  #prompt.show { display: flex; }
+  .prtitle {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
+    text-transform: uppercase; color: var(--gold);
+  }
+  .prsub {
+    font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase;
+    color: #6d6f76; margin-bottom: 4px;
+  }
+  #propts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 3px; }
+  .propt {
+    padding: 9px 15px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: #ececed; cursor: pointer; touch-action: manipulation;
+  }
+  .propt:active { background: rgba(255,255,255,0.12); }
+
   #picker {
     position: absolute; inset: 0; display: none; flex-direction: column;
     align-items: center; justify-content: center; gap: 7px; padding: 0 14px;
@@ -149,6 +176,11 @@
       <div id="blist"></div>
       <div class="bstart">tap to begin</div>
     </div>
+    <div id="prompt">
+      <div class="prtitle" id="prtitle"></div>
+      <div class="prsub" id="prsub"></div>
+      <div id="propts"></div>
+    </div>
     <div id="overlay">
       <div id="ttl"></div><div id="sub"></div><div id="attrs"></div><div id="tap"></div>
     </div>
@@ -162,7 +194,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade17-board';
+const BUILD = 'arcade18-duo';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -581,17 +613,18 @@ const PASS_GAME = (() => {
   const YARD = 16, EZ = 10 * YARD, DRIVE_YARDS = 21;
   const WORLD_H = EZ + DRIVE_YARDS * YARD + 30;
   const SPR = 20, HALF = 10, CATCH_R = 11;
-  const SAMPLE = 'J. Allen:BUF:0.96:0.68:0.88|C. Stroud:HOU:0.82:0.88:0.62|'
-    + 'B. Purdy:SF:0.54:0.93:0.55|D. Maye:NE:0.78:0.72:0.74';
+  const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
+    + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
+  const SAMPLE_WR = 'J. Chase:CIN:0.88:0.74:0.96:0|A. St. Brown:DET:0.60:0.90:0.88:0|'
+    + 'T. McBride:ARI:0.42:0.86:0.70:0|B. Bowers:LV:0.54:0.84:0.78:0';
   const SHELL = mulberry32(hashSeed(SEED + '|shell'))() < 0.5
-    ? { label: 'Man coverage', lag: 13, tight: 0.15 }
-    : { label: 'Zone coverage', lag: 26, tight: 0.09 };
+    ? { key: 'man', label: 'Man coverage', lag: 7, tight: 0.26 }
+    : { key: 'zone', label: 'Zone coverage', lag: 15, tight: 0.17 };
   const ROUTES = {
     go: (t) => ({ x: 0, y: -t * 0.92 }),
     slant: (t, d) => (t < 34 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 34) * 0.72, y: -(29 + (t - 34) * 0.58) }),
     out: (t, d) => (t < 52 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 52) * 1.02, y: -(45 + (t - 52) * 0.22) }),
     post: (t, d) => (t < 66 ? { x: 0, y: -t * 0.92 } : { x: d * (t - 66) * 0.6, y: -(61 + (t - 66) * 0.78) }),
-    curl: (t) => (t < 58 ? { x: 0, y: -t * 0.88 } : { x: 0, y: -(51 - (t - 58) * 0.3) }),
   };
   // Near the goal line the field compresses, so the concepts do too: quick
   // breaks and horizontal-working routes instead of vertical stems.
@@ -601,43 +634,106 @@ const PASS_GAME = (() => {
     drag: (t, d) => (t < 12 ? { x: 0, y: -t * 0.8 } : { x: d * (t - 12) * 1.06, y: -(10 + (t - 12) * 0.14) }),
     flat: (t, d) => (t < 8 ? { x: 0, y: -t * 0.66 } : { x: d * (t - 8) * 1.18, y: -(5 + (t - 8) * 0.08) }),
   };
-  const KEYS = Object.keys(ROUTES), RED_KEYS = Object.keys(RED);
+  /**
+   * The pre-snap read. Man coverage trails the route, so a break wins; zone
+   * sits in an area, so you go over the top of it. Positive means the route
+   * beats that shell, and it loosens the defender for the play.
+   */
+  const EDGE = {
+    slant: { man: 0.34, zone: -0.22 }, out: { man: 0.28, zone: -0.10 },
+    go: { man: -0.06, zone: 0.32 }, post: { man: 0.04, zone: 0.30 },
+    quick: { man: 0.30, zone: -0.18 }, drag: { man: 0.28, zone: -0.14 },
+    fade: { man: -0.04, zone: 0.28 }, flat: { man: 0.20, zone: -0.06 },
+  };
+  const MENU = ['slant', 'out', 'go', 'post'];
+  const RED_MENU = ['quick', 'drag', 'fade', 'flat'];
+  const LABEL = {
+    slant: 'Slant', out: 'Out', go: 'Go', post: 'Post',
+    quick: 'Quick', drag: 'Drag', fade: 'Fade', flat: 'Flat',
+  };
   const BOOK = (r) => (r.red ? RED : ROUTES);
-  let A = {}, g = null;
-  const at = (r, t) => { const o = BOOK(r)[r.route](Math.max(0, t), r.dir); return { x: r.sx + o.x, y: r.sy + o.y }; };
+
+  let A = {}, W = {}, g = null;
+  // The receiver's speed rating stretches the route clock, so a burner is
+  // further along his stem at the same instant.
+  // Clamped to the field here, not at the call site: the lead prediction and
+  // the receiver have to agree, or a route working toward the sideline aims
+  // the ball somewhere he is not allowed to be.
+  const at = (r, t) => {
+    const o = BOOK(r)[r.route](Math.max(0, t) * r.speed, r.dir);
+    return {
+      x: Math.max(10, Math.min(VW - 10, r.sx + o.x)),
+      y: Math.max(14, r.sy + o.y),
+    };
+  };
 
   return {
-    key: 'pass', label: 'Pass', pickTitle: 'Choose your passer',
+    key: 'pass', label: 'Pass',
+    pickTitle: 'Choose your passer', pickTitle2: 'Choose your target',
     shell: SHELL.label, attrLabels: ['Arm', 'Accuracy', 'Escape'],
-    hint: 'tap a receiver to throw',
-    controls: [['Tap a receiver', 'throw — the ball leads them'], ['Wait', 'routes need time to break open'],
-               ['Pressure', 'the rush gets home in about three seconds'], ['Careful', 'an interception ends the run']],
-    roster: parseRoster('pass', SAMPLE),
+    attrLabels2: ['Speed', 'Hands', 'Route'],
+    hint: 'pick a route · tap to throw',
+    controls: [['Pick a route', 'beat the coverage before the snap'],
+               ['Man coverage', 'breaks win — slant, out, drag'],
+               ['Zone coverage', 'go over the top — go, post, fade'],
+               ['Tap', 'throw — the ball leads him'],
+               ['Careful', 'an interception ends the run']],
+    roster: parseRoster('pass', SAMPLE_QB),
+    roster2: parseRoster('recv', SAMPLE_WR),
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
             drive: 0, down: 1, los: WORLD_H - 30, tds: 0, comp: 0, att: 0, yards: 0, gain: 0,
-            result: '', state: 'select', t: 0, receivers: [], rushers: [], ball: null };
+            result: '', state: 'select', t: 0, wr: null, rushers: [], ball: null, edge: 0 };
       this.g = g;
     },
+    /** Stage one: the passer. Stays in select so the target can be picked. */
     choose(p) {
       A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.32 - 0.14 * p.c };
-      this.setup(); g.state = 'ready';
+      g.qbTeam = p.team;
+    },
+    /** Stage two: the target. */
+    choose2(p) {
+      W = { SPEED: 0.86 + 0.30 * p.a, HANDS: p.b, ROUTE: p.c };
+      g.wrTeam = p.team;
+      this.setup();
     },
     setup() {
       const rnd = g.rnd;
       const red = (g.los - EZ) < 13 * YARD;          // goal-to-go territory
-      g.receivers = [30, 90, 150].map((x, i) => ({
-        id: i, x, y: g.los - 8, sx: x, sy: g.los - 8, dir: x < VW / 2 ? 1 : -1,
-        red,
-        route: (red ? RED_KEYS : KEYS)[Math.floor(rnd() * (red ? RED_KEYS : KEYS).length)],
-        hist: [], frame: rnd() * 3,
-        db: { x: x + (rnd() * 8 - 4), y: g.los - 22 - rnd() * 8, frame: rnd() * 3 },
-      }));
+      const sx = rnd() < 0.5 ? 44 : VW - 44;
+      g.red = red;
+      g.wr = {
+        sx, sy: g.los - 8, x: sx, y: g.los - 8, dir: 1, route: null, red,
+        hist: [], frame: rnd() * 3, speed: W.SPEED,
+        db: { x: sx + (rnd() * 6 - 3), y: g.los - 15 - rnd() * 5, frame: rnd() * 3 },
+      };
       g.rushers = [{ x: VW / 2 - 34, y: g.los - 34, frame: 0 }, { x: VW / 2 + 34, y: g.los - 34, frame: 1 }];
       g.qb = { x: VW / 2, y: g.los + 6 };
-      g.ball = null; g.t = 0;
+      g.ball = null; g.t = 0; g.edge = 0;
       g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.74));
       g.state = 'ready';
+    },
+    /** Pre-snap: the route choice is the snap. */
+    prompt() {
+      if (g.state !== 'ready') return null;
+      return {
+        title: SHELL.label,
+        sub: 'pick the route',
+        options: (g.red ? RED_MENU : MENU).map((k) => ({ key: k, label: LABEL[k] })),
+      };
+    },
+    pickOption(route) {
+      const r = g.wr;
+      r.route = route;
+      // Inside breaks work back to the middle, outside breaks to the sideline.
+      const toCenter = r.sx < VW / 2 ? 1 : -1;
+      const outside = route === 'out' || route === 'flat' || route === 'fade';
+      r.dir = toCenter * (outside ? -1 : 1);
+      const edge = (EDGE[route] || {})[SHELL.key] ?? 0;
+      // A real route runner earns separation on top of the concept itself.
+      g.edge = Math.max(-0.4, Math.min(0.6, edge + (W.ROUTE - 0.5) * 0.3));
+      g.t = 0;
+      g.state = 'live';
     },
     end(kind, gain) {
       g.result = kind; g.gain = Math.round(gain / YARD);
@@ -650,34 +746,35 @@ const PASS_GAME = (() => {
         g.down++; g.state = g.down > 4 ? 'gameover' : 'result';
       }
     },
-    throwTo(rec) {
-      const from = g.qb;
+    throwTo() {
+      const rec = g.wr, from = g.qb;
       let f = Math.hypot(rec.x - from.x, rec.y - from.y) / A.V;
       for (let i = 0; i < 3; i++) { const p = at(rec, g.t + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
       const aim = at(rec, g.t + f);
-      // The miss can now exceed the catch radius, and it grows with how far
-      // the ball has to travel — a checkdown is nearly automatic, a deep shot
-      // is a genuine risk. Previously scatter was capped below the catch
-      // radius, so an incompletion was arithmetically impossible.
+      // The miss grows with how far the ball has to travel, so a checkdown is
+      // nearly automatic and a deep shot is a genuine risk.
       const spread = A.SCATTER * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
-      g.ball = { x: from.x, y: from.y, target: rec.id,
-                 tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
+      g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
       g.att++; g.state = 'ball';
     },
     step() {
       if (g.state !== 'live' && g.state !== 'ball') return;
       g.t++;
-      for (const r of g.receivers) {
-        const p = at(r, g.t);
-        r.x = Math.max(10, Math.min(VW - 10, p.x)); r.y = Math.max(14, p.y);
-        r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
-        if (r.hist.length > 60) r.hist.shift();
-        r.db.frame += 0.2;
-        const lag = r.hist[Math.max(0, r.hist.length - 1 - SHELL.lag)] || p;
-        r.db.x += (lag.x - r.db.x) * SHELL.tight;
-        r.db.y += (lag.y - r.db.y) * SHELL.tight;
-      }
+      const r = g.wr;
+      const p = at(r, g.t);
+      r.x = p.x; r.y = p.y;
+      r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
+      if (r.hist.length > 60) r.hist.shift();
+      r.db.frame += 0.2;
+      // The route's edge on this shell is spent here: a concept that beats the
+      // coverage leaves the defender a step further behind all play.
+      const lag = Math.round(SHELL.lag * (1 + g.edge * 0.6));
+      const tight = SHELL.tight * (1 - g.edge);
+      const back = r.hist[Math.max(0, r.hist.length - 1 - lag)] || p;
+      r.db.x += (back.x - r.db.x) * tight;
+      r.db.y += (back.y - r.db.y) * tight;
+
       if (g.state === 'live') {
         for (const d of g.rushers) {
           const dx = g.qb.x - d.x, dy = g.qb.y - d.y, dist = Math.hypot(dx, dy) || 1;
@@ -692,20 +789,19 @@ const PASS_GAME = (() => {
       }
     },
     resolve() {
-      const b = g.ball, rec = g.receivers[b.target];
+      const b = g.ball, rec = g.wr;
       const recD = Math.hypot(rec.x - b.x, rec.y - b.y);
-      let dbD = Infinity;
-      for (const r of g.receivers) dbD = Math.min(dbD, Math.hypot(r.db.x - b.x, r.db.y - b.y));
+      const dbD = Math.hypot(rec.db.x - b.x, rec.db.y - b.y);
       const gain = g.los - b.y;
       g.ball = null;
-      // Whoever is closest to the ball gets first crack at it.
-      if (dbD < CATCH_R && dbD < recD) {
+      // Hands widen the catch radius and win the ball in traffic.
+      const reach = CATCH_R * (0.86 + 0.30 * W.HANDS);
+      if (dbD < reach && dbD < recD) {
         this.end(g.roll() < 0.28 ? 'int' : 'incomplete', 0); return;
       }
-      if (recD > CATCH_R) { this.end('incomplete', 0); return; }
-      // In range first, but a defender arriving with the ball can still play it.
+      if (recD > reach) { this.end('incomplete', 0); return; }
       const sep = dbD - recD;
-      if (sep < 12 && g.roll() < 0.42 * (1 - sep / 12)) {
+      if (sep < 15 && g.roll() < 0.46 * (1 - sep / 15) * (1.3 - 0.6 * W.HANDS)) {
         this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
       if (b.y <= EZ) this.end('td', gain); else this.end('complete', gain);
@@ -723,44 +819,38 @@ const PASS_GAME = (() => {
         ctx.fillStyle = 'rgba(255,255,255,0.030)';
         ctx.fillRect(0, Math.max(0, gy - EZ), VW, Math.min(EZ, gy));
       }
-      // routes: a playbook pre-snap, a trace once live
-      const pre = g.state === 'ready';
-      ctx.fillStyle = pre ? 'rgba(255,255,255,0.62)' : 'rgba(255,255,255,0.10)';
-      for (const r of g.receivers) {
-        for (let t = 0; t < 150; t += (pre ? 1 : 3)) {
+      const r = g.wr;
+      // The chosen route traces once it is running; nothing to show before.
+      if (r.route) {
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        for (let t = 0; t < 150; t += 3) {
           const p = at(r, t), sy = Math.round(p.y - g.camY);
           if (sy < -2 || sy > VH + 2) continue;
-          ctx.fillRect(Math.round(p.x), sy, pre ? 2 : 1, 1);
-        }
-        if (pre) {
-          const e = at(r, 150), ey = Math.round(e.y - g.camY);
-          ctx.fillRect(Math.round(e.x) - 2, ey + 2, 5, 1);
-          ctx.fillRect(Math.round(e.x) - 1, ey + 3, 3, 1);
-          ctx.fillRect(Math.round(e.x), ey + 4, 1, 1);
+          ctx.fillRect(Math.round(p.x), sy, 1, 1);
         }
       }
-      for (const r of g.receivers) sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF);
-      for (const r of g.receivers) sprite(RUN20[Math.floor(r.frame) % 3], Math.round(r.x) - HALF, Math.round(r.y - g.camY) - HALF);
+      sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF);
       for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF);
+      // Each of your two players wears his own club's colours.
+      setJersey(g.wrTeam);
+      sprite(RUN20[Math.floor(r.frame) % 3], Math.round(r.x) - HALF, Math.round(r.y - g.camY) - HALF);
+      setJersey(g.qbTeam);
       sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF);
       if (g.ball) {
         const by = Math.round(g.ball.y - g.camY);
+        ctx.fillStyle = PAL.D;
+        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 2]])
+          ctx.fillRect(Math.round(g.ball.x) - 1 + dx, by + dy, 3, 2);
         ctx.fillStyle = PAL.O;
         ctx.fillRect(Math.round(g.ball.x) - 1, by, 3, 2);
         ctx.fillRect(Math.round(g.ball.x), by - 1, 1, 4);
       }
     },
-    onUp(pt) {
-      if (g.state === 'ready') { g.state = 'live'; return; }
+    onUp() {
+      if (g.state === 'ready') return;               // the route menu snaps it
       if (g.state === 'result' || g.state === 'td') { this.setup(); return; }
       if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
-      if (g.state !== 'live') return;
-      let best = null, bd = 1e9;
-      for (const r of g.receivers) {
-        const d = Math.hypot(r.x - pt.x, r.y - pt.y);
-        if (d < bd) { bd = d; best = r; }
-      }
-      if (best && bd < 34) this.throwTo(best);
+      if (g.state === 'live') this.throwTo();
     },
     score() { return { value: g.yards, detail: `${g.comp}/${g.att}` }; },
     status() {
@@ -769,10 +859,9 @@ const PASS_GAME = (() => {
       return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
         + `<span><b>${g.comp}/${g.att}</b> ${pct}%</span><span class="sc">${g.tds} TD</span>`;
     },
-    overlay(pick) {
+    overlay() {
       const t = Math.max(1, Math.round((g.los - EZ) / YARD));
-      if (g.state === 'live' || g.state === 'ball') return null;
-      if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${ORD[g.down]} & ${t}`, tap: 'tap to snap', attrs: g.drive === 0 && g.down === 1, presnap: true };
+      if (g.state === 'live' || g.state === 'ball' || g.state === 'ready') return null;
       if (g.state === 'result') {
         if (g.result === 'complete') return { ttl: 'Complete', sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
         if (g.result === 'sack') return { ttl: 'Sacked', bad: true, sub: `${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
@@ -780,10 +869,11 @@ const PASS_GAME = (() => {
       }
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.gain} yd strike`, tap: 'tap to continue' };
       return { ttl: g.result === 'int' ? 'Intercepted' : 'Turnover on downs', bad: true,
-               sub: `${g.tds} TD · ${g.comp}/${g.att} · ${g.yards} yards`, tap: 'tap to play again' };
+               sub: `${g.comp}/${g.att} · ${g.yards} yards · ${g.tds} TD`, tap: 'tap to play again' };
     },
     get state() { return g ? g.state : 'select'; },
   };
+
 })();
 
 // ===========================================================================
@@ -970,6 +1060,8 @@ let pick = null;
 
 const el = (id) => document.getElementById(id);
 const tabs = el('tabs'), picker = el('picker'), plist = el('plist');
+const promptEl = el('prompt'), propts = el('propts');
+let pick2 = null, pickStage = 0;
 const overlay = el('overlay'), ttl = el('ttl'), sub = el('sub'), tapEl = el('tap'), attrs = el('attrs');
 const brief = el('brief'), blist = el('blist');
 let briefing = false;
@@ -1015,10 +1107,15 @@ function segs(v, n, cls) {
   return s;
 }
 function buildPicker() {
-  el('ptitle').textContent = active.pickTitle;
-  el('pfront').textContent = `${active.shell} this week`;
+  const two = !!(active.roster2 && active.roster2.length);
+  const second = pickStage === 1;
+  const list = second ? active.roster2 : active.roster;
+  el('ptitle').textContent = second ? active.pickTitle2 : active.pickTitle;
+  el('pfront').textContent = second && pick
+    ? `${pick.name} throwing`
+    : `${active.shell} this week`;
   plist.innerHTML = '';
-  active.roster.forEach((p) => {
+  list.forEach((p) => {
     const d = document.createElement('div');
     d.className = 'pick';
     const kit = jerseyOf(p.team);
@@ -1031,9 +1128,16 @@ function buildPicker() {
       + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
     d.onclick = () => {
-      pick = p;
-      setJersey(p.team);
-      active.choose(p);
+      if (!second) {
+        pick = p;
+        setJersey(p.team);
+        active.choose(p);
+        // A two-part game asks for the second player before it starts.
+        if (two) { pickStage = 1; buildPicker(); paintUI(); return; }
+      } else {
+        pick2 = p;
+        active.choose2(p);
+      }
       briefing = true;                        // show how-to-play before the first snap
       el('btitle').textContent = `${active.label} — how to play`;
       blist.innerHTML = active.controls
@@ -1047,6 +1151,8 @@ function buildPicker() {
 function select(game) {
   active = game;
   pick = null;
+  pick2 = null;
+  pickStage = 0;
   setJersey(null);
   briefing = false;
   active.reset();
@@ -1066,6 +1172,20 @@ function paintUI() {
     el('status').innerHTML = g.status();
     return;
   }
+  const pr = !inSelect && !briefing && g.prompt ? g.prompt() : null;
+  if (pr) {
+    el('prtitle').textContent = pr.title;
+    el('prsub').textContent = pr.sub || '';
+    propts.innerHTML = '';
+    for (const o of pr.options) {
+      const b = document.createElement('div');
+      b.className = 'propt'; b.textContent = o.label;
+      b.onclick = () => { g.pickOption(o.key); paintUI(); };
+      propts.appendChild(b);
+    }
+  }
+  promptEl.classList.toggle('show', !!pr);
+
   el('status').innerHTML = inSelect ? '' : g.status();
   if (inSelect) { overlay.classList.remove('show'); attrs.classList.remove('show'); return; }
 
