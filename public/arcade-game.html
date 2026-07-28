@@ -151,7 +151,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade11-wind';
+const BUILD = 'arcade12-pass';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -526,11 +526,9 @@ const PASS_GAME = (() => {
   const SPR = 20, HALF = 10, CATCH_R = 11;
   const SAMPLE = 'J. Allen:BUF:0.96:0.68:0.88|C. Stroud:HOU:0.82:0.88:0.62|'
     + 'B. Purdy:SF:0.54:0.93:0.55|D. Maye:NE:0.78:0.72:0.74';
-  // brk is how hard the coverage drives on the ball once it is in the air.
-  // Man trails tighter but is slower to find it; zone gives cushion and jumps.
   const SHELL = mulberry32(hashSeed(SEED + '|shell'))() < 0.5
-    ? { label: 'Man coverage', lag: 13, tight: 0.15, brk: 0.26 }
-    : { label: 'Zone coverage', lag: 26, tight: 0.09, brk: 0.36 };
+    ? { label: 'Man coverage', lag: 13, tight: 0.15 }
+    : { label: 'Zone coverage', lag: 26, tight: 0.09 };
   const ROUTES = {
     go: (t) => ({ x: 0, y: -t * 0.92 }),
     slant: (t, d) => (t < 34 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 34) * 0.72, y: -(29 + (t - 34) * 0.58) }),
@@ -569,7 +567,7 @@ const PASS_GAME = (() => {
       this.g = g;
     },
     choose(p) {
-      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 18 * (1 - p.b), RUSH: 0.32 - 0.14 * p.c };
+      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.32 - 0.14 * p.c };
       this.setup(); g.state = 'ready';
     },
     setup() {
@@ -608,9 +606,9 @@ const PASS_GAME = (() => {
       // the ball has to travel — a checkdown is nearly automatic, a deep shot
       // is a genuine risk. Previously scatter was capped below the catch
       // radius, so an incompletion was arithmetically impossible.
-      const spread = A.SCATTER * (0.7 + Math.hypot(aim.x - from.x, aim.y - from.y) / 300);
+      const spread = A.SCATTER * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
-      g.ball = { x: from.x, y: from.y, t0: g.t, target: rec.id,
+      g.ball = { x: from.x, y: from.y, target: rec.id,
                  tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
       g.att++; g.state = 'ball';
     },
@@ -623,18 +621,9 @@ const PASS_GAME = (() => {
         r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
         if (r.hist.length > 60) r.hist.shift();
         r.db.frame += 0.2;
-        // Once the ball is up and read, coverage stops chasing the route and
-        // drives on the catch point. The longer it hangs the more of them get
-        // there, which is what puts a price on a deep shot.
-        if (g.state === 'ball' && g.t - g.ball.t0 > 12) {
-          const bx = g.ball.tx - r.db.x, by = g.ball.ty - r.db.y;
-          const bd = Math.hypot(bx, by) || 1;
-          r.db.x += (bx / bd) * SHELL.brk; r.db.y += (by / bd) * SHELL.brk;
-        } else {
-          const lag = r.hist[Math.max(0, r.hist.length - 1 - SHELL.lag)] || p;
-          r.db.x += (lag.x - r.db.x) * SHELL.tight;
-          r.db.y += (lag.y - r.db.y) * SHELL.tight;
-        }
+        const lag = r.hist[Math.max(0, r.hist.length - 1 - SHELL.lag)] || p;
+        r.db.x += (lag.x - r.db.x) * SHELL.tight;
+        r.db.y += (lag.y - r.db.y) * SHELL.tight;
       }
       if (g.state === 'live') {
         for (const d of g.rushers) {
@@ -658,13 +647,13 @@ const PASS_GAME = (() => {
       g.ball = null;
       // Whoever is closest to the ball gets first crack at it.
       if (dbD < CATCH_R && dbD < recD) {
-        this.end(g.roll() < 0.40 ? 'int' : 'incomplete', 0); return;
+        this.end(g.roll() < 0.28 ? 'int' : 'incomplete', 0); return;
       }
       if (recD > CATCH_R) { this.end('incomplete', 0); return; }
       // In range first, but a defender arriving with the ball can still play it.
       const sep = dbD - recD;
-      if (sep < 20 && g.roll() < 0.50 * (1 - sep / 20)) {
-        this.end(g.roll() < 0.18 ? 'int' : 'incomplete', 0); return;
+      if (sep < 12 && g.roll() < 0.42 * (1 - sep / 12)) {
+        this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
       if (b.y <= EZ) this.end('td', gain); else this.end('complete', gain);
     },
