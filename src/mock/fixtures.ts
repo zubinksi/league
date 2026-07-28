@@ -247,6 +247,16 @@ const matchups = [
   })),
 ];
 
+/** Past weeks reuse the slate but shift every score, so season-long derived
+ *  columns (all-play expected wins, form) have real variation to chew on. */
+function matchupsForWeek(week: number): typeof matchups {
+  if (week >= WEEK) return matchups;
+  return matchups.map((m, i) => {
+    const swing = (((week * 37 + i * 53 + week * i * 11) % 70) - 35) * 0.9;
+    return { ...m, points: Math.max(0, Math.round((m.points + swing) * 10) / 10) };
+  });
+}
+
 const trending = [...FREE_AGENTS, ...HOME_BENCH, ...AWAY_BENCH].map((p, i) => ({
   player_id: p.id,
   count: 900 - i * 90,
@@ -329,7 +339,9 @@ export function mockFetch(url: string): unknown {
   }
   if (url.includes('/users')) return users;
   if (url.includes('/rosters')) return rosters;
-  if (url.includes('/matchups/')) return matchups;
+  if (url.includes('/matchups/')) {
+    return matchupsForWeek(weekFromUrl(url, /\/matchups\/(\d+)/));
+  }
   if (/\/v1\/league\/[^/]+$/.test(url)) return league;
   return undefined;
 }

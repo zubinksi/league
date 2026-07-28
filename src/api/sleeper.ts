@@ -41,13 +41,6 @@ export interface SleeperRoster {
   };
 }
 
-/** Sleeper stores streaks as "3W" / "1L"; render as "W3" / "L1". */
-export function rosterStreak(r: SleeperRoster): { label: string; won: boolean } | null {
-  const m = r.metadata?.streak?.match(/^(\d+)([WL])$/);
-  if (!m) return null;
-  return { label: `${m[2]}${m[1]}`, won: m[2] === 'W' };
-}
-
 export interface SleeperMatchupEntry {
   roster_id: number;
   matchup_id: number | null;

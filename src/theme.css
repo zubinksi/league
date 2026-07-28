@@ -112,6 +112,21 @@ input {
   from { color: #e8c561; }
 }
 
+@keyframes goldfade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes wkFromRight {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes wkFromLeft {
+  from { transform: translateX(-16px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 @keyframes endpulse {
   0% { r: 2.4; fill: #e8c561; }
   50% { r: 4.2; fill: #e8c561; }
@@ -143,7 +158,9 @@ input {
   .live-dot,
   .anim-livetick,
   .anim-scoreflash,
-  .anim-endpulse {
+  .anim-endpulse,
+  .mlist,
+  .mbar-flash {
     animation: none !important;
   }
   * {
