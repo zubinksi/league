@@ -19,18 +19,34 @@ import type { WeekStats, StatMap } from '../api/stats';
  * legible without every player at a tier sharing one identical number.
  */
 
+export interface AttrDetail {
+  label: string;
+  /** What the ladder counts, for the roster page to name it. */
+  unit: string;
+  tier: number;
+  name: string;
+  /** null once the top rung is reached. */
+  nextName: string | null;
+  toNext: number | null;
+  stat: number;
+  value: number;
+}
+
 export interface ArcadePlayer {
   name: string;
   team: string;
+  position: string;
   a: number;
   b: number;
   c: number;
-  /** Tier index 0..4 per attribute; the game holds the names. */
+  /** Tier index 0..4 per attribute; the game holds its own copy of the names. */
   ta: number;
   tb: number;
   tc: number;
   /** 1 when any attribute gained a tier in the last few weeks. */
   trend: number;
+  /** Ladder detail, for showing progress outside the game. */
+  attrs: AttrDetail[];
 }
 
 /** How much of last season carries in. Sets a floor without capping the climb. */
@@ -47,13 +63,25 @@ const norm = (v: number | undefined, lo: number, hi: number, fallback = 0.5): nu
 };
 
 /** Cumulative stat → tier plus a value that keeps climbing inside the tier. */
-function ladder(value: number, steps: number[]): { tier: number; value: number } {
+function ladder(rung: Rung, stat: number): AttrDetail {
+  const { steps, names } = rung;
   let i = 0;
-  while (i + 1 < steps.length && value >= steps[i + 1]) i++;
+  while (i + 1 < steps.length && stat >= steps[i + 1]) i++;
   const lo = steps[i];
-  const hi = steps[i + 1] ?? lo * 1.3 + 1;
-  const frac = hi > lo ? Math.min(1, Math.max(0, (value - lo) / (hi - lo))) : 1;
-  return { tier: i, value: Math.min(0.98, ((i + frac) / TIERS)) };
+  const top = i + 1 >= steps.length;
+  const hi = top ? lo * 1.3 + 1 : steps[i + 1];
+  const frac = hi > lo ? Math.min(1, Math.max(0, (stat - lo) / (hi - lo))) : 1;
+  const need = top ? null : Math.max(0, Math.ceil(hi - stat));
+  return {
+    label: rung.label,
+    unit: need === 1 ? rung.unitOne ?? rung.unit : rung.unit,
+    tier: i,
+    name: names[i],
+    nextName: top ? null : names[i + 1],
+    toNext: need,
+    stat: Math.round(stat),
+    value: Math.min(0.98, (i + frac) / TIERS),
+  };
 }
 
 const num = (v: number | undefined) => (Number.isFinite(v) ? (v as number) : 0);
@@ -78,55 +106,71 @@ function seeded(current: StatMap, prior: StatMap | undefined): StatMap {
 }
 
 interface Rung {
+  label: string;
+  /** What the ladder counts — shown as "260 rush yd to Breakaway". */
+  unit: string;
+  /** Singular form, for when exactly one is needed. */
+  unitOne?: string;
   stat: (t: StatMap) => number;
   steps: number[];
+  names: string[];
 }
-interface Ladders { a: Rung; b: Rung; c: Rung }
 
 /**
  * One ladder per attribute. Thresholds are full-season counting numbers, so a
  * star tops out around the fantasy playoffs and a rotational piece is still
  * climbing — which is the point, everyone has somewhere to go.
  */
-const LADDERS: Record<string, Ladders> = {
-  RB: {
-    a: { stat: (t) => num(t.rush_yd), steps: [0, 300, 650, 1000, 1400] },
-    b: { stat: (t) => num(t.rush_td), steps: [0, 3, 6, 10, 14] },
-    c: { stat: (t) => num(t.rec), steps: [0, 15, 35, 60, 90] },
-  },
-  QB: {
-    a: { stat: (t) => num(t.pass_yd), steps: [0, 1200, 2400, 3500, 4500] },
-    b: { stat: (t) => num(t.pass_cmp), steps: [0, 120, 240, 350, 430] },
-    c: { stat: (t) => num(t.rush_yd), steps: [0, 100, 250, 450, 700] },
-  },
-  WR: {
-    a: { stat: (t) => num(t.rec_yd), steps: [0, 350, 700, 1050, 1400] },
-    b: { stat: (t) => num(t.rec), steps: [0, 25, 50, 75, 100] },
-    c: { stat: (t) => num(t.rec_tgt), steps: [0, 40, 80, 120, 160] },
-  },
-  K: {
+const LADDERS: Record<string, Rung[]> = {
+  RB: [
+    { label: 'Speed', unit: 'rush yd', stat: (t) => num(t.rush_yd), steps: [0, 300, 650, 1000, 1400],
+      names: ['Plodder', 'Strider', 'Burst', 'Breakaway', 'Home Run'] },
+    { label: 'Power', unit: 'rush TD', stat: (t) => num(t.rush_td), steps: [0, 3, 6, 10, 14],
+      names: ['Arm Tackle', 'Grinder', 'Bruiser', 'Battering Ram', 'Freight Train'] },
+    { label: 'Elusive', unit: 'catches', unitOne: 'catch', stat: (t) => num(t.rec), steps: [0, 15, 35, 60, 90],
+      names: ['Stone Hands', 'Outlet', 'Mismatch', 'Weapon', 'Joystick'] },
+  ],
+  QB: [
+    { label: 'Arm', unit: 'pass yd', stat: (t) => num(t.pass_yd), steps: [0, 1200, 2400, 3500, 4500],
+      names: ['Checkdown', 'Rhythm', 'Gunslinger', 'Cannon', 'Howitzer'] },
+    { label: 'Accuracy', unit: 'completions', unitOne: 'completion', stat: (t) => num(t.pass_cmp), steps: [0, 120, 240, 350, 430],
+      names: ['Scattershot', 'Steady', 'Sharp', 'Surgeon', 'Sniper'] },
+    { label: 'Escape', unit: 'rush yd', stat: (t) => num(t.rush_yd), steps: [0, 100, 250, 450, 700],
+      names: ['Statue', 'Mobile', 'Escape Artist', 'Dual Threat', 'Houdini'] },
+  ],
+  WR: [
+    { label: 'Speed', unit: 'rec yd', stat: (t) => num(t.rec_yd), steps: [0, 350, 700, 1050, 1400],
+      names: ['Possession', 'Chain Mover', 'Stretch', 'Deep Threat', 'Afterburner'] },
+    { label: 'Hands', unit: 'catches', unitOne: 'catch', stat: (t) => num(t.rec), steps: [0, 25, 50, 75, 100],
+      names: ['Bricks', 'Reliable', 'Sure Hands', 'Velcro', 'Glue'] },
+    { label: 'Route', unit: 'targets', unitOne: 'target', stat: (t) => num(t.rec_tgt), steps: [0, 40, 80, 120, 160],
+      names: ['Decoy', 'Option', 'Target', 'Focal Point', 'Alpha'] },
+  ],
+  K: [
     // Range, not workload: long makes only, with fifty-plus worth double.
-    a: { stat: (t) => num(t.fgm_40_49) + num(t.fgm_50p) * 2, steps: [0, 3, 7, 12, 18] },
-    b: { stat: (t) => num(t.fgm), steps: [0, 8, 16, 25, 32] },
-    c: { stat: (t) => num(t.xpm), steps: [0, 15, 30, 45, 58] },
-  },
+    { label: 'Leg', unit: 'long makes', unitOne: 'long make', stat: (t) => num(t.fgm_40_49) + num(t.fgm_50p) * 2,
+      steps: [0, 3, 7, 12, 18], names: ['Short Range', 'Reliable', 'Big Leg', 'Cannon', 'Moon Shot'] },
+    { label: 'Accuracy', unit: 'field goals', unitOne: 'field goal', stat: (t) => num(t.fgm), steps: [0, 8, 16, 25, 32],
+      names: ['Shaky', 'Steady', 'Automatic', 'Ice', 'Perfect'] },
+    { label: 'Nerve', unit: 'extra points', unitOne: 'extra point', stat: (t) => num(t.xpm), steps: [0, 15, 30, 45, 58],
+      names: ['Nervy', 'Composed', 'Cool', 'Clutch', 'Ice Water'] },
+  ],
 };
 LADDERS.TE = LADDERS.WR;
 
-type Rated = { a: number; b: number; c: number; ta: number; tb: number; tc: number };
+type Rated = { attrs: AttrDetail[]; a: number; b: number; c: number; ta: number; tb: number; tc: number };
 
 function ratePlayer(position: string, totals: StatMap, weight: number | undefined): Rated | null {
-  const l = LADDERS[position];
-  if (!l) return null;
-  const a = ladder(l.a.stat(totals), l.a.steps);
-  const b = ladder(l.b.stat(totals), l.b.steps);
-  const c = ladder(l.c.stat(totals), l.c.steps);
+  const rungs = LADDERS[position];
+  if (!rungs) return null;
+  const attrs = rungs.map((r) => ladder(r, r.stat(totals)));
   // Size still says something about a back that touchdowns do not, so it
   // nudges the value without moving the tier he has actually earned.
   const bulk = position === 'RB' ? (norm(weight, 196, 244) - 0.5) * 0.10 : 0;
   return {
-    a: a.value, b: clamp01(b.value + bulk), c: c.value,
-    ta: a.tier, tb: b.tier, tc: c.tier,
+    attrs,
+    a: attrs[0].value, b: clamp01(attrs[1].value + bulk), c: attrs[2].value,
+    ta: attrs[0].tier, tb: attrs[1].tier, tc: attrs[2].tier,
   };
 }
 
@@ -157,6 +201,7 @@ export function buildArcadeRosters(
     const entry: ArcadePlayer = {
       name: playerShortName(meta, id),
       team: meta.team ?? '',
+      position: meta.position,
       ...now,
       trend: before && tierSum(now) > tierSum(before) ? 1 : 0,
     };

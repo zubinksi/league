@@ -7,6 +7,7 @@ import { MatchupPage } from './pages/MatchupPage';
 import { TeamPage } from './pages/TeamPage';
 import { PlayersPage } from './pages/PlayersPage';
 import { ArcadePage } from './pages/ArcadePage';
+import { RosterPage } from './pages/RosterPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +24,11 @@ export default function App() {
       <BrowserRouter>
         <PlayerCardProvider>
           <Routes>
-            <Route path="/" element={<LeaguePage />} />
+            {/* The arcade is the front door now. League, Matchup and Team are
+                off the tab bar but still reachable by URL. */}
+            <Route path="/" element={<ArcadePage />} />
+            <Route path="/roster" element={<RosterPage />} />
+            <Route path="/league" element={<LeaguePage />} />
             <Route path="/matchup" element={<MatchupPage />} />
             <Route path="/matchup/:week/:matchupId" element={<MatchupPage />} />
             <Route path="/team" element={<TeamPage />} />
