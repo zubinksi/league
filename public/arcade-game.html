@@ -102,6 +102,11 @@
   }
   .pick:hover, .pick:active { border-color: rgba(255,255,255,0.42); }
   .pick .pn { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #ececed; }
+  .pick .ptrend {
+    margin-left: 7px; font-size: 7px; font-weight: 400; letter-spacing: 0;
+  }
+  .pick .ptrend.up { color: #c9c9cf; }
+  .pick .ptrend.down { color: #55575d; }
   .pick .pchip {
     display: inline-block; width: 5px; height: 5px; border-radius: 1px;
     margin-right: 6px; vertical-align: middle;
@@ -155,7 +160,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade13-kits';
+const BUILD = 'arcade14-form';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -408,11 +413,7 @@ const RUN_GAME = (() => {
     controls: [['Swipe ← →', 'cut left or right'], ['Tap', 'spin — time it into contact'],
                ['Swipe ↑', 'truck — power runs through, speed gets stopped'],
                ['Goal', 'four downs to reach the end zone']],
-    roster: (new URLSearchParams(location.search).get('run') || SAMPLE).split('|').map((r) => {
-      const [name, tm, a, b, c] = r.split(':');
-      return { name: (name || 'Back').toUpperCase(), team: (tm || '').toUpperCase(),
-               a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)) };
-    }),
+    roster: parseRoster('run', SAMPLE),
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
             drive: 0, down: 1, los: WORLD_H - 26, tds: 0, yards: 0, gain: 0, state: 'select' };
@@ -604,15 +605,11 @@ const PASS_GAME = (() => {
 
   return {
     key: 'pass', label: 'Pass', pickTitle: 'Choose your passer',
-    shell: SHELL.label, attrLabels: ['Arm', 'Accuracy', 'Poise'],
+    shell: SHELL.label, attrLabels: ['Arm', 'Accuracy', 'Escape'],
     hint: 'tap a receiver to throw',
     controls: [['Tap a receiver', 'throw — the ball leads them'], ['Wait', 'routes need time to break open'],
                ['Pressure', 'the rush gets home in about three seconds'], ['Careful', 'an interception ends the run']],
-    roster: (new URLSearchParams(location.search).get('pass') || SAMPLE).split('|').map((r) => {
-      const [name, tm, a, b, c] = r.split(':');
-      return { name: (name || 'Passer').toUpperCase(), team: (tm || '').toUpperCase(),
-               a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)) };
-    }),
+    roster: parseRoster('pass', SAMPLE),
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
             drive: 0, down: 1, los: WORLD_H - 30, tds: 0, comp: 0, att: 0, yards: 0, gain: 0,
@@ -808,11 +805,7 @@ const KICK_GAME = (() => {
                ['Third tap', 'lock aim as the marker sweeps'],
                ['Wind', 'read the streamers — aim into it'],
                ['Every make', 'moves you back five yards']],
-    roster: (new URLSearchParams(location.search).get('kick') || SAMPLE).split('|').map((r) => {
-      const [name, tm, a, b, c] = r.split(':');
-      return { name: (name || 'Kicker').toUpperCase(), team: (tm || '').toUpperCase(),
-               a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)) };
-    }),
+    roster: parseRoster('kick', SAMPLE),
     reset() {
       g = { dist: 25, made: 0, longest: 0, state: 'select', phase: 'power',
             power: 0, powerDir: 1, aim: 0, aimDir: 1, lockedPower: 0, lockedAim: 0,
@@ -985,6 +978,19 @@ GAMES.forEach((game) => {
   tabs.appendChild(t);
 });
 
+// `name:team:a:b:c:trend` — trend is -1/0/1 for how the rating has moved over
+// the last few weeks, so a player on a heater is visible before you pick him.
+function parseRoster(param, sample) {
+  return (new URLSearchParams(location.search).get(param) || sample).split('|').map((r) => {
+    const [name, tm, a, b, c, tr] = r.split(':');
+    return {
+      name: (name || 'Player').toUpperCase(), team: (tm || '').toUpperCase(),
+      a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)),
+      trend: Math.max(-1, Math.min(1, parseInt(tr, 10) || 0)),
+    };
+  });
+}
+
 function segs(v, n, cls) {
   const on = Math.max(1, Math.round(v * n));
   let s = '';
@@ -1001,7 +1007,9 @@ function buildPicker() {
     const kit = jerseyOf(p.team);
     d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">`
       + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
-      + `${p.team}</span></span>`
+      + `${p.team}`
+      + (p.trend ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
+      + `</span></span>`
       + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
