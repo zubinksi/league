@@ -212,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade27-merge';
+const BUILD = 'arcade28-drive';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1551,7 +1551,10 @@ const DRIVE_GAME = (() => {
 
 })();
 
-const GAMES = [RUN_GAME, PASS_GAME, KICK_GAME, DRIVE_GAME];
+// Run and Pass are retired as tabs — they are the same two engines, and the
+// drive is the game they add up to. Both are still constructed above because
+// the drive delegates its plays to them.
+const GAMES = [DRIVE_GAME, KICK_GAME];
 let active = GAMES[0];
 let pick = null;
 

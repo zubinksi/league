@@ -16,11 +16,18 @@
  * calls become league-wide.
  */
 
-export type GameKey = 'run' | 'pass' | 'kick';
-export const GAMES: GameKey[] = ['run', 'pass', 'kick'];
-export const GAME_LABEL: Record<GameKey, string> = { run: 'RUN', pass: 'PASS', kick: 'KICK' };
+/** 'run' and 'pass' are retired — they merged into 'drive'. The keys stay in
+ *  the union so entries banked before the merge still parse, but they are no
+ *  longer offered, and their physics changed underneath them anyway. */
+export type GameKey = 'drive' | 'kick' | 'run' | 'pass';
+export const GAMES: GameKey[] = ['drive', 'kick'];
+export const GAME_LABEL: Record<GameKey, string> = {
+  drive: 'DRIVE', kick: 'KICK', run: 'RUN', pass: 'PASS',
+};
 /** Units differ per game, so the board can label the number it is ranking. */
-export const GAME_UNIT: Record<GameKey, string> = { run: 'TD', pass: 'TD', kick: 'MADE' };
+export const GAME_UNIT: Record<GameKey, string> = {
+  drive: 'TD', kick: 'MADE', run: 'TD', pass: 'TD',
+};
 
 export interface ScoreEntry {
   week: number;
