@@ -212,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade28-drive';
+const BUILD = 'arcade29-points';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1243,15 +1243,28 @@ const KICK_GAME = (() => {
                ['Every make', 'moves you back five yards']],
     roster: parseRoster('kick', SAMPLE),
     reset() {
-      g = { dist: 25, made: 0, longest: 0, state: 'select', phase: 'power',
+      g = { dist: 25, made: 0, longest: 0, embedded: false, auto: false, state: 'select', phase: 'power',
             power: 0, powerDir: 1, aim: 0, aimDir: 1, lockedPower: 0, lockedAim: 0,
             ball: null, result: '' };
       this.g = g;
     },
-    choose(p) {
+    attach(p) {
       A = { MAX: 38 + 27 * p.a, AIMSPD: 0.030 - 0.014 * p.b, PWRSPD: 0.026 - 0.010 * p.c };
-      this.setup(); g.state = 'ready';
+      g.team = p.team;
     },
+    choose(p) { this.attach(p); this.setup(); g.state = 'ready'; },
+    /** A single attempt from a set distance, for a drive. `auto` locks the
+     *  power meter and leaves only the aim — the difference between a field
+     *  goal, which is a decision, and an extra point, which is a formality
+     *  you should not have to work a three-tap meter for. */
+    kickFrom(dist, auto) {
+      g.dist = dist;
+      this.setup();
+      g.embedded = true; g.auto = !!auto;
+    },
+    outcome() { return { made: g.result === 'good' }; },
+    /** The longest this kicker can reach, so a drive knows what to offer. */
+    maxRange() { return Math.floor(A.MAX || 0); },
     setup() {
       g.phase = 'power'; g.power = 0; g.powerDir = 1; g.aim = 0; g.aimDir = 1;
       g.ball = null; g.state = 'ready';
@@ -1287,7 +1300,8 @@ const KICK_GAME = (() => {
         else if (Math.abs(b.drift) > POST_HALF) { g.result = b.drift < 0 ? 'wide left' : 'wide right'; g.state = 'miss'; }
         else {
           g.made++; g.longest = Math.max(g.longest, g.dist);
-          g.dist += 5; g.result = 'good'; g.state = 'good';
+          if (!g.embedded) g.dist += 5;   // the ladder is the standalone game
+          g.result = 'good'; g.state = 'good';
         }
       }
     },
@@ -1326,7 +1340,8 @@ const KICK_GAME = (() => {
         }
       }
 
-      // kicker
+      // kicker — in his own club's colours, like everyone else
+      setJersey(g.team);
       sprite(RUN20[0], Math.round(cx) - HALF - 8, groundY - HALF);
 
       if (g.state === 'flight' || g.state === 'good' || g.state === 'miss') {
@@ -1364,7 +1379,13 @@ const KICK_GAME = (() => {
       }
     },
     onUp() {
-      if (g.state === 'ready') { g.state = 'charging'; g.phase = 'power'; return; }
+      if (g.state === 'ready') {
+        if (g.auto) {
+          g.lockedPower = Math.min(1, g.dist / A.MAX + 0.12);
+          g.phase = 'aim'; g.state = 'aiming'; return;
+        }
+        g.state = 'charging'; g.phase = 'power'; return;
+      }
       if (g.state === 'charging') { g.lockedPower = g.power; g.phase = 'aim'; g.state = 'aiming'; return; }
       if (g.state === 'aiming') { g.lockedAim = g.aim; this.kick(); return; }
       if (g.state === 'good') { this.setup(); return; }
@@ -1411,7 +1432,18 @@ const DRIVE_GAME = (() => {
   const START = 21, TO_GO = 10;
   // States in which the engine still has the ball. Anything else means the
   // play is over and the drive takes back control.
-  const PLAYING = ['presnap', 'ready', 'live', 'ball', 'yac'];
+  const PLAYING = ['presnap', 'ready', 'live', 'ball', 'yac', 'charging', 'aiming', 'flight'];
+  const TD = 6, XP = 1, FG = 3, XP_YD = 20;
+  /**
+   * The field is twenty-one yards; a real one is a hundred. Taken literally
+   * every field goal is a chip shot, and a bot that simply kicked on every
+   * fourth down scored 98 points a game and never once had a drive end. So
+   * the drive is mapped onto a real kicking range instead: your own end of
+   * it is a sixty-two yarder that most legs cannot reach, and it becomes a
+   * gimme only once you have actually driven. Distance is the reason fourth
+   * down is a decision.
+   */
+  const fgYards = (losYards) => 20 + losYards * 2;
   let g = null, cur = null;
 
   return {
@@ -1419,26 +1451,32 @@ const DRIVE_GAME = (() => {
     pickTitle: 'Choose your back',
     pickTitle2: 'Choose your passer',
     pickTitle3: 'Choose your target',
+    pickTitle4: 'Choose your kicker',
     shell: `${RUN_GAME.shell} · ${PASS_GAME.shell}`,
     attrLabels: RUN_GAME.attrLabels,
     attrLabels2: PASS_GAME.attrLabels,
     attrLabels3: PASS_GAME.attrLabels2,
+    attrLabels4: KICK_GAME.attrLabels,
     hint: 'read the defense · call one of eight',
     controls: [['One defense', 'read it, then take any of the eight'],
                ['Top row', 'gaps — where the back attacks the front'],
                ['Bottom row', 'routes — where the receiver attacks the corner'],
                ['His side', 'the corner sets that edge, so it is the hard one'],
-               ['Goal', 'move the chains and score — a stop ends the run']],
+               ['4th down', 'take the three, or go for seven'],
+               ['Points', 'a score is 6, the extra point 1, a field goal 3']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
     roster3: PASS_GAME.roster2,
+    roster4: KICK_GAME.roster,
     chemPair: [1, 2],
     reset() {
       RUN_GAME.reset();
       PASS_GAME.reset();
+      KICK_GAME.reset();
       cur = null;
       g = { losYards: START, down: 1, toGo: TO_GO, driveNo: 0,
             tds: 0, yards: 0, gain: 0, how: '', first: false,
+            points: 0, fgs: 0, kicking: null,
             calls: { run: 0, pass: 0 }, set: null, menu: null, state: 'select' };
       this.g = g;
     },
@@ -1448,7 +1486,16 @@ const DRIVE_GAME = (() => {
       PASS_GAME.attach2(p);
       RUN_GAME.mates(g.qbTeam, p.team);
       PASS_GAME.mate(g.backTeam);
-      this.callPlay();
+    },
+    choose4(p) { KICK_GAME.attach(p); this.callPlay(); },
+    /** Back to our own twenty-one after any score. */
+    newDrive() { g.losYards = START; g.down = 1; g.toGo = TO_GO; g.driveNo++; },
+    /** Send the unit on. `kind` decides whether the power meter is yours. */
+    kickAt(dist, kind) {
+      cur = KICK_GAME;
+      g.kicking = kind;
+      KICK_GAME.kickFrom(dist, kind === 'xp');
+      g.state = 'play';
     },
     /** Set the defense once, show it, and offer the whole playbook against
      *  it. Both engines line up on the same eleven, so the picture you read
@@ -1466,16 +1513,24 @@ const DRIVE_GAME = (() => {
       cur = RUN_GAME;
       RUN_GAME.startAt(g.losYards, g.driveNo, g.set);
       const runs = RUN_GAME.prompt().options.map((o) => ({ ...o, key: `r:${o.key}` }));
+      // Fourth down buys a third row: take the three, or go for seven.
+      const fg = fgYards(g.losYards);
+      const kick = g.down === 4 && fg <= KICK_GAME.maxRange()
+        ? [{ key: 'k:fg', label: `Field goal ${fg}`, row: 2 }]
+        : [];
       g.menu = {
         title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
-        sub: 'read it, then call it',
-        options: [...runs, ...passes],
+        sub: g.down === 4
+          ? (kick.length ? 'take the three, or go for seven' : `out of range — ${fg} yards`)
+          : 'read it, then call it',
+        options: [...runs, ...passes, ...kick],
       };
       g.state = 'call';
     },
     prompt() { return g.state === 'call' ? g.menu : null; },
     pickOption(key) {
       if (g.state !== 'call') return;
+      if (key === 'k:fg') { this.kickAt(fgYards(g.losYards), 'fg'); return; }
       const pass = key.startsWith('p:');
       const inner = key.slice(2);
       cur = pass ? PASS_GAME : RUN_GAME;
@@ -1493,15 +1548,15 @@ const DRIVE_GAME = (() => {
     },
     /** The engine reports in yards; the chains are ours. */
     settle() {
+      if (g.kicking) { this.settleKick(); return; }
       const o = cur.outcome();
       g.how = o.kind;
       g.gain = o.gain || 0;
       g.yards += Math.max(0, g.gain);
       g.first = false;
       if (o.kind === 'td') {
-        g.tds++; g.driveNo++;
-        g.losYards = START; g.down = 1; g.toGo = TO_GO;
-        g.state = 'td'; return;
+        g.tds++; g.points += TD;
+        g.state = 'td'; return;            // the kicking unit is next
       }
       if (o.kind === 'int') { g.state = 'gameover'; return; }
       g.losYards = Math.max(1, g.losYards - g.gain);
@@ -1515,21 +1570,41 @@ const DRIVE_GAME = (() => {
       g.down++;
       g.state = g.down > 4 ? 'gameover' : 'result';
     },
+    /** A kick is the one play that can end the run without a turnover: miss
+     *  it and the drive is over the same as failing on fourth down. */
+    settleKick() {
+      const made = cur.outcome().made;
+      const kind = g.kicking;
+      g.kicking = null; g.gain = 0;
+      if (kind === 'xp') {
+        if (made) g.points += XP;
+        g.how = made ? 'xp' : 'xpmiss';
+        this.newDrive();
+        g.state = 'result'; return;
+      }
+      if (!made) { g.how = 'fgmiss'; g.state = 'gameover'; return; }
+      g.points += FG; g.fgs++;
+      g.how = 'fg';
+      this.newDrive();
+      g.state = 'result';
+    },
     render() { if (cur) cur.render(); },
     /** Whichever engine has the ball. */
     get engine() { return cur; },
     onUp(pt, dx, dy) {
-      if (g.state === 'result' || g.state === 'td') { this.callPlay(); return; }
+      if (g.state === 'td') { this.kickAt(XP_YD, 'xp'); return; }
+      if (g.state === 'result') { this.callPlay(); return; }
       if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
       if (g.state === 'play' && cur.onUp) cur.onUp(pt, dx, dy);
     },
     score() {
-      return { value: g.tds, tie: g.yards, detail: `${g.yards} yd · ${g.calls.run}r/${g.calls.pass}p` };
+      return { value: g.points, tie: g.yards,
+               detail: `${g.tds} TD · ${g.fgs} FG · ${g.yards} yd` };
     },
     status() {
       const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
       return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
-        + `<span>BALL ON <b>${g.losYards}</b></span><span class="sc">${g.tds} TD</span>`;
+        + `<span>BALL ON <b>${g.losYards}</b></span><span class="sc">${g.points} PTS</span>`;
     },
     overlay() {
       if (g.state === 'call' || g.state === 'play') return null;
@@ -1537,13 +1612,18 @@ const DRIVE_GAME = (() => {
       const NAME = { td: 'Touchdown', tackled: 'Tackled', stuffed: 'Stood up',
                      complete: 'Complete', incomplete: 'Incomplete', sack: 'Sacked' };
       if (g.state === 'result') {
+        if (g.how === 'xp') return { ttl: 'Extra point', gold: true, sub: `${g.points} points`, tap: 'tap for the next drive' };
+        if (g.how === 'xpmiss') return { ttl: 'Missed the extra', bad: true, sub: `${g.points} points`, tap: 'tap for the next drive' };
+        if (g.how === 'fg') return { ttl: 'Field goal', gold: true, sub: `${g.points} points`, tap: 'tap for the next drive' };
         const ttl = g.first ? 'First down' : (NAME[g.how] || 'Stopped');
         return { ttl, gold: g.first, bad: g.how === 'sack' || g.how === 'stuffed',
                  sub: `${yds(g.gain)} · ${ORD[g.down]} & ${t}`, tap: 'tap for the next call' };
       }
-      if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
-      return { ttl: g.how === 'int' ? 'Intercepted' : 'Turnover on downs', bad: true,
-               sub: `${g.tds} TD · ${g.yards} yards · ${g.calls.run}r/${g.calls.pass}p`,
+      if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.points} points`, tap: 'tap for the extra point' };
+      const how = g.how === 'int' ? 'Intercepted'
+        : g.how === 'fgmiss' ? 'Missed the kick' : 'Turnover on downs';
+      return { ttl: how, bad: true,
+               sub: `${g.points} points · ${g.tds} TD · ${g.fgs} FG · ${g.yards} yards`,
                tap: 'tap to play again' };
     },
     get state() { return g ? g.state : 'select'; },
@@ -1616,6 +1696,8 @@ function stagesOf(gm) {
     out.push({ title: gm.pickTitle2, list: gm.roster2, choose: gm.choose2 });
   if (gm.roster3 && gm.roster3.length)
     out.push({ title: gm.pickTitle3, list: gm.roster3, choose: gm.choose3 });
+  if (gm.roster4 && gm.roster4.length)
+    out.push({ title: gm.pickTitle4, list: gm.roster4, choose: gm.choose4 });
   return out;
 }
 function buildPicker() {

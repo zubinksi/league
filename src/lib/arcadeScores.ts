@@ -26,7 +26,7 @@ export const GAME_LABEL: Record<GameKey, string> = {
 };
 /** Units differ per game, so the board can label the number it is ranking. */
 export const GAME_UNIT: Record<GameKey, string> = {
-  drive: 'TD', kick: 'MADE', run: 'TD', pass: 'TD',
+  drive: 'PTS', kick: 'MADE', run: 'TD', pass: 'TD',
 };
 
 export interface ScoreEntry {
