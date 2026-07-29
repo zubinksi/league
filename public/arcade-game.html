@@ -93,14 +93,28 @@
     font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase;
     color: #6d6f76; margin-bottom: 4px;
   }
-  #propts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 3px; }
-  .prbreak { flex-basis: 100%; height: 0; }
+  #propts { display: flex; flex-direction: column; gap: 6px; align-items: center; margin-top: 4px; }
+  .prow { display: flex; align-items: center; gap: 6px; }
+  .prlab {
+    width: 34px; text-align: right; font-size: 8px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: #6d6f76;
+  }
   .propt {
     padding: 9px 13px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
     font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
     color: #ececed; cursor: pointer; touch-action: manipulation;
   }
   .propt:active { background: rgba(255,255,255,0.12); }
+  /* Square enough to be a comfortable target, and small enough that the row
+     label fits beside four of them. */
+  .propt.icon { width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center; }
+  .propt.icon svg { width: 34px; height: 34px; overflow: visible; }
+  .pilos { stroke: rgba(255,255,255,0.26); stroke-width: 1; stroke-dasharray: 2 2; }
+  .pipath {
+    fill: none; stroke: #ececed; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round; marker-end: url(#pah);
+  }
+  .pidot { fill: #6d6f76; }
 
   #picker {
     position: absolute; inset: 0; display: none; flex-direction: column;
@@ -212,7 +226,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade31-truck';
+const BUILD = 'arcade33-plays';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -658,7 +672,7 @@ const RUN_GAME = (() => {
       return {
         title: FRONT.label,
         sub: 'pick your gap',
-        options: LANES.map((l) => ({ key: l.key, label: l.label, cx: l.cx })),
+        options: LANES.map((l) => ({ key: l.key, label: l.label, cx: l.cx, icon: l.key })),
       };
     },
     pickOption(key) {
@@ -1005,22 +1019,29 @@ const PASS_GAME = (() => {
       g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.66));
       g.state = 'ready';
     },
+    /** Which way a route breaks, given where the receiver lined up. Inside
+     *  breaks work back to the middle, outside breaks to the sideline. Known
+     *  before the snap, so the play buttons can draw it the right way round. */
+    routeDir(route) {
+      const toCenter = g.wr.sx < VW / 2 ? 1 : -1;
+      const outside = route === 'out' || route === 'flat' || route === 'fade';
+      return toCenter * (outside ? -1 : 1);
+    },
     /** Pre-snap: the route choice is the snap. */
     prompt() {
       if (g.state !== 'ready') return null;
       return {
         title: SHELL.label,
         sub: 'pick the route',
-        options: (g.red ? RED_MENU : MENU).map((k) => ({ key: k, label: LABEL[k] })),
+        options: (g.red ? RED_MENU : MENU).map((k) => ({
+          key: k, label: LABEL[k], icon: k, dir: this.routeDir(k),
+        })),
       };
     },
     pickOption(route) {
       const r = g.wr;
       r.route = route;
-      // Inside breaks work back to the middle, outside breaks to the sideline.
-      const toCenter = r.sx < VW / 2 ? 1 : -1;
-      const outside = route === 'out' || route === 'flat' || route === 'fade';
-      r.dir = toCenter * (outside ? -1 : 1);
+      r.dir = this.routeDir(route);
       const edge = (EDGE[route] || {})[SHELL.key] ?? 0;
       // A real route runner earns separation on top of the concept itself,
       // and a familiar battery earns a little more.
@@ -1520,6 +1541,7 @@ const DRIVE_GAME = (() => {
         ? [{ key: 'k:fg', label: `Field goal ${fg}`, row: 2 }]
         : [];
       g.menu = {
+        rowLabels: ['Run', 'Pass', '4th'],
         title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
         // The buttons and the down say it; the only thing worth a line is
         // why the kick is missing when it is.
@@ -1683,6 +1705,50 @@ function parseRoster(param, sample) {
   });
 }
 
+// ---- play icons ----------------------------------------------------------
+/**
+ * The eight calls, drawn rather than named. A gap is a place, a route is a
+ * shape; both say more as a picture than as a word, and the gap chevrons sit
+ * in the same left-to-right order as the tick marks on the line, so the
+ * button and the field are the same picture.
+ *
+ * These are stylised, not traced. Drawn faithfully at this size a Go and a
+ * Post differ only in a late break and both turn to mush, so the breaks are
+ * deliberately exaggerated. Routes mirror to the side the receiver actually
+ * lined up on — a thumbnail pointing the wrong way is worse than a word.
+ */
+const RUN_KEYS = ['el', 'il', 'ir', 'er'];
+function playIcon(key, dir) {
+  const run = RUN_KEYS.includes(key);
+  const mx = (x) => (dir === -1 ? 24 - x : x);
+  // Adjacent gaps are separated by where they finish as well as by angle,
+  // and the two interior ones by how far apart they end — a two-pixel
+  // difference in lean was invisible at this size.
+  //
+  // Routes are told apart by stem length rather than by the angle of the
+  // break, which is the only cue that survives: a slant is nearly all
+  // diagonal, a post nearly all stem, an out is a right angle.
+  const P = {
+    el: 'M12 22 L2 7', il: 'M12 22 L8 4', ir: `M12 22 L16 4`, er: 'M12 22 L22 7',
+    go: 'M12 19 L12 2',
+    post: `M12 19 L12 7 L${mx(19)} 2`,
+    out: `M12 19 L12 10 L${mx(23)} 10`,
+    slant: `M12 19 L12 17 L${mx(23)} 9`,
+    quick: `M12 19 L12 16 L${mx(22)} 10`,
+    drag: `M12 19 L12 13 L${mx(23)} 13`,
+    fade: `M12 19 Q${mx(15)} 11 ${mx(20)} 2`,
+    flat: `M12 19 L12 18 L${mx(23)} 18`,
+  };
+  const d = P[key];
+  if (!d) return '';
+  const los = run ? 15 : 19;
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">`
+    + `<line class="pilos" x1="1" y1="${los}" x2="23" y2="${los}"/>`
+    + `<path class="pipath" d="${d}"/>`
+    + `<circle class="pidot" cx="12" cy="${run ? 22 : 19}" r="1.5"/>`
+    + `</svg>`;
+}
+
 function segs(v, n, cls) {
   const on = Math.max(1, Math.round(v * n));
   let s = '';
@@ -1783,16 +1849,32 @@ function paintUI() {
     el('prtitle').textContent = pr.title;
     el('prsub').textContent = pr.sub || '';
     propts.innerHTML = '';
-    let row = 0;
+    const rows = new Map();
     for (const o of pr.options) {
-      if ((o.row || 0) !== row) {
-        row = o.row || 0;
-        propts.appendChild(Object.assign(document.createElement('div'), { className: 'prbreak' }));
+      const n = o.row || 0;
+      if (!rows.has(n)) rows.set(n, []);
+      rows.get(n).push(o);
+    }
+    for (const [n, opts] of rows) {
+      const wrap = document.createElement('div');
+      wrap.className = 'prow';
+      const lab = (pr.rowLabels || [])[n];
+      if (lab) {
+        const l = document.createElement('span');
+        l.className = 'prlab'; l.textContent = lab;
+        wrap.appendChild(l);
       }
-      const b = document.createElement('div');
-      b.className = 'propt'; b.textContent = o.label;
-      b.onclick = () => { g.pickOption(o.key); paintUI(); };
-      propts.appendChild(b);
+      for (const o of opts) {
+        const b = document.createElement('div');
+        const art = o.icon ? playIcon(o.icon, o.dir) : '';
+        b.className = art ? 'propt icon' : 'propt';
+        if (art) { b.innerHTML = art; b.setAttribute('aria-label', o.label); }
+        else b.textContent = o.label;
+        b.setAttribute('role', 'button');
+        b.onclick = () => { g.pickOption(o.key); paintUI(); };
+        wrap.appendChild(b);
+      }
+      propts.appendChild(wrap);
     }
   }
   promptEl.classList.toggle('show', !!pr);
@@ -1887,6 +1969,15 @@ requestAnimationFrame(frame);
 el('build').textContent = `build ${BUILD}`;
 select(GAMES[0]);
 window.__active = () => active;
+window.playIcon = playIcon;      // for the icon legibility harness
 </script>
+<svg width="0" height="0" aria-hidden="true" style="position:absolute">
+  <defs>
+    <marker id="pah" viewBox="0 0 8 8" refX="5.5" refY="4"
+          markerWidth="3.4" markerHeight="3.4" orient="auto">
+    <path d="M0 0 L8 4 L0 8 Z" fill="#ececed"/>
+    </marker>
+  </defs>
+  </svg>
 </body>
 </html>
