@@ -94,7 +94,9 @@ function boot() {
 }
 let verbSend = null;
 
-const P = { detune: 9, cutoff: 1900, attack: 180, reverb: 0.5 };
+// Tuned by ear, in this page. Dark, dry and quick rather than lush — which is
+// most of what keeps a chord from landing like a jingle.
+const P = { detune: 4, cutoff: 1300, attack: 86, reverb: 0.22 };
 
 /** One note: a detuned stack through its own filter and envelope. */
 function voice(freq, t0, dur, level, opts = {}) {

@@ -174,6 +174,8 @@
     font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase;
   }
   #hint { color: #46484e; }
+  #sound { color: #46484e; cursor: pointer; letter-spacing: 0.18em; }
+  #sound:active { color: #8f9199; }
   #build { color: #2e3035; }
 </style>
 </head>
@@ -201,7 +203,7 @@
       <div id="ttl"></div><div id="sub"></div><div id="attrs"></div><div id="tap"></div>
     </div>
   </div>
-  <div id="foot"><span id="hint"></span><span id="build"></span></div>
+  <div id="foot"><span id="sound" role="button" tabindex="0"></span><span id="hint"></span><span id="build"></span></div>
 </div>
 <script>
 // ===========================================================================
@@ -210,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade38-wind';
+const BUILD = 'arcade39-sound';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -402,6 +404,132 @@ const SPIN20 = [[...BODY20, ...PIVOT20], [...SIDE20, ...PIVOT20],
                 [...FRONT20, ...PIVOT20], [...SIDE20, ...PIVOT20]];
 const SPIN_BALL_DX20 = [0, -6, -11, -4];
 const BALL20 = [[11, 16], [11, 17], [12, 15], [12, 16], [12, 17], [13, 16], [13, 17]];
+
+// ---- sound ---------------------------------------------------------------
+/**
+ * Warm-synth cues on the moments that matter, and silence everywhere else.
+ * Everything is generated — no files, in keeping with the rest of the page.
+ *
+ * The four numbers in TUNE are the ones that decide whether a chord lands as
+ * music or as a doorbell, and they were set by ear in /audio-lab.html: dark,
+ * dry and quick. Extensions rather than triads, and a few cents of detune per
+ * note, do the rest. Nothing here fires on a routine play — a sound that
+ * happens every down is a sound you turn off.
+ */
+const SOUND = (() => {
+  const TUNE = { detune: 4, cutoff: 1300, attack: 86, reverb: 0.22 };
+  const KEY = 'arcade:sound';
+  const read = () => { try { return localStorage.getItem(KEY) !== 'off'; } catch { return true; } };
+  let ctx = null, dry = null, send = null, on = read(), last = '';
+
+  /** Reverb without an impulse file: decaying noise is a perfectly good room. */
+  function impulse(seconds, decay) {
+    const n = Math.floor(ctx.sampleRate * seconds);
+    const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+    for (let c = 0; c < 2; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** decay;
+    }
+    return buf;
+  }
+
+  /** Built on the first touch, never before: a context made without a gesture
+   *  starts suspended and the first cue is lost. */
+  function wake() {
+    if (ctx || !on) return;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try { ctx = new AC(); } catch { return; }
+    const master = ctx.createGain(); master.gain.value = 0.85; master.connect(ctx.destination);
+    const verb = ctx.createConvolver(); verb.buffer = impulse(2.8, 2.4); verb.connect(master);
+    dry = ctx.createGain(); dry.connect(master);
+    send = ctx.createGain(); send.connect(verb);
+  }
+
+  function voice(freq, t0, dur, level, o = {}) {
+    const cut = o.cutoff ?? TUNE.cutoff, atk = (o.attack ?? TUNE.attack) / 1000;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.Q.value = 0.6;
+    lp.frequency.setValueAtTime(cut * 0.45, t0);
+    lp.frequency.linearRampToValueAtTime(cut, t0 + atk + 0.15);
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, t0);
+    amp.gain.exponentialRampToValueAtTime(level, t0 + Math.max(0.005, atk));
+    amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    lp.connect(amp);
+    const wet = ctx.createGain(); wet.gain.value = o.reverb ?? TUNE.reverb;
+    amp.connect(dry); amp.connect(wet); wet.connect(send);
+    for (const cents of [-TUNE.detune, 0, TUNE.detune]) {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth'; osc.frequency.value = freq; osc.detune.value = cents;
+      if (o.slide) osc.frequency.exponentialRampToValueAtTime(freq * o.slide, t0 + dur * 0.9);
+      osc.connect(lp); osc.start(t0); osc.stop(t0 + dur + 0.1);
+    }
+  }
+
+  /** The top of a chord, struck — a vibraphone, near enough. */
+  function bell(freq, t0, dur, level) {
+    const osc = ctx.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = freq;
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0.0001, t0);
+    amp.gain.exponentialRampToValueAtTime(level, t0 + 0.012);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    const trem = ctx.createGain(); trem.gain.value = 0.84;
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
+    const amt = ctx.createGain(); amt.gain.value = 0.16;
+    lfo.connect(amt); amt.connect(trem.gain);
+    osc.connect(amp); amp.connect(trem);
+    const wet = ctx.createGain(); wet.gain.value = TUNE.reverb;
+    trem.connect(dry); trem.connect(wet); wet.connect(send);
+    osc.start(t0); osc.stop(t0 + dur + 0.1);
+    lfo.start(t0); lfo.stop(t0 + dur + 0.1);
+  }
+
+  const hz = (semi) => 440 * Math.pow(2, semi / 12);
+  // Extensions, not triads. This table is the taste.
+  const CHORD = {
+    maj9: [0, 4, 7, 11, 14], add9: [0, 4, 7, 14], sus: [0, 5, 7, 14],
+    min9: [0, 3, 7, 10, 14], minMaj7: [0, 3, 7, 11],
+  };
+  function chord(root, name, t0, dur, level, o = {}) {
+    const ivs = CHORD[name];
+    ivs.forEach((iv, i) => voice(hz(root + iv), t0 + i * (o.roll ?? 0.045), dur - i * 0.02, level, o));
+    if (o.top) bell(hz(root + ivs[ivs.length - 1] + 12), t0 + 0.16, 1.6, 0.16);
+  }
+
+  const CUES = {
+    td:    (t) => chord(-8, 'maj9', t, 3.4, 0.085, { top: true }),
+    first: (t) => chord(-8, 'add9', t, 0.9, 0.05, { roll: 0.02, attack: 60 }),
+    fg:    (t) => { chord(-10, 'sus', t, 1.1, 0.06, { roll: 0.03, attack: 90 });
+                    chord(-8, 'add9', t + 0.42, 2.0, 0.07, { roll: 0.03 }); },
+    xp:    (t) => chord(-8, 'add9', t, 0.6, 0.04, { roll: 0.015, attack: 40 }),
+    int:   (t) => chord(-13, 'minMaj7', t, 2.6, 0.08, { slide: 0.94, roll: 0.02, cutoff: 1100 }),
+    over:  (t) => chord(-20, 'min9', t, 3.0, 0.07, { roll: 0.06, attack: 300, cutoff: 900 }),
+  };
+
+  return {
+    wake,
+    get on() { return on; },
+    toggle() {
+      on = !on;
+      try { localStorage.setItem(KEY, on ? 'on' : 'off'); } catch { /* private mode */ }
+      if (on) wake();
+      return on;
+    },
+    /** `tag` guards against the same finish being sounded twice by a repaint,
+     *  the way reportScore already has to. */
+    cue(name, tag) {
+      if (!on || !CUES[name]) return;
+      if (tag && tag === last) return;
+      last = tag || '';
+      wake();
+      if (!ctx) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      CUES[name](ctx.currentTime + 0.02);
+    },
+  };
+})();
 
 // ---- the field -----------------------------------------------------------
 // One world, whatever the play. A ten-yard end zone so a throw has somewhere
@@ -1575,18 +1703,21 @@ const DRIVE_GAME = (() => {
       g.first = false;
       if (o.kind === 'td') {
         g.tds++; g.points += TD;
+        SOUND.cue('td', `td${g.tds}`);
         g.state = 'td'; return;            // the kicking unit is next
       }
-      if (o.kind === 'int') { g.state = 'gameover'; return; }
+      if (o.kind === 'int') { SOUND.cue('int', 'int'); g.state = 'gameover'; return; }
       g.losYards = Math.max(1, g.losYards - g.gain);
       g.toGo -= g.gain;
       if (g.toGo <= 0) {
         g.down = 1;
         g.toGo = Math.min(TO_GO, g.losYards);
         g.first = true;
+        SOUND.cue('first', `1st${g.driveNo}-${g.losYards}`);
         g.state = 'result'; return;
       }
       g.down++;
+      if (g.down > 4) SOUND.cue('over', 'downs');
       g.state = g.down > 4 ? 'gameover' : 'result';
     },
     /** A kick is the one play that can end the run without a turnover: miss
@@ -1596,13 +1727,14 @@ const DRIVE_GAME = (() => {
       const kind = g.kicking;
       g.kicking = null; g.gain = 0;
       if (kind === 'xp') {
-        if (made) g.points += XP;
+        if (made) { g.points += XP; SOUND.cue('xp', `xp${g.tds}`); }
         g.how = made ? 'xp' : 'xpmiss';
         this.newDrive();
         g.state = 'result'; return;
       }
-      if (!made) { g.how = 'fgmiss'; g.state = 'gameover'; return; }
+      if (!made) { SOUND.cue('over', 'fgmiss'); g.how = 'fgmiss'; g.state = 'gameover'; return; }
       g.points += FG; g.fgs++;
+      SOUND.cue('fg', `fg${g.fgs}`);
       g.how = 'fg';
       this.newDrive();
       g.state = 'result';
@@ -1860,6 +1992,9 @@ function logical(e) {
   const camY = active.g && active.g.camY ? active.g.camY : 0;
   return { x: ((e.clientX - r.left) / r.width) * VW, y: ((e.clientY - r.top) / r.height) * VH + camY };
 }
+// Any touch anywhere is the gesture the audio context needs; it is built on
+// the first one and never at load.
+document.addEventListener('pointerdown', () => SOUND.wake(), { passive: true });
 canvas.addEventListener('pointerdown', (e) => { pStart = { x: e.clientX, y: e.clientY }; });
 canvas.addEventListener('pointerup', (e) => {
   if (active.state === 'select') { pStart = null; return; }
@@ -1920,6 +2055,11 @@ requestAnimationFrame(frame);
 
 el('build').textContent = `build ${BUILD}`;
 select(DRIVE_GAME);
+const soundEl = el('sound');
+function paintSound() { soundEl.textContent = SOUND.on ? 'SOUND' : 'MUTED'; }
+soundEl.addEventListener('pointerup', (e) => { e.stopPropagation(); SOUND.toggle(); paintSound(); });
+paintSound();
+
 window.__active = () => active;
 </script>
 </body>
