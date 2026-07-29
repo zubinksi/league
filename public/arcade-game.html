@@ -212,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade40-snap';
+const BUILD = 'arcade41-safety';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -678,7 +678,7 @@ function alignDefense(rnd, drive, los, wrX) {
           speed: (0.54 + rnd() * 0.24) * ramp, lateral: (0.44 + rnd() * 0.28) * ramp, stumble: 0 },
     // A free safety plays deep. At six yards he was a fourth linebacker on
     // runs and a man every deep throw simply flew over.
-    safety: { x: VW / 2 + (rnd() * 34 - 17), y: Math.max(EZ + 8, los - 160), frame: 0,
+    safety: { x: VW / 2 + (rnd() * 34 - 17), y: Math.max(EZ + 8, los - 160), frame: 0, deep: true,
               speed: (0.50 + rnd() * 0.22) * ramp, lateral: (0.40 + rnd() * 0.24) * ramp, stumble: 0 },
   };
 }
@@ -880,7 +880,25 @@ const RUN_GAME = (() => {
         if (d.contain && Math.sign(rb.x - VW / 2) !== Math.sign(d.x - VW / 2)) {
           d.frame += 0.08; continue;
         }
-        const dx = (rb.x + rb.vx * 8) - d.x, dy = rb.y - d.y;
+        // The last man takes an angle rather than a chase. Aiming at where
+        // the carrier is standing means arriving where he was — and because
+        // the pursuit vector is normalised, a defender who needs to travel
+        // mostly sideways travels sideways slowly. He is moving downfield at
+        // a rate we know, so the cut-off point is solvable; solving it is the
+        // difference between a safety in front of the play and one trailing
+        // it into the end zone.
+        let tx = rb.x + rb.vx * 8, ty = rb.y;
+        if (d.deep) {
+          const fwd = A.FWD * (rb.burst > 0 ? rb.pace : 1);
+          const rate = Math.max(0.25, (d.speed + d.lateral) / 2);
+          let t = Math.hypot(rb.x - d.x, rb.y - d.y) / rate;
+          for (let i = 0; i < 2; i++) {
+            tx = rb.x + rb.vx * Math.min(t, 20);      // his drift decays; cap the lead
+            ty = Math.max(EZ, rb.y - fwd * t);
+            t = Math.hypot(tx - d.x, ty - d.y) / rate;
+          }
+        }
+        const dx = tx - d.x, dy = ty - d.y;
         const dist = Math.hypot(dx, dy) || 1;
         // While the burst is on they are still flowing to their own read.
         const flow = rb.burst > 0 ? g.flow : 1;
@@ -1203,6 +1221,7 @@ const PASS_GAME = (() => {
         * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
       g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
+      g.threw = g.t;
       g.att++; g.state = 'ball';
     },
     step() {
@@ -1223,6 +1242,30 @@ const PASS_GAME = (() => {
       r.db.x += (back.x - r.db.x) * tight;
       r.db.y += (back.y - r.db.y) * tight;
 
+      // The safety works from depth: he shades across to the receiver and
+      // gives ground once the route threatens his level. Standing still until
+      // the ball was already caught is what made a go a free throw.
+      if (g.safety) {
+        const s = g.safety;
+        if (g.state === 'ball' && g.t - g.threw > 8) {
+          // He reads the throw and drives on it, after a beat to read it.
+          // Holding depth alone was no use — he plays ten yards off and these
+          // routes gain five, so he was never within reach of anything. The
+          // beat is what separates the throws: a slant lands before he has
+          // moved, a go hangs long enough for him to arrive. Without it he
+          // was on top of every catch and the yards-after went to nothing,
+          // which turned second and nine into a down with no answer at all.
+          const bx = g.ball.tx - s.x, by = g.ball.ty - s.y;
+          const d = Math.hypot(bx, by) || 1;
+          s.x += (bx / d) * s.lateral * 1.18;
+          s.y += (by / d) * s.speed * 1.18;
+        } else {
+          const lead = r.x - s.x;
+          s.x += Math.sign(lead) * Math.min(0.62, Math.abs(lead) * 0.055);
+          if (r.y - s.y < 74) s.y = Math.max(EZ + 6, s.y - 0.52);
+        }
+        s.frame += 0.16;
+      }
       if (g.state === 'live') {
         for (const d of g.rushers) {
           const dx = g.qb.x - d.x, dy = g.qb.y - d.y, dist = Math.hypot(dx, dy) || 1;
@@ -1264,6 +1307,12 @@ const PASS_GAME = (() => {
       const reach = CATCH_R * (0.86 + 0.30 * W.HANDS);
       if (dbD < reach && dbD < recD) {
         this.end(g.roll() < 0.28 ? 'int' : 'incomplete', 0); return;
+      }
+      // Over the top. He is arriving from depth with his back to the throw,
+      // so he knocks it down far more often than he takes it.
+      const safD = g.safety ? Math.hypot(g.safety.x - b.x, g.safety.y - b.y) : Infinity;
+      if (safD < reach * 0.82 && safD < recD) {
+        this.end(g.roll() < 0.18 ? 'int' : 'incomplete', 0); return;
       }
       if (recD > reach) { this.end('incomplete', 0); return; }
       const sep = dbD - recD;
