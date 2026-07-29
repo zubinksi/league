@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Arcade — audio lab</title>
+<style>
+  :root { --gold: #e8c561; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    margin: 0; padding: 22px 18px 60px; background: #08090b; color: #ececed;
+    font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+    font-size: 12px; letter-spacing: 0.04em;
+  }
+  h1 { font-size: 13px; letter-spacing: 0.22em; text-transform: uppercase; margin: 0 0 4px; }
+  .lede { color: #6d6f76; font-size: 10px; line-height: 1.8; margin: 0 0 20px; max-width: 30em; }
+  .head {
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #55575d;
+    margin: 22px 0 9px; padding-bottom: 7px; border-bottom: 1px solid rgba(255,255,255,0.08);
+  }
+  .cues { display: grid; grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); gap: 8px; }
+  button {
+    appearance: none; background: none; color: #ececed; font: inherit; text-align: left;
+    border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; padding: 13px 14px;
+    cursor: pointer;
+  }
+  button:active { background: rgba(255,255,255,0.10); }
+  button b { display: block; font-size: 12px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; }
+  button i { display: block; font-style: normal; font-size: 9px; color: #6d6f76; margin-top: 5px; letter-spacing: 0.06em; }
+  .row { display: grid; grid-template-columns: 92px 1fr 46px; align-items: center; gap: 12px; margin: 13px 0; }
+  .row label { font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #6d6f76; }
+  .row output { font-size: 10px; color: var(--gold); text-align: right; font-variant-numeric: tabular-nums; }
+  input[type=range] { width: 100%; accent-color: #c9c9cf; }
+  .note { color: #46484e; font-size: 9px; line-height: 1.8; margin-top: 22px; max-width: 32em; }
+  .ab { display: flex; gap: 8px; margin-top: 10px; }
+  .ab button { flex: 1; text-align: center; }
+  .ab button b { font-size: 10px; }
+</style>
+</head>
+<body>
+<h1>Arcade — audio lab</h1>
+<p class="lede">
+  Nothing here touches the game. Every cue is synthesised — no files. The four
+  sliders are the ones that decide whether this sounds like a record or like a
+  doorbell; move them and hit a cue again.
+</p>
+
+<div class="head">Cues</div>
+<div class="cues" id="cues"></div>
+
+<div class="head">The four that matter</div>
+<div id="knobs"></div>
+
+<div class="head">A / B</div>
+<div class="ab">
+  <button id="ab-flat"><b>Flat triad</b><i>no extensions, no detune, dry</i></button>
+  <button id="ab-rich"><b>As tuned</b><i>current settings</i></button>
+</div>
+
+<p class="note">
+  Flat triad is the same touchdown chord with the extensions removed, the
+  detune at zero and the reverb bypassed — the corny version, for contrast.
+  If the difference is not obvious, the settings are too conservative.
+</p>
+
+<script>
+// ---------------------------------------------------------------------------
+// A small warm-synth kit. Three sawtooths a few cents apart per note, a slow
+// bloom, a low-pass, and a synthesised room. Extended chords rather than
+// triads. That combination is most of the distance between a game beep and
+// something you would leave on.
+// ---------------------------------------------------------------------------
+let ctx = null, master = null, verb = null, dry = null;
+
+/** Reverb without an impulse file: decaying noise is a perfectly good room. */
+function impulse(seconds, decay) {
+  const n = Math.floor(ctx.sampleRate * seconds);
+  const buf = ctx.createBuffer(2, n, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = buf.getChannelData(c);
+    for (let i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n) ** decay;
+  }
+  return buf;
+}
+
+function boot() {
+  if (ctx) return;
+  ctx = new (window.AudioContext || window.webkitAudioContext)();
+  master = ctx.createGain(); master.gain.value = 0.9; master.connect(ctx.destination);
+  verb = ctx.createConvolver(); verb.buffer = impulse(3.2, 2.4);
+  const wet = ctx.createGain(); wet.gain.value = 1; verb.connect(wet); wet.connect(master);
+  dry = ctx.createGain(); dry.gain.value = 1; dry.connect(master);
+  verbSend = ctx.createGain(); verbSend.connect(verb);
+}
+let verbSend = null;
+
+const P = { detune: 9, cutoff: 1900, attack: 180, reverb: 0.5 };
+
+/** One note: a detuned stack through its own filter and envelope. */
+function voice(freq, t0, dur, level, opts = {}) {
+  const det = opts.detune ?? P.detune;
+  const cut = opts.cutoff ?? P.cutoff;
+  const atk = (opts.attack ?? P.attack) / 1000;
+  const wet = opts.reverb ?? P.reverb;
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.setValueAtTime(cut * 0.45, t0);
+  lp.frequency.linearRampToValueAtTime(cut, t0 + atk + 0.15);   // the filter opens with it
+  lp.Q.value = 0.6;
+
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0.0001, t0);
+  amp.gain.exponentialRampToValueAtTime(level, t0 + Math.max(0.005, atk));
+  amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+  lp.connect(amp);
+  const send = ctx.createGain(); send.gain.value = wet;
+  amp.connect(dry); amp.connect(send); send.connect(verbSend);
+
+  const spread = det === 0 ? [0] : [-det, 0, det];
+  for (const cents of spread) {
+    const o = ctx.createOscillator();
+    o.type = opts.wave || 'sawtooth';
+    o.frequency.value = freq;
+    o.detune.value = cents;
+    if (opts.slide) o.frequency.exponentialRampToValueAtTime(freq * opts.slide, t0 + dur * 0.9);
+    o.connect(lp);
+    o.start(t0); o.stop(t0 + dur + 0.1);
+  }
+}
+
+/** A struck bell — sine with a fast attack and a long tail. Vibraphone, near
+ *  enough, and it is what carries the top of a chord. */
+function bell(freq, t0, dur, level) {
+  const o = ctx.createOscillator();
+  o.type = 'sine'; o.frequency.value = freq;
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0.0001, t0);
+  amp.gain.exponentialRampToValueAtTime(level, t0 + 0.012);
+  amp.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  const trem = ctx.createGain();
+  const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
+  const lfoAmt = ctx.createGain(); lfoAmt.gain.value = 0.16;
+  lfo.connect(lfoAmt); lfoAmt.connect(trem.gain); trem.gain.value = 0.84;
+  o.connect(amp); amp.connect(trem);
+  const send = ctx.createGain(); send.gain.value = P.reverb;
+  trem.connect(dry); trem.connect(send); send.connect(verbSend);
+  o.start(t0); o.stop(t0 + dur + 0.1);
+  lfo.start(t0); lfo.stop(t0 + dur + 0.1);
+}
+
+const hz = (semi) => 440 * Math.pow(2, semi / 12);
+
+// Extensions, not triads. This table is the taste.
+const CHORD = {
+  maj9:    [0, 4, 7, 11, 14],
+  add9:    [0, 4, 7, 14],
+  sus:     [0, 5, 7, 14],
+  min9:    [0, 3, 7, 10, 14],
+  minMaj7: [0, 3, 7, 11],      // the uneasy one
+  triad:   [0, 4, 7],          // for the A/B only
+};
+
+/** Roll a chord on rather than hitting it flat — a few milliseconds between
+ *  notes is the difference between a chord and a stab. */
+function chord(root, name, t0, dur, level, opts = {}) {
+  const ivs = CHORD[name];
+  ivs.forEach((iv, i) => {
+    voice(hz(root + iv), t0 + i * (opts.roll ?? 0.045), dur - i * 0.02, level, opts);
+  });
+  if (opts.top) bell(hz(root + ivs[ivs.length - 1] + 12), t0 + (opts.topAt ?? 0.16), 1.6, 0.16);
+}
+
+// --- the cues --------------------------------------------------------------
+const CUES = {
+  td: {
+    label: 'Touchdown',
+    hint: 'maj9 bloom, bell on top',
+    play(t) { chord(-8, 'maj9', t, 3.4, 0.085, { top: true }); },
+  },
+  first: {
+    label: 'First down',
+    hint: 'add9, short and quiet',
+    play(t) { chord(-8, 'add9', t, 0.9, 0.05, { roll: 0.02, attack: 60 }); },
+  },
+  fg: {
+    label: 'Field goal',
+    hint: 'sus resolving to add9',
+    play(t) {
+      chord(-10, 'sus', t, 1.1, 0.06, { roll: 0.03, attack: 90 });
+      chord(-8, 'add9', t + 0.42, 2.0, 0.07, { roll: 0.03 });
+    },
+  },
+  int: {
+    label: 'Interception',
+    hint: 'minMaj7, sliding down',
+    play(t) { chord(-13, 'minMaj7', t, 2.6, 0.08, { slide: 0.94, roll: 0.02, cutoff: 1100 }); },
+  },
+  over: {
+    label: 'Turnover on downs',
+    hint: 'min9, low, no bloom',
+    play(t) { chord(-20, 'min9', t, 3.0, 0.07, { roll: 0.06, attack: 300, cutoff: 900 }); },
+  },
+  tick: {
+    label: 'Snap',
+    hint: 'the Pharrell tick — dry, tiny',
+    play(t) { voice(hz(16), t, 0.09, 0.05, { wave: 'triangle', attack: 2, reverb: 0.08, cutoff: 3200, detune: 0 }); },
+  },
+};
+
+const cues = document.getElementById('cues');
+for (const [k, c] of Object.entries(CUES)) {
+  const b = document.createElement('button');
+  b.innerHTML = `<b>${c.label}</b><i>${c.hint}</i>`;
+  b.onclick = () => { boot(); ctx.resume(); c.play(ctx.currentTime + 0.02); };
+  cues.appendChild(b);
+}
+
+// --- the knobs -------------------------------------------------------------
+const KNOBS = [
+  { k: 'detune', label: 'Detune', min: 0, max: 26, step: 1, fmt: (v) => `${v}¢` },
+  { k: 'cutoff', label: 'Cutoff', min: 500, max: 6000, step: 50, fmt: (v) => `${(v / 1000).toFixed(1)}k` },
+  { k: 'attack', label: 'Bloom', min: 2, max: 600, step: 2, fmt: (v) => `${v}ms` },
+  { k: 'reverb', label: 'Room', min: 0, max: 1, step: 0.02, fmt: (v) => v.toFixed(2) },
+];
+const knobs = document.getElementById('knobs');
+for (const kn of KNOBS) {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label>${kn.label}</label>`
+    + `<input type="range" min="${kn.min}" max="${kn.max}" step="${kn.step}" value="${P[kn.k]}">`
+    + `<output>${kn.fmt(P[kn.k])}</output>`;
+  const input = row.querySelector('input'), out = row.querySelector('output');
+  input.oninput = () => { P[kn.k] = parseFloat(input.value); out.textContent = kn.fmt(P[kn.k]); };
+  knobs.appendChild(row);
+}
+
+// --- A / B -----------------------------------------------------------------
+document.getElementById('ab-flat').onclick = () => {
+  boot(); ctx.resume();
+  chord(-8, 'triad', ctx.currentTime + 0.02, 1.4, 0.085,
+        { roll: 0, detune: 0, reverb: 0, attack: 4, cutoff: 6000 });
+};
+document.getElementById('ab-rich').onclick = () => {
+  boot(); ctx.resume();
+  CUES.td.play(ctx.currentTime + 0.02);
+};
+</script>
+</body>
+</html>
