@@ -510,6 +510,10 @@ function defenders(rnd, drive, los) {
   // help thins out, because getting to the stripe already beat it.
   const room = Math.max(26, los - EZ + 4);
   const standoff = Math.max(26, Math.min(74, room * 0.45));
+  // Four deep. Thinning it out sounds like it should open the lanes and does
+  // the opposite: lane spacing is VW / (n + 0.6), so fewer men stand wider
+  // and cover the gaps more evenly. Measured, the interior went from 18% to
+  // 32% stuffed when the deepest man was removed.
   const n = Math.max(1, Math.min(drive >= 2 ? 4 : 3,
     1 + Math.floor((room - standoff) / 44)));
   const gap = n > 1 ? Math.min(58, (room - standoff) / (n - 1)) : 0;
@@ -958,7 +962,10 @@ const PASS_GAME = (() => {
     },
     /** Stage one: the passer. Stays in select so the target can be picked. */
     choose(p) {
-      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.32 - 0.14 * p.c };
+      // The rush has to actually arrive. At the old rate two men needed ~110
+      // frames to cover the last stretch to a passer who had already thrown
+      // by 100, so a dropback carried no risk at all and Escape did nothing.
+      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.52 - 0.22 * p.c };
       g.qbTeam = p.team;
     },
     /** Stage two: the target. Sharing a club with the passer is the bonus. */
