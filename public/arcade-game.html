@@ -212,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade39-sound';
+const BUILD = 'arcade40-snap';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -448,6 +448,7 @@ const SOUND = (() => {
 
   function voice(freq, t0, dur, level, o = {}) {
     const cut = o.cutoff ?? TUNE.cutoff, atk = (o.attack ?? TUNE.attack) / 1000;
+    const det = o.detune ?? TUNE.detune;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass'; lp.Q.value = 0.6;
     lp.frequency.setValueAtTime(cut * 0.45, t0);
@@ -459,9 +460,9 @@ const SOUND = (() => {
     lp.connect(amp);
     const wet = ctx.createGain(); wet.gain.value = o.reverb ?? TUNE.reverb;
     amp.connect(dry); amp.connect(wet); wet.connect(send);
-    for (const cents of [-TUNE.detune, 0, TUNE.detune]) {
+    for (const cents of det === 0 ? [0] : [-det, 0, det]) {
       const osc = ctx.createOscillator();
-      osc.type = 'sawtooth'; osc.frequency.value = freq; osc.detune.value = cents;
+      osc.type = o.wave || 'sawtooth'; osc.frequency.value = freq; osc.detune.value = cents;
       if (o.slide) osc.frequency.exponentialRampToValueAtTime(freq * o.slide, t0 + dur * 0.9);
       osc.connect(lp); osc.start(t0); osc.stop(t0 + dur + 0.1);
     }
@@ -506,6 +507,10 @@ const SOUND = (() => {
     xp:    (t) => chord(-8, 'add9', t, 0.6, 0.04, { roll: 0.015, attack: 40 }),
     int:   (t) => chord(-13, 'minMaj7', t, 2.6, 0.08, { slide: 0.94, roll: 0.02, cutoff: 1100 }),
     over:  (t) => chord(-20, 'min9', t, 3.0, 0.07, { roll: 0.06, attack: 300, cutoff: 900 }),
+    // The one thing that fires every down, so it is a single dry triangle and
+    // ninety milliseconds — closer to a click with a pitch than to a note.
+    snap:  (t) => voice(hz(16), t, 0.09, 0.05,
+                        { wave: 'triangle', attack: 2, reverb: 0.08, cutoff: 3200, detune: 0 }),
   };
 
   return {
@@ -1686,6 +1691,7 @@ const DRIVE_GAME = (() => {
       g.calls[pass ? 'pass' : 'run']++;
       g.play = pass ? 'pass' : 'run';
       g.state = 'play';
+      SOUND.cue('snap', `snap${g.calls.run + g.calls.pass}`);
       cur.pickOption(inner);
     },
     step() {
