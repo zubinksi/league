@@ -1823,3 +1823,17 @@
   text-transform: uppercase;
   color: #55575d;
 }
+
+/* Sidelined this week — still listed, because seeing who you have not got is
+   the point of the mechanic. */
+.rp-card.off { opacity: 0.42; border-style: dashed; }
+
+.rp-status {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+}
+.rp-status.out { color: #b0555f; }
+.rp-status.risk { color: #b08a4a; }

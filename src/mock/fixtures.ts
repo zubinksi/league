@@ -73,6 +73,7 @@ interface FixturePlayer {
   proj: number;
   adp?: number;
   stats?: Record<string, number>;
+  injury?: string;
 }
 
 const HOME_STARTERS: FixturePlayer[] = [
@@ -82,7 +83,9 @@ const HOME_STARTERS: FixturePlayer[] = [
     stats: { rush_att: 16, rush_yd: 104, rec: 4, rec_yd: 39, rush_td: 1 } },
   { id: 'p_brobinson', first: 'Bijan', last: 'Robinson', pos: 'RB', team: 'ATL', pts: 9.6, proj: 18.2, adp: 2.3,
     stats: { rush_att: 13, rush_yd: 51, rec: 3, rec_yd: 15 } },
-  { id: 'p_nacua', first: 'Puka', last: 'Nacua', pos: 'WR', team: 'LAR', proj: 16.4, adp: 9.8 },
+  // Out with an injury — Sleeper carries this, so it needs no schedule.
+  { id: 'p_nacua', first: 'Puka', last: 'Nacua', pos: 'WR', team: 'LAR', proj: 16.4, adp: 9.8,
+    injury: 'Out' },
   { id: 'p_collins', first: 'Nico', last: 'Collins', pos: 'WR', team: 'HOU', pts: 8.9, proj: 15.1, adp: 14.5,
     stats: { rec: 4, rec_yd: 49 } },
   // On bye in the fixture week (CLE has no game in the slate).
@@ -116,7 +119,7 @@ const AWAY_STARTERS: FixturePlayer[] = [
 
 const HOME_BENCH: FixturePlayer[] = [
   { id: 'p_downs', first: 'Josh', last: 'Downs', pos: 'WR', team: 'MIN', pts: 7.4, proj: 10.8, adp: 92.1,
-    stats: { rec: 5, rec_yd: 44 } },
+    injury: 'Questionable', stats: { rec: 5, rec_yd: 44 } },
   { id: 'p_charbonnet', first: 'Zach', last: 'Charbonnet', pos: 'RB', team: 'SEA', proj: 9.4, adp: 96.7 },
   { id: 'p_pitts', first: 'Kyle', last: 'Pitts', pos: 'TE', team: 'ATL', pts: 4.2, proj: 8.6, adp: 61.5,
     stats: { rec: 2, rec_yd: 22 } },
@@ -155,6 +158,7 @@ for (const p of ALL_PLAYERS) {
     position: p.pos,
     team: p.team,
     status: 'Active',
+    injury_status: p.injury ?? null,
   };
 }
 

@@ -149,6 +149,14 @@
   }
   .pick .pt { display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 4px; }
   .pick.chem { border-color: rgba(232,197,97,0.44); }
+  /* Still listed, so you can see who you have not got this week. */
+  .pick.off { opacity: 0.34; border-style: dashed; cursor: default; }
+  .pick.off:hover, .pick.off:active { border-color: rgba(255,255,255,0.12); }
+  .pick .pout, .pick .prisk {
+    margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
+  }
+  .pick .pout { color: #b0555f; }
+  .pick .prisk { color: #b08a4a; }
   .pick .pchem {
     margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
     color: var(--gold);
@@ -212,7 +220,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade41-safety';
+const BUILD = 'arcade42-avail';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1617,6 +1625,7 @@ const KICK_GAME = (() => {
 // ===========================================================================
 /** A carry or a sack can go backwards, so say so rather than printing -3. */
 const yds = (n) => (n < 0 ? `${-n} yd loss` : `${n} yd`);
+const SIDELINED = ['BYE', 'OUT', 'IR', 'PUP', 'SUS'];
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
 // ===========================================================================
 // GAME 4 — DRIVE
@@ -1866,12 +1875,14 @@ brief.addEventListener('pointerup', () => { briefing = false; paintUI(); });
 // weeks, so a player who just levelled up is visible before you pick him.
 function parseRoster(param, sample) {
   return (new URLSearchParams(location.search).get(param) || sample).split('|').map((r) => {
-    const [name, tm, a, b, c, tr, ta, tb, tc] = r.split(':');
+    const [name, tm, a, b, c, tr, ta, tb, tc, st] = r.split(':');
     const tier = (v) => Math.max(0, Math.min(4, parseInt(v, 10) || 0));
     return {
       name: (name || 'Player').toUpperCase(), team: (tm || '').toUpperCase(),
       a: clamp01(parseFloat(a)), b: clamp01(parseFloat(b)), c: clamp01(parseFloat(c)),
       trend: Math.max(-1, Math.min(1, parseInt(tr, 10) || 0)),
+      // '' when he can play, otherwise why not. SIDELINED cannot be chosen.
+      status: (st || '').toUpperCase(),
       tiers: [tier(ta), tier(tb), tier(tc)].map((t, i) => tierName(param, i, t)),
     };
   });
@@ -1910,17 +1921,21 @@ function buildPicker() {
     const d = document.createElement('div');
     // A target who shares a club with the passer already picked.
     const chem = !!(mate && p.team && p.team === mate.team);
-    d.className = chem ? 'pick chem' : 'pick';
+    const out = SIDELINED.includes(p.status);
+    d.className = `pick${chem && !out ? ' chem' : ''}${out ? ' off' : ''}`;
     const kit = jerseyOf(p.team);
     d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">`
       + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
       + `${p.team}`
-      + (chem ? `<b class="pchem">chemistry</b>` : '')
-      + (p.trend ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
+      + (out ? `<b class="pout">${p.status}</b>`
+             : p.status ? `<b class="prisk">${p.status}</b>` : '')
+      + (chem && !out ? `<b class="pchem">chemistry</b>` : '')
+      + (p.trend && !out ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
       + `</span></span>`
       + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
       + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
+    if (out) { plist.appendChild(d); return; }        // on the sideline this week
     d.onclick = () => {
       picks[pickStage] = p;
       pick = picks[0]; pick2 = picks[1];

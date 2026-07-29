@@ -34,6 +34,39 @@ export interface AttrDetail {
   value: number;
 }
 
+/** Why a player cannot be fielded this week, or '' when he can. */
+export type Availability = '' | 'BYE' | 'OUT' | 'IR' | 'PUP' | 'SUS' | 'Q' | 'D';
+
+/** Statuses that keep a player off the field entirely. Questionable and
+ *  Doubtful are a risk, not a bar — they are flagged and still selectable,
+ *  because taking the choice away is a worse experience than informing it. */
+const SIDELINED = new Set<Availability>(['BYE', 'OUT', 'IR', 'PUP', 'SUS']);
+export const sidelined = (a: Availability) => SIDELINED.has(a);
+
+const INJURY: Record<string, Availability> = {
+  out: 'OUT', ir: 'IR', pup: 'PUP', sus: 'SUS', na: 'OUT', dnr: 'OUT', cov: 'OUT',
+  questionable: 'Q', doubtful: 'D',
+};
+
+/**
+ * Injury comes from Sleeper, which carries it on every player already. The bye
+ * does not — the player blob has no schedule — so it comes from the week's
+ * scoreboard, the same one the player card already reads to print BYE.
+ *
+ * Fails open on purpose: with no scoreboard at all, absence of an entry would
+ * bench an entire roster, so a missing board means no bye filtering rather
+ * than everyone benched.
+ */
+export function availability(
+  meta: { team?: string | null; injury_status?: string | null },
+  scoreboard?: Record<string, unknown>,
+): Availability {
+  const inj = INJURY[(meta.injury_status ?? '').trim().toLowerCase()];
+  if (inj && SIDELINED.has(inj)) return inj;
+  if (scoreboard && Object.keys(scoreboard).length && meta.team && !scoreboard[meta.team]) return 'BYE';
+  return inj ?? '';
+}
+
 export interface ArcadePlayer {
   /** Sleeper player id, so callers can join back to other data. */
   id: string;
@@ -49,6 +82,8 @@ export interface ArcadePlayer {
   tc: number;
   /** 1 when any attribute gained a tier in the last few weeks. */
   trend: number;
+  /** '' when he can play; otherwise why not. */
+  status: Availability;
   /** Ladder detail, for showing progress outside the game. */
   attrs: AttrDetail[];
   /** This season's real production, for context. Excludes the prior-season
@@ -207,6 +242,7 @@ export function buildArcadeRosters(
   players: PlayerMap,
   weekly: (WeekStats | undefined)[],
   priorSeason?: WeekStats,
+  scoreboard?: Record<string, unknown>,
 ): { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] } {
   const run: ArcadePlayer[] = [];
   const pass: ArcadePlayer[] = [];
@@ -237,6 +273,7 @@ export function buildArcadeRosters(
       ...now,
       summary: summarise(meta.position, thisSeason),
       trend: before && tierSum(now) > tierSum(before) ? 1 : 0,
+      status: availability(meta, scoreboard),
     };
     if (meta.position === 'RB') run.push(entry);
     else if (meta.position === 'QB') pass.push(entry);
@@ -244,8 +281,11 @@ export function buildArcadeRosters(
     else kick.push(entry);
   }
 
-  // Strongest first, so the default pick is the obvious one.
-  const byRating = (x: ArcadePlayer, y: ArcadePlayer) => rankOf(y) - rankOf(x);
+  // Available first, then strongest, so the default pick is one you can
+  // actually field. Sidelined players stay in the list rather than vanishing:
+  // seeing that your best back is on bye is the point of the mechanic.
+  const byRating = (x: ArcadePlayer, y: ArcadePlayer) =>
+    Number(sidelined(x.status)) - Number(sidelined(y.status)) || rankOf(y) - rankOf(x);
   run.sort(byRating);
   pass.sort(byRating);
   recv.sort(byRating);
@@ -254,11 +294,14 @@ export function buildArcadeRosters(
 }
 
 const encode = (list: ArcadePlayer[], limit = 6): string =>
-  list
+  // If every man at a position is out, send them anyway — an unplayable
+  // position is worse than fielding someone on bye, and a real lineup has to
+  // start somebody at each spot so this should not come up.
+  (list.some((p) => !sidelined(p.status)) ? list : list.map((p) => ({ ...p, status: '' as Availability })))
     .slice(0, limit)
     .map((p) =>
-      [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2), p.trend, p.ta, p.tb, p.tc]
-        .join(':'),
+      [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2),
+       p.trend, p.ta, p.tb, p.tc, p.status].join(':'),
     )
     .join('|');
 

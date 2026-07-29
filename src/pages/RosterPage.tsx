@@ -9,12 +9,13 @@ import {
   usePlayers,
   usePriorSeasonTotals,
   useRosters,
+  useWeekData,
   useSeasonTotals,
   useUsers,
 } from '../hooks/useLeagueData';
 import { useWeeklyStatsAll } from '../hooks/useWeeklyStats';
 import { positionRanks } from '../lib/metrics';
-import { buildArcadeRosters, type ArcadePlayer, type AttrDetail } from '../lib/arcadeRoster';
+import { buildArcadeRosters, sidelined, type ArcadePlayer, type AttrDetail } from '../lib/arcadeRoster';
 import { teamKit } from '../lib/teamKits';
 
 const GROUPS: { key: 'run' | 'pass' | 'recv' | 'kick'; label: string }[] = [
@@ -50,7 +51,8 @@ function batteries(pass: ArcadePlayer[], recv: ArcadePlayer[]) {
   const out: { key: string; qb: ArcadePlayer; wr: ArcadePlayer }[] = [];
   for (const qb of pass)
     for (const wr of recv)
-      if (qb.team && qb.team === wr.team) out.push({ key: `${qb.id}-${wr.id}`, qb, wr });
+      if (qb.team && qb.team === wr.team && !sidelined(qb.status) && !sidelined(wr.status))
+        out.push({ key: `${qb.id}-${wr.id}`, qb, wr });
   return out;
 }
 
@@ -59,8 +61,9 @@ function batteries(pass: ArcadePlayer[], recv: ArcadePlayer[]) {
 function PlayerCardRow({ p, rank }: { p: ArcadePlayer; rank?: number }) {
   const kit = teamKit(p.team);
   const open = usePlayerCard();
+  const out = sidelined(p.status);
   return (
-    <button className="rp-card" onClick={() => open(p.id, undefined, p.attrs)}>
+    <button className={`rp-card${out ? ' off' : ''}`} onClick={() => open(p.id, undefined, p.attrs)}>
       <span className="rp-left">
         <span className="rp-line">
           <span className="rp-name">{p.name}</span>
@@ -70,7 +73,10 @@ function PlayerCardRow({ p, rank }: { p: ArcadePlayer; rank?: number }) {
               {rank}
             </span>
           ) : null}
-          {p.trend !== 0 && (
+          {p.status && (
+            <i className={`rp-status ${out ? 'out' : 'risk'}`}>{p.status}</i>
+          )}
+          {p.trend !== 0 && !out && (
             <i className={`rp-trend ${p.trend > 0 ? 'up' : 'down'}`}>{p.trend > 0 ? '▲' : '▼'}</i>
           )}
         </span>
@@ -103,6 +109,9 @@ export function RosterPage() {
   const week = defaultWeek(league.data, state.data);
   const weekly = useWeeklyStatsAll(league.data?.season, week, picked !== null);
   const prior = usePriorSeasonTotals(league.data?.season);
+  // Bye weeks: Sleeper carries injuries but no schedule, so availability
+  // needs the board we already fetch for this week.
+  const { scoreboard } = useWeekData(league.data?.season, week);
   const season = useSeasonTotals(league.data?.season);
 
   const ranks = useMemo(
@@ -117,8 +126,8 @@ export function RosterPage() {
     if (picked === null || !rosters.data || !players.data) return null;
     const mine = rosters.data.find((r) => r.roster_id === picked);
     if (!mine) return null;
-    return buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data);
-  }, [picked, rosters.data, players.data, weekly.weekly, prior.data]);
+    return buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data);
+  }, [picked, rosters.data, players.data, weekly.weekly, prior.data, scoreboard.data]);
 
   return (
     <div className="page roster-page">
