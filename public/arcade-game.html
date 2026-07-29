@@ -94,6 +94,7 @@
     color: #6d6f76; margin-bottom: 4px;
   }
   #propts { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 3px; }
+  .prbreak { flex-basis: 100%; height: 0; }
   .propt {
     padding: 9px 13px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
     font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
@@ -211,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade26-onecam';
+const BUILD = 'arcade27-merge';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -404,6 +405,41 @@ const SPIN20 = [[...BODY20, ...PIVOT20], [...SIDE20, ...PIVOT20],
 const SPIN_BALL_DX20 = [0, -6, -11, -4];
 const BALL20 = [[11, 16], [11, 17], [12, 15], [12, 16], [12, 17], [13, 16], [13, 17]];
 
+// ---- the field -----------------------------------------------------------
+// One world, whatever the play. A ten-yard end zone so a throw has somewhere
+// to land, twenty-one yards of drive in front of it, and room behind the line
+// for a backfield. Both play types measure in the same yards from the same
+// stripe, so the field looks identical however the ball moves.
+const YARD = 16, EZ = 10 * YARD, DRIVE_YARDS = 21;
+const WORLD_H = EZ + DRIVE_YARDS * YARD + 64;
+const SNAP = WORLD_H - 64;              // the line on a fresh set of downs
+const BACKFIELD = 44;                   // how far behind it the back sets up
+const QB_DROP = 26;                     // and how deep the passer sets up
+
+/** The grass, the stripes, the line and the chains — drawn once for everyone. */
+function drawField(camY, los, marker) {
+  yardLines(camY, WORLD_H, DRIVE_YARDS + 10, YARD);
+  const gy = Math.round(EZ - camY);
+  if (gy > -WORLD_H && gy < VH + 40) {
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.030)';
+    ctx.fillRect(0, Math.max(0, gy - EZ), VW, Math.min(EZ, gy));
+  }
+  if (marker && marker > EZ) {
+    const my = Math.round(marker - camY);
+    if (my > -2 && my < VH + 2) {
+      ctx.fillStyle = 'rgba(232,197,97,0.72)';
+      ctx.fillRect(0, my, VW, 1);
+    }
+  }
+  const ly = Math.round(los - camY);
+  if (ly > -2 && ly < VH + 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
+  }
+  return ly;
+}
+
 // ---- canvas --------------------------------------------------------------
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
@@ -457,28 +493,84 @@ function yardLines(camY, worldH, yards, yard) {
   ctx.fillRect(2, 0, 1, VH); ctx.fillRect(VW - 3, 0, 1, VH);
 }
 
+// ---- the defense ---------------------------------------------------------
+// One alignment, read once, whatever you call against it. The box is the run
+// front and the pass rush; the corner is over the receiver and also sets that
+// edge; the safety is the last man on both. Which of them can hurt you is the
+// difference between the eight plays.
+const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
+  ? { label: 'Stacked front', spread: 0.64 } : { label: 'Spread front', spread: 1.32 };
+
+function defenders(rnd, drive, los) {
+  const ramp = 1 + drive * 0.07, out = [];
+  // The front used to be spaced purely off the line of scrimmage, which only
+  // works with a whole field behind it: inside about five yards every
+  // defender spawned past the end line and short yardage was an untouched
+  // walk-in. Line up in the room that actually exists instead — the deep
+  // help thins out, because getting to the stripe already beat it.
+  const room = Math.max(26, los - EZ + 4);
+  const standoff = Math.max(26, Math.min(74, room * 0.45));
+  const n = Math.max(1, Math.min(drive >= 2 ? 4 : 3,
+    1 + Math.floor((room - standoff) / 44)));
+  const gap = n > 1 ? Math.min(58, (room - standoff) / (n - 1)) : 0;
+  // As the layers tighten the front also flattens across the width, so a
+  // goal-line stand is a gap to find rather than a wall or a walk-in.
+  const tight = Math.min(1, gap / 58);
+  const lane = 52 * FRONT.spread * tight + (VW / (n + 0.6)) * (1 - tight);
+  for (let i = 0; i < n; i++) {
+    const x = VW / 2 + (i - (n - 1) / 2) * lane + Math.floor(rnd() * 14) - 7;
+    // Someone is always on the ball. Without a man at the line every layer
+    // was linebacker depth, first contact always happened past the stripe,
+    // and a carry could not lose yardage no matter how badly it was read.
+    const back = i === 0
+      ? 6 + Math.floor(rnd() * 10)
+      : standoff + (i - 1) * gap + Math.floor(rnd() * 26) * tight;
+    out.push({
+      x, y: Math.max(4, los - back),
+      speed: (0.58 + rnd() * 0.28) * ramp, lateral: (0.46 + rnd() * 0.32) * ramp,
+      stumble: 0, frame: rnd() * 3,
+    });
+  }
+  return out;
+}
+
+/** The whole picture: box, corner over the receiver, safety over the top. */
+function alignDefense(rnd, drive, los, wrX) {
+  const ramp = 1 + drive * 0.07;
+  return {
+    front: defenders(rnd, drive, los),
+    cb: { x: wrX + (rnd() * 6 - 3), y: los - 15 - rnd() * 5, frame: rnd() * 3, contain: true,
+          speed: (0.54 + rnd() * 0.24) * ramp, lateral: (0.44 + rnd() * 0.28) * ramp, stumble: 0 },
+    // A free safety plays deep. At six yards he was a fourth linebacker on
+    // runs and a man every deep throw simply flew over.
+    safety: { x: VW / 2 + (rnd() * 34 - 17), y: Math.max(EZ + 8, los - 160), frame: 0,
+              speed: (0.50 + rnd() * 0.22) * ramp, lateral: (0.40 + rnd() * 0.24) * ramp, stumble: 0 },
+  };
+}
+
+/** Where the eleven of them line up. The receiver's side is information: the
+ *  corner is over there, so that edge is the harder one to get to. */
+function alignOffense(rnd, los) {
+  // The passer takes a drop and the back sets up alongside him. Both numbers
+  // are pocket depth, not decoration: with a man on the ball, a passer at
+  // los + 6 is inside the sack radius before the play has started.
+  return { wrX: rnd() < 0.5 ? 44 : VW - 44, qb: { x: VW / 2, y: los + QB_DROP } };
+}
+
 // ===========================================================================
 // GAME 1 — RUN
 // ===========================================================================
 const RUN_GAME = (() => {
-  const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0, GOAL = EZ + 12;
   // Small scale, matching the pass game — one camera for the whole sport.
   // Field distances (tackle radius, contact, the front's spacing) are in
   // yards, not sprite widths, so they do not scale with the artwork: at 32px
   // a tackle at 17px looked like the defender standing inside the runner, and
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
-  // The back sets up behind the line and has to get there. This is what makes
-  // a carry able to lose yardage, which the game could not do while he spawned
-  // on the ball.
-  const BACKFIELD = 40;
   const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IF = 8, TACKLE_R = 17;
   const TRUCK_LEN = 24, TRUCK_CD = 46;
   const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
     + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
-  const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
-    ? { label: 'Stacked front', spread: 0.64 } : { label: 'Spread front', spread: 1.32 };
-
   /**
    * The pre-snap read. The front is already drawn before the play starts —
    * this just lets you aim at the part of it that is empty. Two widths of
@@ -505,38 +597,6 @@ const RUN_GAME = (() => {
       SPD: p.a, PWR: p.b, ELU: p.c,
     };
   }
-  function defenders(rnd, drive, los) {
-    const ramp = 1 + drive * 0.07, out = [];
-    // The front used to be spaced purely off the line of scrimmage, which only
-    // works with a whole field behind it: inside about five yards every
-    // defender spawned past the end line and short yardage was an untouched
-    // walk-in. Line up in the room that actually exists instead — the deep
-    // help thins out, because getting to the stripe already beat it.
-    const room = Math.max(26, los - GOAL + 4);
-    const standoff = Math.max(26, Math.min(74, room * 0.45));
-    const n = Math.max(1, Math.min(drive >= 2 ? 4 : 3,
-      1 + Math.floor((room - standoff) / 44)));
-    const gap = n > 1 ? Math.min(58, (room - standoff) / (n - 1)) : 0;
-    // As the layers tighten the front also flattens across the width, so a
-    // goal-line stand is a gap to find rather than a wall or a walk-in.
-    const tight = Math.min(1, gap / 58);
-    const lane = 52 * FRONT.spread * tight + (VW / (n + 0.6)) * (1 - tight);
-    for (let i = 0; i < n; i++) {
-      const x = VW / 2 + (i - (n - 1) / 2) * lane + Math.floor(rnd() * 14) - 7;
-      // Someone is always on the ball. Without a man at the line every layer
-      // was linebacker depth, first contact always happened past the stripe,
-      // and a carry could not lose yardage no matter how badly it was read.
-      const back = i === 0
-        ? 6 + Math.floor(rnd() * 10)
-        : standoff + (i - 1) * gap + Math.floor(rnd() * 26) * tight;
-      out.push({
-        x, y: Math.max(4, los - back),
-        speed: (0.58 + rnd() * 0.28) * ramp, lateral: (0.46 + rnd() * 0.32) * ramp,
-        stumble: 0, frame: rnd() * 3,
-      });
-    }
-    return out;
-  }
   return {
     key: 'run', label: 'Run', pickTitle: 'Choose your back',
     shell: FRONT.label, attrLabels: ['Speed', 'Power', 'Elusive'],
@@ -550,25 +610,36 @@ const RUN_GAME = (() => {
     roster: parseRoster('run', SAMPLE),
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
-            drive: 0, down: 1, los: WORLD_H - 26 - BACKFIELD, tds: 0, yards: 0, gain: 0, state: 'select' };
+            drive: 0, down: 1, los: SNAP, tds: 0, yards: 0, gain: 0, state: 'select' };
       this.g = g;
     },
     // Attributes without a play. A drive sets these once and then asks for
     // carries one at a time.
     attach(p) { setAttrs(p); g.backTeam = p.team; },
+    /** A drive tells the run engine who else is on the field, so the kits are
+     *  right when the whole huddle is drawn. */
+    mates(qbTeam, wrTeam) { g.qbTeam = qbTeam; g.wrTeam = wrTeam; },
     choose(p) { this.attach(p); this.startDown(); },
-    /** Line up a single carry this many yards from the goal line. */
-    startAt(losYards, driveNo) {
-      g.los = GOAL + Math.round(losYards * YARD);
+    /** Line up a single carry this many yards from the goal line. A drive
+     *  hands over the alignment it already showed you; standalone play makes
+     *  its own. */
+    startAt(losYards, driveNo, set) {
+      g.los = EZ + Math.round(losYards * YARD);
       g.drive = driveNo || 0;
-      this.startDown();
+      this.startDown(set);
     },
     outcome() { return { kind: g.how, gain: g.gain }; },
-    startDown() {
+    startDown(set) {
+      const off = (set && set.off) || alignOffense(g.rnd, g.los);
+      const D = (set && set.def) || alignDefense(g.rnd, g.drive, g.los, off.wrX);
       g.rb = { x: VW / 2, y: g.los + BACKFIELD, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
                clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0,
                burst: 0, pace: 1 };
-      g.defenders = defenders(g.rnd, g.drive, g.los);
+      g.qb = off.qb; g.wrX = off.wrX;
+      g.wr = { x: off.wrX, y: g.los - 2, frame: 0 };   // on the line, clear of the corner
+      // Everyone pursues, including the corner — so the side the receiver is
+      // lined up on is the harder edge to take.
+      g.defenders = [...D.front, D.cb, D.safety];
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
       g.startY = g.los;
@@ -613,7 +684,10 @@ const RUN_GAME = (() => {
       // leverage, and in a gap you misread you are not running through one
       // defender, you are running into three — so the read decides whether
       // your best tool is available at all.
-      g.truckLane = (lane.edge ? 0.45 : 1) * (0.5 + 0.5 * clean);
+      // The floor is higher inside than it was. With a corner and a safety
+      // on the field every lane reads busier, and a truck rate scaled off
+      // that was quietly taking the bruiser's only tool away from him.
+      g.truckLane = lane.edge ? 0.45 * (0.5 + 0.5 * clean) : 0.68 + 0.32 * clean;
       rb.burst = Math.round((lane.edge ? 34 : 30) * (0.45 + 0.55 * clean) * (0.35 + 0.95 * fit));
       // Working east-west costs you downfield, and costs a slow back more.
       // Straight ahead is the opposite trade: from the backfield an interior
@@ -626,7 +700,7 @@ const RUN_GAME = (() => {
       g.how = kind;
       g.gain = Math.round((g.startY - g.rb.y) / YARD);
       g.yards += g.gain;
-      if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = WORLD_H - 26 - BACKFIELD; g.state = 'td'; }
+      if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = SNAP; g.state = 'td'; }
       else if (g.down >= 4) g.state = 'gameover';
       else { g.down++; g.los = g.rb.y; g.state = 'between'; }
     },
@@ -665,6 +739,12 @@ const RUN_GAME = (() => {
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       for (const d of g.defenders) {
         if (d.stumble > 0) { d.stumble--; continue; }
+        // A corner plays his side. He is in the picture you read either way,
+        // which is what makes the receiver's edge the harder one — but he
+        // does not come chasing a carry to the far hash.
+        if (d.contain && Math.sign(rb.x - VW / 2) !== Math.sign(d.x - VW / 2)) {
+          d.frame += 0.08; continue;
+        }
         const dx = (rb.x + rb.vx * 8) - d.x, dy = rb.y - d.y;
         const dist = Math.hypot(dx, dy) || 1;
         // While the burst is on they are still flowing to their own read.
@@ -693,22 +773,11 @@ const RUN_GAME = (() => {
           this.end('tackled'); return;
         }
       }
-      if (rb.y <= GOAL) { this.end('td'); return; }
+      if (rb.y <= EZ) { this.end('td'); return; }
       g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.66));
     },
     render() {
-      yardLines(g.camY, WORLD_H, DRIVE_YARDS + 10, YARD);
-      const ly = Math.round(g.los - g.camY);
-      if (ly > -2 && ly < VH + 2) {
-        ctx.fillStyle = 'rgba(232,197,97,0.45)';
-        for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
-      }
-      const gy = Math.round(GOAL - g.camY);
-      if (gy > -SPR && gy < VH + SPR) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
-        ctx.fillStyle = 'rgba(255,255,255,0.035)';
-        ctx.fillRect(0, Math.max(0, gy - 40), VW, Math.min(40, gy));
-      }
+      const ly = drawField(g.camY, g.los, g.marker);
       // Pre-snap the four gaps get tick marks on the line. They name the
       // lanes, they do not grade them — reading the bodies is the game.
       if (g.state === 'presnap' && ly > -2 && ly < VH + 2) {
@@ -724,6 +793,12 @@ const RUN_GAME = (() => {
         if (sy > -SPR && sy < VH + SPR)
           sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF);
       }
+      // The rest of the huddle. They do not do anything on a carry, but the
+      // field should not empty out just because you handed it off.
+      setJersey(g.qbTeam || g.backTeam);
+      sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF);
+      setJersey(g.wrTeam || g.backTeam);
+      sprite(RUN20[0], Math.round(g.wr.x) - HALF, Math.round(g.wr.y - g.camY) - HALF);
       // Set here rather than at pick time: inside a drive the pass play has
       // repainted the kit for its own two players since our last carry.
       setJersey(g.backTeam);
@@ -774,14 +849,14 @@ const RUN_GAME = (() => {
     },
     score() { return { value: g.tds, tie: g.yards, detail: `${g.yards} yd` }; },
     status() {
-      const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
+      const t = Math.max(1, Math.round((g.los - EZ) / YARD));
       return `<span>DRIVE <b>${g.drive + 1}</b></span><span>DOWN <b>${g.down}</b></span>`
         + `<span>TO GO <b>${t}</b></span>`
         + (g.lane ? `<span>GAP <b>${g.lane.label.toUpperCase()}</b></span>` : '')
         + `<span class="sc">${g.tds} TD</span>`;
     },
     overlay(pick) {
-      const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
+      const t = Math.max(1, Math.round((g.los - EZ) / YARD));
       if (g.state === 'live' || g.state === 'presnap') return null;
       if (g.state === 'between') return { ttl: g.how === 'stuffed' ? 'Stood up' : 'Tackled', sub: `${yds(g.gain)} · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
@@ -795,11 +870,6 @@ const RUN_GAME = (() => {
 // GAME 2 — PASS
 // ===========================================================================
 const PASS_GAME = (() => {
-  // The end zone is ten yards deep, so a red-zone throw still has somewhere to
-  // land. Previously the goal line sat one yard from the top of the world and
-  // short-field throws had nowhere to go.
-  const YARD = 16, EZ = 10 * YARD, DRIVE_YARDS = 21;
-  const WORLD_H = EZ + DRIVE_YARDS * YARD + 30;
   const SPR = 20, HALF = 10, CATCH_R = 11;
   const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
     + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
@@ -881,7 +951,7 @@ const PASS_GAME = (() => {
     chemPair: [0, 1],
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
-            drive: 0, down: 1, los: WORLD_H - 30, marker: WORLD_H - 30 - 10 * YARD,
+            drive: 0, down: 1, los: SNAP, marker: SNAP - 10 * YARD,
             tds: 0, comp: 0, att: 0, yards: 0, gain: 0, firstDown: false,
             result: '', state: 'select', t: 0, wr: null, rushers: [], ball: null, edge: 0 };
       this.g = g;
@@ -892,6 +962,7 @@ const PASS_GAME = (() => {
       g.qbTeam = p.team;
     },
     /** Stage two: the target. Sharing a club with the passer is the bonus. */
+    mate(backTeam) { g.backTeam = backTeam; },
     attach2(p) {
       W = { SPEED: 0.86 + 0.30 * p.a, HANDS: p.b, ROUTE: p.c };
       g.wrTeam = p.team;
@@ -899,26 +970,32 @@ const PASS_GAME = (() => {
     },
     choose2(p) { this.attach2(p); this.setup(); },
     /** Line up a single snap this many yards from the goal line. */
-    startAt(losYards) {
+    startAt(losYards, set) {
       g.los = EZ + Math.round(losYards * YARD);
       g.marker = this.lineToGain(g.los);
-      this.setup();
+      this.setup(set);
     },
     outcome() { return { kind: g.result, gain: g.gain }; },
-    setup() {
+    setup(set) {
       const rnd = g.rnd;
       const red = (g.los - EZ) < 13 * YARD;          // goal-to-go territory
-      const sx = rnd() < 0.5 ? 44 : VW - 44;
+      const off = (set && set.off) || alignOffense(rnd, g.los);
+      const D = (set && set.def) || alignDefense(rnd, g.drive, g.los, off.wrX);
+      const sx = off.wrX;
       g.red = red;
       g.wr = {
         sx, sy: g.los - 8, x: sx, y: g.los - 8, dir: 1, route: null, red,
         hist: [], frame: rnd() * 3, speed: W.SPEED,
-        db: { x: sx + (rnd() * 6 - 3), y: g.los - 15 - rnd() * 5, frame: rnd() * 3 },
+        db: D.cb,
       };
-      g.rushers = [{ x: VW / 2 - 34, y: g.los - 34, frame: 0 }, { x: VW / 2 + 34, y: g.los - 34, frame: 1 }];
-      g.qb = { x: VW / 2, y: g.los + 6 };
+      // The box comes after the passer; the deepest of them cannot, so he
+      // drops off. Same bodies you read before the snap either way.
+      g.rushers = D.front.slice(0, 2);
+      g.safety = D.safety;
+      g.qb = off.qb;
+      g.rb = { x: VW / 2 - 16, y: g.los + BACKFIELD, frame: 0 };
       g.ball = null; g.t = 0; g.edge = 0;
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.74));
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.66));
       g.state = 'ready';
     },
     /** Pre-snap: the route choice is the snap. */
@@ -953,12 +1030,12 @@ const PASS_GAME = (() => {
       g.firstDown = false;
       if (kind === 'td') {
         g.tds++; g.comp++; g.drive++; g.down = 1;
-        g.los = WORLD_H - 30; g.marker = this.lineToGain(g.los);
+        g.los = SNAP; g.marker = this.lineToGain(g.los);
         g.state = 'td'; return;
       }
       if (kind === 'int') { g.state = 'gameover'; return; }
       if (kind === 'complete') { g.comp++; g.los = Math.max(EZ + 12, g.los - gain); }
-      if (kind === 'sack') g.los = Math.min(WORLD_H - 12, g.los + 3 * YARD);
+      if (kind === 'sack') g.los = Math.min(WORLD_H - BACKFIELD - 12, g.los + 3 * YARD);
       // Moving the chains resets the count. Without this a drive was four
       // plays and out, so stringing completions together still ended in a
       // turnover and the down marker was measuring the whole field.
@@ -1032,7 +1109,7 @@ const PASS_GAME = (() => {
       }
       if (r.y <= EZ) { this.end('td', g.los - r.y); return; }
       if (g.yacFrames > 150) { this.end('complete', g.los - r.y); return; }
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, r.y - VH * 0.58));
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, r.y - VH * 0.66));
     },
     resolve() {
       const b = g.ball, rec = g.wr;
@@ -1057,27 +1134,10 @@ const PASS_GAME = (() => {
       // so a wide-open catch breaks free and a contested one dies on contact.
       rec.x = b.x; rec.y = b.y;
       g.yacFrames = 0;
-      g.safety = { x: VW / 2 + (g.roll() * 34 - 17), y: Math.max(EZ + 8, b.y - 74), frame: 0 };
       g.state = 'yac';
     },
     render() {
-      yardLines(g.camY, WORLD_H, DRIVE_YARDS + 10, YARD);
-      const ly = Math.round(g.los - g.camY);
-      if (ly > -2 && ly < VH + 2) {
-        ctx.fillStyle = 'rgba(255,255,255,0.20)';
-        for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
-      }
-      const my = Math.round(g.marker - g.camY);
-      if (g.marker > EZ && my > -2 && my < VH + 2) {
-        ctx.fillStyle = 'rgba(232,197,97,0.72)';
-        ctx.fillRect(0, my, VW, 1);
-      }
-      const gy = Math.round(EZ - g.camY);
-      if (gy > -VH && gy < VH + SPR) {
-        ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
-        ctx.fillStyle = 'rgba(255,255,255,0.030)';
-        ctx.fillRect(0, Math.max(0, gy - EZ), VW, Math.min(EZ, gy));
-      }
+      drawField(g.camY, g.los, g.marker);
       const r = g.wr;
       // The chosen route traces once it is running; nothing to show before.
       if (r.route) {
@@ -1089,7 +1149,7 @@ const PASS_GAME = (() => {
         }
       }
       sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF);
-      if (g.state === 'yac' && g.safety)
+      if (g.safety)
         sprite(DEF20[Math.floor(g.safety.frame) % 3], Math.round(g.safety.x) - HALF, Math.round(g.safety.y - g.camY) - HALF);
       if (g.state !== 'yac')
         for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF);
@@ -1103,8 +1163,11 @@ const PASS_GAME = (() => {
         ctx.fillStyle = PAL.O; ctx.fillRect(Math.round(r.x) + 4, ry + 2, 2, 2);
       }
       setJersey(g.qbTeam);
-      if (g.state !== 'yac')
+      if (g.state !== 'yac') {
         sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF);
+        setJersey(g.backTeam || g.qbTeam);
+        sprite(RUN20[0], Math.round(g.rb.x) - HALF, Math.round(g.rb.y - g.camY) - HALF);
+      }
       if (g.ball) {
         const by = Math.round(g.ball.y - g.camY);
         ctx.fillStyle = PAL.D;
@@ -1353,11 +1416,11 @@ const DRIVE_GAME = (() => {
     attrLabels: RUN_GAME.attrLabels,
     attrLabels2: PASS_GAME.attrLabels,
     attrLabels3: PASS_GAME.attrLabels2,
-    hint: 'call the play · then run it',
-    controls: [['Call it', 'run or pass, every down'],
-               ['The front', 'is set before you call — look at it first'],
-               ['Run', 'reliable, and the short-yardage answer'],
-               ['Pass', 'streaky, and how you cover ground'],
+    hint: 'read the defense · call one of eight',
+    controls: [['One defense', 'read it, then take any of the eight'],
+               ['Top row', 'gaps — where the back attacks the front'],
+               ['Bottom row', 'routes — where the receiver attacks the corner'],
+               ['His side', 'the corner sets that edge, so it is the hard one'],
                ['Goal', 'move the chains and score — a stop ends the run']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
@@ -1369,38 +1432,52 @@ const DRIVE_GAME = (() => {
       cur = null;
       g = { losYards: START, down: 1, toGo: TO_GO, driveNo: 0,
             tds: 0, yards: 0, gain: 0, how: '', first: false,
-            calls: { run: 0, pass: 0 }, state: 'select' };
+            calls: { run: 0, pass: 0 }, set: null, menu: null, state: 'select' };
       this.g = g;
     },
-    choose(p) { RUN_GAME.attach(p); },
-    choose2(p) { PASS_GAME.choose(p); },
-    choose3(p) { PASS_GAME.attach2(p); this.callPlay(); },
-    /** Between plays: stage the run front so there is something to read, then
-     *  ask for the call. Picking pass re-stages with the pass world. */
+    choose(p) { RUN_GAME.attach(p); g.backTeam = p.team; },
+    choose2(p) { PASS_GAME.choose(p); g.qbTeam = p.team; },
+    choose3(p) {
+      PASS_GAME.attach2(p);
+      RUN_GAME.mates(g.qbTeam, p.team);
+      PASS_GAME.mate(g.backTeam);
+      this.callPlay();
+    },
+    /** Set the defense once, show it, and offer the whole playbook against
+     *  it. Both engines line up on the same eleven, so the picture you read
+     *  is the picture you get whichever of the eight you take. */
     callPlay() {
+      const los = EZ + g.losYards * YARD;
+      g.set = { off: alignOffense(RUN_GAME.g.rnd, los) };
+      g.set.def = alignDefense(RUN_GAME.g.rnd, g.driveNo, los, g.set.off.wrX);
+      // Build the playbook once, here — prompt() is called on every repaint,
+      // and staging an engine inside it would re-roll the defense each frame.
+      // The rows come from the engines themselves, so the red-zone route swap
+      // still happens without this knowing about it.
+      PASS_GAME.startAt(g.losYards, g.set);
+      const passes = PASS_GAME.prompt().options.map((o) => ({ ...o, key: `p:${o.key}`, row: 1 }));
       cur = RUN_GAME;
-      RUN_GAME.startAt(g.losYards, g.driveNo);
+      RUN_GAME.startAt(g.losYards, g.driveNo, g.set);
+      const runs = RUN_GAME.prompt().options.map((o) => ({ ...o, key: `r:${o.key}` }));
+      g.menu = {
+        title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
+        sub: 'read it, then call it',
+        options: [...runs, ...passes],
+      };
       g.state = 'call';
     },
-    prompt() {
-      if (g.state === 'call') {
-        return {
-          title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
-          sub: 'call the play',
-          options: [{ key: 'run', label: 'Run' }, { key: 'pass', label: 'Pass' }],
-        };
-      }
-      return g.state === 'play' && cur.prompt ? cur.prompt() : null;
-    },
+    prompt() { return g.state === 'call' ? g.menu : null; },
     pickOption(key) {
-      if (g.state === 'call') {
-        if (key === 'pass') { cur = PASS_GAME; PASS_GAME.startAt(g.losYards); }
-        g.calls[key === 'pass' ? 'pass' : 'run']++;
-        g.play = key === 'pass' ? 'pass' : 'run';
-        g.state = 'play';
-        return;
-      }
-      if (cur.pickOption) cur.pickOption(key);
+      if (g.state !== 'call') return;
+      const pass = key.startsWith('p:');
+      const inner = key.slice(2);
+      cur = pass ? PASS_GAME : RUN_GAME;
+      if (pass) PASS_GAME.startAt(g.losYards, g.set);
+      else RUN_GAME.startAt(g.losYards, g.driveNo, g.set);
+      g.calls[pass ? 'pass' : 'run']++;
+      g.play = pass ? 'pass' : 'run';
+      g.state = 'play';
+      cur.pickOption(inner);
     },
     step() {
       if (g.state !== 'play' || !cur) return;
@@ -1615,7 +1692,12 @@ function paintUI() {
     el('prtitle').textContent = pr.title;
     el('prsub').textContent = pr.sub || '';
     propts.innerHTML = '';
+    let row = 0;
     for (const o of pr.options) {
+      if ((o.row || 0) !== row) {
+        row = o.row || 0;
+        propts.appendChild(Object.assign(document.createElement('div'), { className: 'prbreak' }));
+      }
       const b = document.createElement('div');
       b.className = 'propt'; b.textContent = o.label;
       b.onclick = () => { g.pickOption(o.key); paintUI(); };
