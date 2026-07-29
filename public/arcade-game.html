@@ -210,7 +210,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade36-names';
+const BUILD = 'arcade37-relineup';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1650,6 +1650,10 @@ const el = (id) => document.getElementById(id);
 const picker = el('picker'), plist = el('plist');
 const promptEl = el('prompt'), propts = el('propts');
 let pick2 = null, pickStage = 0, picks = [];
+// Set once a lineup is complete and the run has begun. The game drops itself
+// back to 'select' when it ends, and this is what tells the picker that what
+// it is looking at is last game's lineup rather than one being built.
+let ran = false;
 const overlay = el('overlay'), ttl = el('ttl'), sub = el('sub'), tapEl = el('tap'), attrs = el('attrs');
 const brief = el('brief'), blist = el('blist');
 let briefing = false;
@@ -1726,6 +1730,7 @@ function buildPicker() {
         pickStage++; buildPicker(); paintUI(); return;
       }
       briefing = true;                        // show how-to-play before the first snap
+      ran = true;                             // the lineup is set; the run is this one's
       el('btitle').textContent = `${active.label} — how to play`;
       const levels = [];
       const a = pair && picks[pair[0]], b = pair && picks[pair[1]];
@@ -1742,23 +1747,36 @@ function buildPicker() {
     plist.appendChild(d);
   });
 }
-function select(game) {
-  active = game;
+/** Walk the picker back to its first stage. The lineup lives out here, not in
+ *  the game, so a game that resets itself leaves all of this behind. */
+function restartPicks() {
+  ran = false;
   picks = [];
   pick = null;
   pick2 = null;
   pickStage = 0;
   setJersey(null);
   briefing = false;
+  buildPicker();
+}
+
+function select(game) {
+  active = game;
   active.reset();
   el('hint').textContent = game.hint;
-  buildPicker();
+  restartPicks();
   paintUI();
 }
 
 function paintUI() {
   const g = active;
   const inSelect = g.state === 'select';
+  // A finished run drops the game back to 'select' by itself. Reopening the
+  // picker where it was left dropped you on the kicker and began a drive with
+  // nobody else attached, which is why the rest of the huddle turned out in
+  // blank white. Note the state is 'select' the whole time you are picking
+  // too, so a run having started is the only safe signal here.
+  if (inSelect && ran) { ran = false; restartPicks(); return paintUI(); }
   picker.classList.toggle('show', inSelect);
   brief.classList.toggle('show', briefing && !inSelect);
   if (briefing && !inSelect) {
