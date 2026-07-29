@@ -1605,23 +1605,47 @@
 }
 .rp-chem-t { margin-left: auto; color: var(--text-faint); }
 
-.rp-card {
-  padding: 11px 20px 12px;
-  border-bottom: 1px solid var(--divider-row);
+/* Player cards, shaped like the arcade's own pick list — choosing a player
+   and reading about one should look like the same act. */
+.rp-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 20px 4px;
 }
 
-.rp-head {
+.rp-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--divider-row);
+  border-radius: 9px;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rp-card:hover,
+.rp-card:active { border-color: rgba(255, 255, 255, 0.34); }
+
+.rp-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rp-line {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-}
-
-.rp-kit {
-  width: 6px;
-  height: 6px;
-  border-radius: 1px;
-  flex: none;
-  align-self: center;
+  gap: 7px;
+  min-width: 0;
 }
 
 .rp-name {
@@ -1630,62 +1654,85 @@
   letter-spacing: -0.01em;
   color: var(--text-strong);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.rp-team {
-  font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
+/* Same size as the name, a step back in colour — it reads as part of it. */
+.rp-rank {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   color: var(--text-faint);
   white-space: nowrap;
 }
 
-/* The single nearest rung, rather than one line per ladder. */
-.rp-next {
-  margin-left: auto;
+.rp-trend { font-size: 7px; font-style: normal; }
+.rp-trend.up { color: var(--text-muted); }
+.rp-trend.down { color: #55575d; }
+
+.rp-team {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.1em;
+  font-size: 8.5px;
+  letter-spacing: 0.18em;
+  color: var(--text-faint);
   text-transform: uppercase;
-  color: #55575d;
-  white-space: nowrap;
+}
+
+.rp-kit {
+  width: 5px;
+  height: 5px;
+  border-radius: 1px;
+  flex: none;
 }
 
 .rp-season {
-  margin: 3px 0 8px;
   font-family: var(--font-mono);
   font-size: 8.5px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.rp-attr {
+.rp-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex: none;
+}
+
+.rp-bar {
   display: grid;
-  grid-template-columns: 54px minmax(0, 1fr) 96px;
+  grid-template-columns: auto 62px;
   align-items: center;
-  gap: 9px;
-  padding: 2px 0;
+  gap: 8px;
 }
 
-.rp-label {
+.rp-blabel {
   font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
+  font-size: 7.5px;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
+  text-align: right;
 }
 
 /* Five rungs: gaps do the tick work, so the bar reads as levels. */
 .rp-rungs {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  gap: 3px;
+  gap: 2px;
 }
 
 .rp-rungs i {
   display: block;
-  height: 5px;
+  height: 4px;
   border-radius: 1px;
   background: rgba(255, 255, 255, 0.07);
   overflow: hidden;
@@ -1712,4 +1759,67 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ---- Player sheet: the arcade ladders, when opened from the roster ---- */
+
+.sheet-arcade {
+  padding: 10px 20px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.sa-row {
+  display: grid;
+  grid-template-columns: 58px 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  row-gap: 3px;
+}
+
+.sa-label {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.sa-rungs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 2px;
+}
+
+.sa-rungs i {
+  display: block;
+  height: 5px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.07);
+  overflow: hidden;
+}
+
+.sa-rungs i b {
+  display: block;
+  height: 100%;
+  background: #c9c9cf;
+}
+
+.sa-tier {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent-live);
+}
+
+/* Sits under the bar rather than beside it — the row is already three wide. */
+.sa-next {
+  grid-column: 2 / -1;
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #55575d;
 }

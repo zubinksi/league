@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { NavBar } from '../components/NavBar';
 import { TeamPicker, getMyRosterId } from '../components/TeamPicker';
+import { usePlayerCard } from '../components/PlayerCard';
 import {
   defaultWeek,
   useLeague,
@@ -43,38 +44,6 @@ function Ladder({ a }: { a: AttrDetail }) {
   );
 }
 
-function PlayerCard({ p, rank }: { p: ArcadePlayer; rank?: number }) {
-  const kit = teamKit(p.team);
-  // The nearest rung across all three ladders — the thing you'd actually chase.
-  const next = p.attrs
-    .filter((a) => a.toNext !== null)
-    .sort((x, y) => x.toNext! / (x.stat + x.toNext!) - y.toNext! / (y.stat + y.toNext!))[0];
-
-  return (
-    <div className="rp-card">
-      <div className="rp-head">
-        {kit && <i className="rp-kit" style={{ background: kit }} />}
-        <span className="rp-name">{p.name}</span>
-        <span className="rp-team">
-          {p.team}
-          {rank ? ` · ${p.position}${rank}` : ''}
-        </span>
-        <span className="rp-next">
-          {next ? `${next.toNext} ${next.unit} → ${next.nextName}` : 'MAXED'}
-        </span>
-      </div>
-      <div className="rp-season">{p.summary}</div>
-      {p.attrs.map((a) => (
-        <div className="rp-attr" key={a.label}>
-          <span className="rp-label">{a.label}</span>
-          <Ladder a={a} />
-          <span className="rp-tier">{a.name}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** Passer + target on the same NFL club. Picking both in the pass game puts
  *  the ball where he is going, so it is worth knowing you have one. */
 function batteries(pass: ArcadePlayer[], recv: ArcadePlayer[]) {
@@ -83,6 +52,44 @@ function batteries(pass: ArcadePlayer[], recv: ArcadePlayer[]) {
     for (const wr of recv)
       if (qb.team && qb.team === wr.team) out.push({ key: `${qb.id}-${wr.id}`, qb, wr });
   return out;
+}
+
+/** The same shape as the arcade's own pick card, so choosing a player and
+ *  reading about one look like the same act. Tapping opens the full sheet. */
+function PlayerCardRow({ p, rank }: { p: ArcadePlayer; rank?: number }) {
+  const kit = teamKit(p.team);
+  const open = usePlayerCard();
+  return (
+    <button className="rp-card" onClick={() => open(p.id, undefined, p.attrs)}>
+      <span className="rp-left">
+        <span className="rp-line">
+          <span className="rp-name">{p.name}</span>
+          {rank ? (
+            <span className="rp-rank">
+              {p.position}
+              {rank}
+            </span>
+          ) : null}
+          {p.trend !== 0 && (
+            <i className={`rp-trend ${p.trend > 0 ? 'up' : 'down'}`}>{p.trend > 0 ? '▲' : '▼'}</i>
+          )}
+        </span>
+        <span className="rp-team">
+          {kit && <i className="rp-kit" style={{ background: kit }} />}
+          {p.team || 'FA'}
+        </span>
+        <span className="rp-season">{p.summary}</span>
+      </span>
+      <span className="rp-bars">
+        {p.attrs.map((a) => (
+          <span className="rp-bar" key={a.label}>
+            <span className="rp-blabel">{a.label}</span>
+            <Ladder a={a} />
+          </span>
+        ))}
+      </span>
+    </button>
+  );
 }
 
 export function RosterPage() {
@@ -128,7 +135,7 @@ export function RosterPage() {
         <>
           <p className="rp-intro">
             Every ladder counts a stat that only goes up, so a player climbs across the season and
-            never slides back. Last season sets the opening rung.
+            never slides back. Last season sets the opening rung. Tap anyone for the full card.
           </p>
           {batteries(built.pass, built.recv).map(({ key, qb, wr }) => (
             <div className="rp-chem" key={key}>
@@ -147,9 +154,11 @@ export function RosterPage() {
                   <span>{label}</span>
                   <span className="week-label">{built[key].length}</span>
                 </div>
-                {built[key].map((p) => (
-                  <PlayerCard key={p.id} p={p} rank={ranks.get(p.id)} />
-                ))}
+                <div className="rp-list">
+                  {built[key].map((p) => (
+                    <PlayerCardRow key={p.id} p={p} rank={ranks.get(p.id)} />
+                  ))}
+                </div>
               </div>
             ) : null,
           )}

@@ -15,6 +15,7 @@ import { teamLabel } from '../api/sleeper';
 import { gameLogColumns, projectedPoints, statPairs } from '../api/stats';
 import { computeMetrics, computePointsAllowed, ordinal, type PlayerMetrics } from '../lib/metrics';
 import type { StarterView } from '../lib/matchup';
+import type { AttrDetail } from '../lib/arcadeRoster';
 
 /** Optional context a card is opened from (a roster row) — carries the
  *  league-exact points and game string for the THIS WEEK section. */
@@ -23,9 +24,14 @@ export type CardSeed = Pick<StarterView, 'points' | 'projected' | 'gameText' | '
 interface CardState {
   playerId: string;
   seed?: CardSeed;
+  /** Arcade ladders, when the card was opened from the roster page. The card
+   *  face there is deliberately bare, so the tier names live in here. */
+  arcade?: AttrDetail[];
 }
 
-const PlayerCardContext = createContext<(playerId: string, seed?: CardSeed) => void>(() => {});
+const PlayerCardContext = createContext<
+  (playerId: string, seed?: CardSeed, arcade?: AttrDetail[]) => void
+>(() => {});
 
 export const usePlayerCard = () => useContext(PlayerCardContext);
 
@@ -228,6 +234,33 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           </>
         )}
 
+        {card.arcade && card.arcade.length > 0 && (
+          <>
+            <div className="sheet-section">
+              <span>ARCADE</span>
+              <span />
+            </div>
+            <div className="sheet-arcade">
+              {card.arcade.map((a) => (
+                <div className="sa-row" key={a.label}>
+                  <span className="sa-label">{a.label}</span>
+                  <span className="sa-rungs">
+                    {Array.from({ length: 5 }, (_, i) => (
+                      <i key={i}>
+                        <b style={{ width: `${Math.max(0, Math.min(1, a.value * 5 - i)) * 100}%` }} />
+                      </i>
+                    ))}
+                  </span>
+                  <span className="sa-tier">{a.name}</span>
+                  <span className="sa-next">
+                    {a.toNext === null ? 'MAXED' : `${a.toNext} ${a.unit} → ${a.nextName}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
         <div className="sheet-section">
           <span>SEASON</span>
           <span>{log.playedWeeks} GP</span>
@@ -319,7 +352,10 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
 
 export function PlayerCardProvider({ children }: { children: React.ReactNode }) {
   const [card, setCard] = useState<CardState | null>(null);
-  const open = useCallback((playerId: string, seed?: CardSeed) => setCard({ playerId, seed }), []);
+  const open = useCallback(
+    (playerId: string, seed?: CardSeed, arcade?: AttrDetail[]) => setCard({ playerId, seed, arcade }),
+    [],
+  );
   const close = useCallback(() => setCard(null), []);
 
   return (
