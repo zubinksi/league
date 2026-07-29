@@ -212,7 +212,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade29-points';
+const BUILD = 'arcade30-howto';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1457,13 +1457,14 @@ const DRIVE_GAME = (() => {
     attrLabels2: PASS_GAME.attrLabels,
     attrLabels3: PASS_GAME.attrLabels2,
     attrLabels4: KICK_GAME.attrLabels,
-    hint: 'read the defense · call one of eight',
-    controls: [['One defense', 'read it, then take any of the eight'],
-               ['Top row', 'gaps — where the back attacks the front'],
-               ['Bottom row', 'routes — where the receiver attacks the corner'],
-               ['His side', 'the corner sets that edge, so it is the hard one'],
-               ['4th down', 'take the three, or go for seven'],
-               ['Points', 'a score is 6, the extra point 1, a field goal 3']],
+    hint: '',
+    controls: [['Pick a play', 'top row to run, bottom to pass'],
+               ['Run cut', 'swipe left / right'],
+               ['Run spin', 'tap to spin'],
+               ['Run juke', 'swipe up'],
+               ['Pass', 'tap to throw'],
+               ['4th down', 'take the field goal or go for it'],
+               ['Points', 'TD is 6, XP is 1, FG is 3']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
     roster3: PASS_GAME.roster2,
@@ -1520,9 +1521,9 @@ const DRIVE_GAME = (() => {
         : [];
       g.menu = {
         title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
-        sub: g.down === 4
-          ? (kick.length ? 'take the three, or go for seven' : `out of range — ${fg} yards`)
-          : 'read it, then call it',
+        // The buttons and the down say it; the only thing worth a line is
+        // why the kick is missing when it is.
+        sub: g.down === 4 && !kick.length ? `out of range — ${fg} yards` : '',
         options: [...runs, ...passes, ...kick],
       };
       g.state = 'call';
@@ -1737,9 +1738,7 @@ function buildPicker() {
       }
       briefing = true;                        // show how-to-play before the first snap
       el('btitle').textContent = `${active.label} — how to play`;
-      const levels = picks.filter(Boolean).map((who) =>
-        `<div class="brow blv"><span class="bk">${who.name}</span>`
-        + `<span class="bv">${(who.tiers || []).filter(Boolean).join(' · ')}</span></div>`);
+      const levels = [];
       const a = pair && picks[pair[0]], b = pair && picks[pair[1]];
       if (a && b && a.team && a.team === b.team) {
         levels.push(`<div class="brow blv"><span class="bk">Chemistry</span>`
