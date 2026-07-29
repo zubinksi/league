@@ -210,7 +210,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade37-relineup';
+const BUILD = 'arcade38-wind';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1234,6 +1234,7 @@ const KICK_GAME = (() => {
   const WIND_LABEL = Math.abs(WIND) < 0.22 ? 'No wind'
     : `${Math.abs(WIND) > 0.66 ? 'Strong' : 'Light'} wind ${WIND < 0 ? 'left' : 'right'}`;
   const POST_HALF = 13;                        // half the gap between uprights
+  let tick = 0;                                // frames, for the streamers
 
   let A = {}, g = null;
   return {
@@ -1309,6 +1310,7 @@ const KICK_GAME = (() => {
       }
     },
     render() {
+      tick++;
       ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
       const groundY = VH - 34;
       const postY = groundY - g.dist * PPY;
@@ -1331,15 +1333,21 @@ const KICK_GAME = (() => {
       ctx.fillRect(cx, Math.round(postY), 1, groundY - postY);       // the line of the kick
 
       // Streamers on the uprights: which way it is blowing and how hard,
-      // the way a kicker actually reads it before lining one up.
+      // the way a kicker actually reads it before lining one up. They ripple
+      // between two shapes, and the harder it blows the faster they snap
+      // between them — direction alone was a static read of a moving thing.
       const calm = Math.abs(WIND) < 0.22;
       const fdir = WIND < 0 ? -1 : 1;
       const flen = calm ? 2 : Math.round(3 + Math.abs(WIND) * 7);
       const ftop = Math.round(postY) - 26;
+      const beat = calm ? 26 : Math.max(5, Math.round(20 - Math.abs(WIND) * 13));
+      const phase = Math.floor(tick / beat) % 2;
       ctx.fillStyle = calm ? 'rgba(255,255,255,0.26)' : PAL.O;
       for (const px of [cx - POST_HALF, cx + POST_HALF]) {
         for (let i = 1; i <= flen; i++) {
-          ctx.fillRect(px + fdir * i, ftop + (i > flen * 0.55 ? 1 : 0), 1, 1);
+          // A one-pixel wave down the length, inverted on the off beat.
+          const wave = calm ? 0 : Math.round(Math.sin(i * 0.85 + phase * Math.PI));
+          ctx.fillRect(px + fdir * i, ftop + wave, 1, 1);
         }
       }
 
@@ -1363,19 +1371,24 @@ const KICK_GAME = (() => {
 
       // meters — hairline, only while they matter
       if (g.state === 'aiming' || g.state === 'charging' || g.state === 'ready') {
-        const mx = VW - 14, top = 40, h = VH - 110;
-        ctx.fillStyle = 'rgba(255,255,255,0.16)';
-        ctx.fillRect(mx, top, 1, h); ctx.fillRect(mx - 3, top, 7, 1); ctx.fillRect(mx - 3, top + h, 7, 1);
-        const pv = g.phase === 'power' ? g.power : g.lockedPower;
-        ctx.fillStyle = g.phase === 'power' ? '#ffffff' : 'rgba(255,255,255,0.42)';
-        ctx.fillRect(mx - 4, Math.round(top + h - pv * h), 9, 1);
+        // An extra point locks its own power, so there is no meter to read:
+        // drawing one that sits at zero and then jumps to the middle on the
+        // first tap only suggests you missed your moment.
+        if (!g.auto) {
+          const mx = VW - 14, top = 40, h = VH - 110;
+          ctx.fillStyle = 'rgba(255,255,255,0.16)';
+          ctx.fillRect(mx, top, 1, h); ctx.fillRect(mx - 3, top, 7, 1); ctx.fillRect(mx - 3, top + h, 7, 1);
+          const pv = g.phase === 'power' ? g.power : g.lockedPower;
+          ctx.fillStyle = g.phase === 'power' ? '#ffffff' : 'rgba(255,255,255,0.42)';
+          ctx.fillRect(mx - 4, Math.round(top + h - pv * h), 9, 1);
+        }
 
         const by = VH - 18, bw = 88;
         ctx.fillStyle = 'rgba(255,255,255,0.16)';
         ctx.fillRect(cx - bw / 2, by, bw, 1);
         ctx.fillRect(cx, by - 3, 1, 7);
         const av = g.phase === 'aim' ? g.aim : g.lockedAim;
-        if (g.phase === 'aim' || g.state !== 'ready') {
+        if (g.auto || g.phase === 'aim' || g.state !== 'ready') {
           ctx.fillStyle = g.phase === 'aim' ? '#ffffff' : 'rgba(255,255,255,0.42)';
           ctx.fillRect(Math.round(cx + av * (bw / 2)) - 1, by - 4, 3, 9);
         }
@@ -1407,7 +1420,8 @@ const KICK_GAME = (() => {
     },
     overlay(pick) {
       if (g.state === 'charging' || g.state === 'aiming' || g.state === 'flight') return null;
-      if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${g.dist} yard attempt`, tap: 'tap to start power', attrs: g.made === 0 };
+      if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${g.dist} yard attempt`,
+                                        tap: g.auto ? 'tap to set aim' : 'tap to start power', attrs: !g.embedded && g.made === 0 };
       if (g.state === 'good') return { ttl: 'Good', gold: true, sub: `${g.dist - 5} yd · back to ${g.dist}`, tap: 'tap for the next one' };
       return { ttl: g.result === 'short' ? 'Short' : g.result === 'wide left' ? 'Wide left' : 'Wide right',
                bad: true, sub: `${g.made} made · long ${g.longest || 0} yd`, tap: 'tap to play again' };
