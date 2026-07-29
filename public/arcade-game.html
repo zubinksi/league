@@ -211,7 +211,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade25-drive';
+const BUILD = 'arcade26-onecam';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -378,8 +378,31 @@ const LEGS20 = [
   ['......DLLDDLLD......','......DLLDDLLD......','......DLLDDLLD......','......DDDDDDD.......'],
   ['....DLLD....DLLD....','...DLLD......DLLD...','...DLLD......DLLD...','..DDD..........DDD..'],
 ];
+// Turned sideways and turned away — the two halves of a spin, at the small
+// scale the whole field now uses.
+const SIDE20 = [
+  '....................','....................',
+  '.......DDDDDD.......','......DWWWWWWD......','......DWWWWWWD......',
+  '......DWWMMWWD......','......DDWWWWDD......','........DLLD........',
+  '....DDWWWWWWWWDD....','....DWWWWWWWWWWD....','....DWWWWWWWWWWD....',
+  '.....DWWWWWWWWD.....','.....DWWMMMMWWD.....','.....DWWMMMMWWD.....',
+  '.....DWWWWWWWWD.....','......DWWWWWWD......',
+];
+const FRONT20 = [
+  '....................','....................',
+  '......DDDDDDDD......','.....DWWWWWWWWD.....','.....DWWWWWWWWD.....',
+  '.....DWDDDDDDWD.....','.....DDWWWWWWDD.....','.......DLLLLD.......',
+  '...DDWWWWWWWWWWDD...','..DWWWWWWWWWWWWWWD..','..DWWWWWWWWWWWWWWD..',
+  '...DWWWWWWWWWWWWD...','...DWWWWMMMMWWWWD...','...DWWWWMMMMWWWWD...',
+  '....DWWWWWWWWWWD....','.....DWWWWWWWWD.....',
+];
 const RUN20 = LEGS20.map((l) => [...BODY20, ...l]);
 const DEF20 = RUN20.map((f) => f.map((r) => r.replace(/[WLM]/g, 'G')));
+const PIVOT20 = LEGS20[1];
+const SPIN20 = [[...BODY20, ...PIVOT20], [...SIDE20, ...PIVOT20],
+                [...FRONT20, ...PIVOT20], [...SIDE20, ...PIVOT20]];
+const SPIN_BALL_DX20 = [0, -6, -11, -4];
+const BALL20 = [[11, 16], [11, 17], [12, 15], [12, 16], [12, 17], [13, 16], [13, 17]];
 
 // ---- canvas --------------------------------------------------------------
 const canvas = document.getElementById('c');
@@ -439,7 +462,16 @@ function yardLines(camY, worldH, yards, yard) {
 // ===========================================================================
 const RUN_GAME = (() => {
   const YARD = 16, DRIVE_YARDS = 25, WORLD_H = DRIVE_YARDS * YARD, EZ = 0, GOAL = EZ + 12;
-  const SPR = 32, HALF = 16;
+  // Small scale, matching the pass game — one camera for the whole sport.
+  // Field distances (tackle radius, contact, the front's spacing) are in
+  // yards, not sprite widths, so they do not scale with the artwork: at 32px
+  // a tackle at 17px looked like the defender standing inside the runner, and
+  // at 20px it reads as the collision it always was.
+  const SPR = 20, HALF = 10;
+  // The back sets up behind the line and has to get there. This is what makes
+  // a carry able to lose yardage, which the game could not do while he spawned
+  // on the ball.
+  const BACKFIELD = 40;
   const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IF = 8, TACKLE_R = 17;
   const TRUCK_LEN = 24, TRUCK_CD = 46;
   const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
@@ -491,7 +523,12 @@ const RUN_GAME = (() => {
     const lane = 52 * FRONT.spread * tight + (VW / (n + 0.6)) * (1 - tight);
     for (let i = 0; i < n; i++) {
       const x = VW / 2 + (i - (n - 1) / 2) * lane + Math.floor(rnd() * 14) - 7;
-      const back = standoff + i * gap + Math.floor(rnd() * 26) * tight;
+      // Someone is always on the ball. Without a man at the line every layer
+      // was linebacker depth, first contact always happened past the stripe,
+      // and a carry could not lose yardage no matter how badly it was read.
+      const back = i === 0
+        ? 6 + Math.floor(rnd() * 10)
+        : standoff + (i - 1) * gap + Math.floor(rnd() * 26) * tight;
       out.push({
         x, y: Math.max(4, los - back),
         speed: (0.58 + rnd() * 0.28) * ramp, lateral: (0.46 + rnd() * 0.32) * ramp,
@@ -513,7 +550,7 @@ const RUN_GAME = (() => {
     roster: parseRoster('run', SAMPLE),
     reset() {
       g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
-            drive: 0, down: 1, los: WORLD_H - 26, tds: 0, yards: 0, gain: 0, state: 'select' };
+            drive: 0, down: 1, los: WORLD_H - 26 - BACKFIELD, tds: 0, yards: 0, gain: 0, state: 'select' };
       this.g = g;
     },
     // Attributes without a play. A drive sets these once and then asks for
@@ -528,13 +565,15 @@ const RUN_GAME = (() => {
     },
     outcome() { return { kind: g.how, gain: g.gain }; },
     startDown() {
-      g.rb = { x: VW / 2, y: g.los, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
+      g.rb = { x: VW / 2, y: g.los + BACKFIELD, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
                clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0,
                burst: 0, pace: 1 };
       g.defenders = defenders(g.rnd, g.drive, g.los);
+      // Gains are measured from the line, not from where he lined up, so
+      // getting caught in the backfield is a loss.
       g.startY = g.los;
       g.lane = null; g.flow = 1; g.truckLane = 1;
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.rb.y - VH * 0.62));
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.66));
       // The front is set but frozen: this is where you get to look at it.
       g.state = 'presnap';
     },
@@ -577,14 +616,17 @@ const RUN_GAME = (() => {
       g.truckLane = (lane.edge ? 0.45 : 1) * (0.5 + 0.5 * clean);
       rb.burst = Math.round((lane.edge ? 34 : 30) * (0.45 + 0.55 * clean) * (0.35 + 0.95 * fit));
       // Working east-west costs you downfield, and costs a slow back more.
-      rb.pace = lane.edge ? 0.66 + 0.26 * A.SPD : 1;
+      // Straight ahead is the opposite trade: from the backfield an interior
+      // run is downhill by the time it reaches the line, and the man who can
+      // carry that speed into contact is the one built for it.
+      rb.pace = lane.edge ? 0.66 + 0.26 * A.SPD : 1 + 0.16 * A.PWR;
       g.state = 'live';
     },
     end(kind) {
       g.how = kind;
-      g.gain = Math.max(0, Math.round((g.startY - g.rb.y) / YARD));
+      g.gain = Math.round((g.startY - g.rb.y) / YARD);
       g.yards += g.gain;
-      if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = WORLD_H - 26; g.state = 'td'; }
+      if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = WORLD_H - 26 - BACKFIELD; g.state = 'td'; }
       else if (g.down >= 4) g.state = 'gameover';
       else { g.down++; g.los = g.rb.y; g.state = 'between'; }
     },
@@ -620,7 +662,7 @@ const RUN_GAME = (() => {
         rb.x += rb.vx; rb.vx *= 0.86;
         rb.frame += rb.stagger > 0 ? 0.12 : 0.22;
       }
-      rb.x = Math.max(HALF - 4, Math.min(VW - HALF + 4, rb.x));
+      rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       for (const d of g.defenders) {
         if (d.stumble > 0) { d.stumble--; continue; }
         const dx = (rb.x + rb.vx * 8) - d.x, dy = rb.y - d.y;
@@ -652,7 +694,7 @@ const RUN_GAME = (() => {
         }
       }
       if (rb.y <= GOAL) { this.end('td'); return; }
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.62));
+      g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.66));
     },
     render() {
       yardLines(g.camY, WORLD_H, DRIVE_YARDS + 10, YARD);
@@ -680,7 +722,7 @@ const RUN_GAME = (() => {
       for (const d of g.defenders) {
         const sy = Math.round(d.y - g.camY);
         if (sy > -SPR && sy < VH + SPR)
-          sprite(DEF32[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF);
+          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF);
       }
       // Set here rather than at pick time: inside a drive the pass play has
       // repainted the kit for its own two players since our last carry.
@@ -689,18 +731,18 @@ const RUN_GAME = (() => {
       if (rb.truck > 0) {
         for (let i = 2; i >= 1; i--) {
           ctx.globalAlpha = 0.10 * i;
-          sprite(RUN32[Math.floor(rb.frame + i) % 3], Math.round(rb.x) - HALF, ry - HALF + i * 5);
+          sprite(RUN20[Math.floor(rb.frame + i) % 3], Math.round(rb.x) - HALF, ry - HALF + i * 3);
         }
         ctx.globalAlpha = 1;
-        sprite(RUN32[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL32, 0);
+        sprite(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL20, 0);
       } else if (rb.spin > 0) {
         const s = Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 4)) % 4;
         ctx.globalAlpha = 0.22;
-        sprite(SPIN32[(s + 3) % 4], Math.round(rb.x - rb.spinDir * 7) - HALF, ry - HALF);
+        sprite(SPIN20[(s + 3) % 4], Math.round(rb.x - rb.spinDir * 4) - HALF, ry - HALF);
         ctx.globalAlpha = 1;
-        sprite(SPIN32[s], Math.round(rb.x) - HALF, ry - HALF, BALL32, SPIN_BALL_DX[s]);
+        sprite(SPIN20[s], Math.round(rb.x) - HALF, ry - HALF, BALL20, SPIN_BALL_DX20[s]);
       } else {
-        sprite(RUN32[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL32, 0);
+        sprite(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0);
       }
     },
     onUp(pt, dx, dy) {
@@ -741,7 +783,7 @@ const RUN_GAME = (() => {
     overlay(pick) {
       const t = Math.max(1, Math.round((g.los - EZ - 12) / YARD));
       if (g.state === 'live' || g.state === 'presnap') return null;
-      if (g.state === 'between') return { ttl: g.how === 'stuffed' ? 'Stood up' : 'Tackled', sub: `${g.gain} yd gain · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
+      if (g.state === 'between') return { ttl: g.how === 'stuffed' ? 'Stood up' : 'Tackled', sub: `${yds(g.gain)} · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
       return { ttl: 'Turnover on downs', bad: true, sub: `${g.tds} TD · ${g.yards} total yards`, tap: 'tap to play again' };
     },
@@ -1283,6 +1325,8 @@ const KICK_GAME = (() => {
 // ===========================================================================
 // SHELL — tabs, picker, overlay, loop
 // ===========================================================================
+/** A carry or a sack can go backwards, so say so rather than printing -3. */
+const yds = (n) => (n < 0 ? `${-n} yd loss` : `${n} yd`);
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
 // ===========================================================================
 // GAME 4 — DRIVE
@@ -1411,7 +1455,7 @@ const DRIVE_GAME = (() => {
       if (g.state === 'result') {
         const ttl = g.first ? 'First down' : (NAME[g.how] || 'Stopped');
         return { ttl, gold: g.first, bad: g.how === 'sack' || g.how === 'stuffed',
-                 sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for the next call' };
+                 sub: `${yds(g.gain)} · ${ORD[g.down]} & ${t}`, tap: 'tap for the next call' };
       }
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
       return { ttl: g.how === 'int' ? 'Intercepted' : 'Turnover on downs', bad: true,
