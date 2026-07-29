@@ -24,15 +24,6 @@
   }
   #stage { align-self: center; }
   /* game switcher */
-  #tabs { display: flex; gap: 5px; }
-  .tab {
-    padding: 6px 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
-    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76;
-    cursor: pointer; transition: color .2s, border-color .2s;
-  }
-  .tab.on { color: #0c0d0f; background: #e9e9ec; border-color: #e9e9ec; }
-  /* Set apart: it opens the host's leaderboard rather than switching game. */
-  .tab.board { margin-left: 9px; border-style: dashed; letter-spacing: 0.16em; }
   #stage { position: relative; }
   canvas {
     image-rendering: pixelated; image-rendering: crisp-edges;
@@ -189,7 +180,6 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="tabs"></div>
   <div id="status"></div>
   <div id="stage">
     <canvas id="c"></canvas>
@@ -221,7 +211,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade34-pxplays';
+const BUILD = 'arcade35-onegame';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1652,12 +1642,15 @@ const DRIVE_GAME = (() => {
 // Run and Pass are retired as tabs — they are the same two engines, and the
 // drive is the game they add up to. Both are still constructed above because
 // the drive delegates its plays to them.
-const GAMES = [DRIVE_GAME, KICK_GAME];
-let active = GAMES[0];
+// The drive is the game. Kick is still constructed because the drive hands
+// its extra points and field goals to it, it just has no tab of its own any
+// more — and neither does anything else, because there is nothing to choose
+// between. The board moves to the host's nav.
+let active = DRIVE_GAME;
 let pick = null;
 
 const el = (id) => document.getElementById(id);
-const tabs = el('tabs'), picker = el('picker'), plist = el('plist');
+const picker = el('picker'), plist = el('plist');
 const promptEl = el('prompt'), propts = el('propts');
 let pick2 = null, pickStage = 0, picks = [];
 const overlay = el('overlay'), ttl = el('ttl'), sub = el('sub'), tapEl = el('tap'), attrs = el('attrs');
@@ -1666,24 +1659,6 @@ let briefing = false;
 
 brief.addEventListener('pointerup', () => { briefing = false; paintUI(); });
 
-GAMES.forEach((game) => {
-  const t = document.createElement('div');
-  t.className = 'tab'; t.textContent = game.label;
-  t.onclick = () => select(game);
-  tabs.appendChild(t);
-});
-
-// Standings live in the host page, so this only earns its place when embedded.
-if (window.parent !== window) {
-  const b = document.createElement('div');
-  b.className = 'tab board'; b.textContent = 'Board';
-  b.onclick = () => {
-    try {
-      parent.postMessage({ source: 'arcade', type: 'board', game: active.key }, '*');
-    } catch { /* no host */ }
-  };
-  tabs.appendChild(b);
-}
 
 // `name:team:a:b:c:trend:ta:tb:tc` — trend flags a tier gained in the last few
 // weeks, so a player who just levelled up is visible before you pick him.
@@ -1875,7 +1850,6 @@ function select(game) {
   setJersey(null);
   briefing = false;
   active.reset();
-  [...tabs.children].forEach((t, i) => t.classList.toggle('on', GAMES[i] === game));
   el('hint').textContent = game.hint;
   buildPicker();
   paintUI();
@@ -2014,7 +1988,7 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 el('build').textContent = `build ${BUILD}`;
-select(GAMES[0]);
+select(DRIVE_GAME);
 window.__active = () => active;
 window.playIcon = playIcon;      // for the icon legibility harness
 </script>
