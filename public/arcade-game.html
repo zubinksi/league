@@ -91,16 +91,15 @@
     text-transform: uppercase; color: #6d6f76;
   }
   .propt {
-    padding: 9px 13px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
-    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    padding: 9px 11px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
     color: #ececed; cursor: pointer; touch-action: manipulation;
+    /* A row of four plus its label is the tightest thing on the screen; let
+       them size to their text rather than squeezing "Edge L" onto two lines. */
+    flex: none; white-space: nowrap;
   }
   .propt:active { background: rgba(255,255,255,0.12); }
-  /* Square enough to be a comfortable target, and small enough that the row
-     label fits beside four of them. */
-  .propt.icon { width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center; }
-  /* One icon pixel is one field pixel — the canvas upscales the same way. */
-  .propt.icon canvas { width: 32px; height: 32px; image-rendering: pixelated; }
+
 
   #picker {
     position: absolute; inset: 0; display: none; flex-direction: column;
@@ -211,7 +210,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade35-onegame';
+const BUILD = 'arcade36-names';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -657,7 +656,7 @@ const RUN_GAME = (() => {
       return {
         title: FRONT.label,
         sub: 'pick your gap',
-        options: LANES.map((l) => ({ key: l.key, label: l.label, cx: l.cx, icon: l.key })),
+        options: LANES.map((l) => ({ key: l.key, label: l.label, cx: l.cx })),
       };
     },
     pickOption(key) {
@@ -1018,9 +1017,7 @@ const PASS_GAME = (() => {
       return {
         title: SHELL.label,
         sub: 'pick the route',
-        options: (g.red ? RED_MENU : MENU).map((k) => ({
-          key: k, label: LABEL[k], icon: k, dir: this.routeDir(k),
-        })),
+        options: (g.red ? RED_MENU : MENU).map((k) => ({ key: k, label: LABEL[k] })),
       };
     },
     pickOption(route) {
@@ -1675,102 +1672,6 @@ function parseRoster(param, sample) {
   });
 }
 
-// ---- play icons ----------------------------------------------------------
-/**
- * The eight calls, drawn rather than named. A gap is a place, a route is a
- * shape; both say more as a picture than as a word, and the gap chevrons sit
- * in the same left-to-right order as the tick marks on the line, so the
- * button and the field are the same picture.
- *
- * Drawn as pixels on a sixteen-square grid at the same scale the field uses,
- * because everything else on this screen is a hard-edged one-pixel rect and
- * smooth vector strokes sitting on top of it read as a different game.
- *
- * The shapes are stylised, not traced. Drawn faithfully at this size a Go and
- * a Post differ only in a late break and both turn to mush, so stem length
- * carries the difference instead: a slant is nearly all diagonal, a post
- * nearly all stem, an out is a right angle. Routes mirror to the side the
- * receiver actually lined up on — a thumbnail pointing the wrong way is worse
- * than a word.
- */
-const ICON = 16, ICON_SCALE = 2;
-const RUN_KEYS = ['el', 'il', 'ir', 'er'];
-const ICON_PATHS = {
-  el: [[8, 14], [1, 4]], il: [[8, 14], [5, 2]],
-  ir: [[8, 14], [10, 2]], er: [[8, 14], [14, 4]],
-  go: [[8, 13], [8, 1]],
-  post: [[8, 13], [8, 5], [13, 1]],
-  out: [[8, 13], [8, 6], [15, 6]],
-  slant: [[8, 13], [8, 11], [15, 5]],
-  quick: [[8, 13], [8, 10], [14, 6]],
-  drag: [[8, 13], [8, 8], [15, 8]],
-  fade: [[8, 13], [11, 7], [14, 1]],
-  flat: [[8, 13], [8, 12], [15, 12]],
-};
-
-function pxLine(x, a, b) {
-  let [x0, y0] = a;
-  const [x1, y1] = b;
-  const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
-  const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
-  let err = dx + dy;
-  for (;;) {
-    x.fillRect(x0, y0, 1, 1);
-    if (x0 === x1 && y0 === y1) return;
-    const e2 = 2 * err;
-    if (e2 >= dy) { err += dy; x0 += sx; }
-    if (e2 <= dx) { err += dx; y0 += sy; }
-  }
-}
-
-/**
- * A two-pixel-deep V at the tip, squared off to the grid like everything else.
- * A diagonal needs its own case: stepping back along the direction and out
- * along the perpendicular both move by root two, so the arms land two pixels
- * clear of the tip and the head reads as loose specks rather than an arrow.
- * On a diagonal the arms are the two pixels orthogonally behind it instead.
- */
-function pxArrow(x, from, to) {
-  const dx = to[0] - from[0], dy = to[1] - from[1];
-  const m = Math.max(Math.abs(dx), Math.abs(dy)) || 1;
-  const ux = Math.round(dx / m), uy = Math.round(dy / m);
-  const put = (cx, cy) => {
-    if (cx >= 0 && cx < ICON && cy >= 0 && cy < ICON) x.fillRect(cx, cy, 1, 1);
-  };
-  if (ux && uy) {
-    put(to[0] - ux, to[1]);
-    put(to[0], to[1] - uy);
-    put(to[0] - ux * 2, to[1] - uy);
-    put(to[0] - ux, to[1] - uy * 2);
-    return;
-  }
-  const px = -uy, py = ux;
-  for (const k of [1, 2]) {
-    put(to[0] - ux * k + px * k, to[1] - uy * k + py * k);
-    put(to[0] - ux * k - px * k, to[1] - uy * k - py * k);
-  }
-}
-
-function playIcon(key, dir) {
-  const raw = ICON_PATHS[key];
-  if (!raw) return null;
-  const run = RUN_KEYS.includes(key);
-  // Gaps are places on the field and stay put; routes flip with the receiver.
-  const pts = !run && dir === -1 ? raw.map(([px, py]) => [ICON - 1 - px, py]) : raw;
-  const c = document.createElement('canvas');
-  c.width = ICON; c.height = ICON;
-  const x = c.getContext('2d');
-  x.fillStyle = 'rgba(255,255,255,0.26)';
-  const los = run ? 10 : 13;
-  for (let i = 0; i < ICON; i += 2) x.fillRect(i, los, 1, 1);
-  x.fillStyle = '#6d6f76';
-  x.fillRect(pts[0][0], pts[0][1], 1, 1);
-  x.fillStyle = '#ececed';
-  for (let i = 1; i < pts.length; i++) pxLine(x, pts[i - 1], pts[i]);
-  pxArrow(x, pts[pts.length - 2], pts[pts.length - 1]);
-  return c;
-}
-
 function segs(v, n, cls) {
   const on = Math.max(1, Math.round(v * n));
   let s = '';
@@ -1887,10 +1788,8 @@ function paintUI() {
       }
       for (const o of opts) {
         const b = document.createElement('div');
-        const art = o.icon ? playIcon(o.icon, o.dir) : null;
-        b.className = art ? 'propt icon' : 'propt';
-        if (art) { b.appendChild(art); b.setAttribute('aria-label', o.label); }
-        else b.textContent = o.label;
+        b.className = 'propt';
+        b.textContent = o.label;
         b.setAttribute('role', 'button');
         b.onclick = () => { g.pickOption(o.key); paintUI(); };
         wrap.appendChild(b);
@@ -1990,7 +1889,6 @@ requestAnimationFrame(frame);
 el('build').textContent = `build ${BUILD}`;
 select(DRIVE_GAME);
 window.__active = () => active;
-window.playIcon = playIcon;      // for the icon legibility harness
 </script>
 </body>
 </html>
