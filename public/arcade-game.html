@@ -108,13 +108,8 @@
   /* Square enough to be a comfortable target, and small enough that the row
      label fits beside four of them. */
   .propt.icon { width: 44px; height: 44px; padding: 0; display: flex; align-items: center; justify-content: center; }
-  .propt.icon svg { width: 34px; height: 34px; overflow: visible; }
-  .pilos { stroke: rgba(255,255,255,0.26); stroke-width: 1; stroke-dasharray: 2 2; }
-  .pipath {
-    fill: none; stroke: #ececed; stroke-width: 2;
-    stroke-linecap: round; stroke-linejoin: round; marker-end: url(#pah);
-  }
-  .pidot { fill: #6d6f76; }
+  /* One icon pixel is one field pixel — the canvas upscales the same way. */
+  .propt.icon canvas { width: 32px; height: 32px; image-rendering: pixelated; }
 
   #picker {
     position: absolute; inset: 0; display: none; flex-direction: column;
@@ -226,7 +221,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade33-plays';
+const BUILD = 'arcade34-pxplays';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1712,41 +1707,93 @@ function parseRoster(param, sample) {
  * in the same left-to-right order as the tick marks on the line, so the
  * button and the field are the same picture.
  *
- * These are stylised, not traced. Drawn faithfully at this size a Go and a
- * Post differ only in a late break and both turn to mush, so the breaks are
- * deliberately exaggerated. Routes mirror to the side the receiver actually
- * lined up on — a thumbnail pointing the wrong way is worse than a word.
+ * Drawn as pixels on a sixteen-square grid at the same scale the field uses,
+ * because everything else on this screen is a hard-edged one-pixel rect and
+ * smooth vector strokes sitting on top of it read as a different game.
+ *
+ * The shapes are stylised, not traced. Drawn faithfully at this size a Go and
+ * a Post differ only in a late break and both turn to mush, so stem length
+ * carries the difference instead: a slant is nearly all diagonal, a post
+ * nearly all stem, an out is a right angle. Routes mirror to the side the
+ * receiver actually lined up on — a thumbnail pointing the wrong way is worse
+ * than a word.
  */
+const ICON = 16, ICON_SCALE = 2;
 const RUN_KEYS = ['el', 'il', 'ir', 'er'];
-function playIcon(key, dir) {
-  const run = RUN_KEYS.includes(key);
-  const mx = (x) => (dir === -1 ? 24 - x : x);
-  // Adjacent gaps are separated by where they finish as well as by angle,
-  // and the two interior ones by how far apart they end — a two-pixel
-  // difference in lean was invisible at this size.
-  //
-  // Routes are told apart by stem length rather than by the angle of the
-  // break, which is the only cue that survives: a slant is nearly all
-  // diagonal, a post nearly all stem, an out is a right angle.
-  const P = {
-    el: 'M12 22 L2 7', il: 'M12 22 L8 4', ir: `M12 22 L16 4`, er: 'M12 22 L22 7',
-    go: 'M12 19 L12 2',
-    post: `M12 19 L12 7 L${mx(19)} 2`,
-    out: `M12 19 L12 10 L${mx(23)} 10`,
-    slant: `M12 19 L12 17 L${mx(23)} 9`,
-    quick: `M12 19 L12 16 L${mx(22)} 10`,
-    drag: `M12 19 L12 13 L${mx(23)} 13`,
-    fade: `M12 19 Q${mx(15)} 11 ${mx(20)} 2`,
-    flat: `M12 19 L12 18 L${mx(23)} 18`,
+const ICON_PATHS = {
+  el: [[8, 14], [1, 4]], il: [[8, 14], [5, 2]],
+  ir: [[8, 14], [10, 2]], er: [[8, 14], [14, 4]],
+  go: [[8, 13], [8, 1]],
+  post: [[8, 13], [8, 5], [13, 1]],
+  out: [[8, 13], [8, 6], [15, 6]],
+  slant: [[8, 13], [8, 11], [15, 5]],
+  quick: [[8, 13], [8, 10], [14, 6]],
+  drag: [[8, 13], [8, 8], [15, 8]],
+  fade: [[8, 13], [11, 7], [14, 1]],
+  flat: [[8, 13], [8, 12], [15, 12]],
+};
+
+function pxLine(x, a, b) {
+  let [x0, y0] = a;
+  const [x1, y1] = b;
+  const dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
+  const dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
+  let err = dx + dy;
+  for (;;) {
+    x.fillRect(x0, y0, 1, 1);
+    if (x0 === x1 && y0 === y1) return;
+    const e2 = 2 * err;
+    if (e2 >= dy) { err += dy; x0 += sx; }
+    if (e2 <= dx) { err += dx; y0 += sy; }
+  }
+}
+
+/**
+ * A two-pixel-deep V at the tip, squared off to the grid like everything else.
+ * A diagonal needs its own case: stepping back along the direction and out
+ * along the perpendicular both move by root two, so the arms land two pixels
+ * clear of the tip and the head reads as loose specks rather than an arrow.
+ * On a diagonal the arms are the two pixels orthogonally behind it instead.
+ */
+function pxArrow(x, from, to) {
+  const dx = to[0] - from[0], dy = to[1] - from[1];
+  const m = Math.max(Math.abs(dx), Math.abs(dy)) || 1;
+  const ux = Math.round(dx / m), uy = Math.round(dy / m);
+  const put = (cx, cy) => {
+    if (cx >= 0 && cx < ICON && cy >= 0 && cy < ICON) x.fillRect(cx, cy, 1, 1);
   };
-  const d = P[key];
-  if (!d) return '';
-  const los = run ? 15 : 19;
-  return `<svg viewBox="0 0 24 24" aria-hidden="true">`
-    + `<line class="pilos" x1="1" y1="${los}" x2="23" y2="${los}"/>`
-    + `<path class="pipath" d="${d}"/>`
-    + `<circle class="pidot" cx="12" cy="${run ? 22 : 19}" r="1.5"/>`
-    + `</svg>`;
+  if (ux && uy) {
+    put(to[0] - ux, to[1]);
+    put(to[0], to[1] - uy);
+    put(to[0] - ux * 2, to[1] - uy);
+    put(to[0] - ux, to[1] - uy * 2);
+    return;
+  }
+  const px = -uy, py = ux;
+  for (const k of [1, 2]) {
+    put(to[0] - ux * k + px * k, to[1] - uy * k + py * k);
+    put(to[0] - ux * k - px * k, to[1] - uy * k - py * k);
+  }
+}
+
+function playIcon(key, dir) {
+  const raw = ICON_PATHS[key];
+  if (!raw) return null;
+  const run = RUN_KEYS.includes(key);
+  // Gaps are places on the field and stay put; routes flip with the receiver.
+  const pts = !run && dir === -1 ? raw.map(([px, py]) => [ICON - 1 - px, py]) : raw;
+  const c = document.createElement('canvas');
+  c.width = ICON; c.height = ICON;
+  const x = c.getContext('2d');
+  x.fillStyle = 'rgba(255,255,255,0.26)';
+  const los = run ? 10 : 13;
+  for (let i = 0; i < ICON; i += 2) x.fillRect(i, los, 1, 1);
+  x.fillStyle = '#6d6f76';
+  x.fillRect(pts[0][0], pts[0][1], 1, 1);
+  x.fillStyle = '#ececed';
+  for (let i = 1; i < pts.length; i++) pxLine(x, pts[i - 1], pts[i]);
+  pxArrow(x, pts[pts.length - 2], pts[pts.length - 1]);
+  return c;
 }
 
 function segs(v, n, cls) {
@@ -1866,9 +1913,9 @@ function paintUI() {
       }
       for (const o of opts) {
         const b = document.createElement('div');
-        const art = o.icon ? playIcon(o.icon, o.dir) : '';
+        const art = o.icon ? playIcon(o.icon, o.dir) : null;
         b.className = art ? 'propt icon' : 'propt';
-        if (art) { b.innerHTML = art; b.setAttribute('aria-label', o.label); }
+        if (art) { b.appendChild(art); b.setAttribute('aria-label', o.label); }
         else b.textContent = o.label;
         b.setAttribute('role', 'button');
         b.onclick = () => { g.pickOption(o.key); paintUI(); };
@@ -1971,13 +2018,5 @@ select(GAMES[0]);
 window.__active = () => active;
 window.playIcon = playIcon;      // for the icon legibility harness
 </script>
-<svg width="0" height="0" aria-hidden="true" style="position:absolute">
-  <defs>
-    <marker id="pah" viewBox="0 0 8 8" refX="5.5" refY="4"
-          markerWidth="3.4" markerHeight="3.4" orient="auto">
-    <path d="M0 0 L8 4 L0 8 Z" fill="#ececed"/>
-    </marker>
-  </defs>
-  </svg>
 </body>
 </html>
