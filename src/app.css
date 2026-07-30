@@ -1570,76 +1570,262 @@
   color: var(--text-faint);
 }
 
-/* ---- Roster: attribute ladders ---- */
+/* ---- Roster: player cards ---- */
 
-.rp-intro {
-  padding: 14px 20px 2px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 1.8;
-  letter-spacing: 0.06em;
-  color: var(--text-faint);
+/* Position filter centred as drawn, with the view switch pinned right — the
+   outer 1fr columns keep the filter centred whatever the switch measures. */
+.rp-controls {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  padding: 10px 20px 4px;
 }
 
-/* A same-club passer and target you already own. */
-.rp-chem {
+.rp-filter {
+  grid-column: 2;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 20px 0;
-  padding: 7px 10px;
-  border: 1px solid rgba(232, 197, 97, 0.28);
-  border-radius: 7px;
+  gap: 11px;
+}
+
+.rp-filter button,
+.rp-modes button {
   font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.14em;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-}
-
-.rp-chem-k { color: var(--accent-live); }
-.rp-chem-v {
-  color: var(--text-strong);
-  letter-spacing: 0.06em;
-  text-transform: none;
-  font-size: 9.5px;
-}
-.rp-chem-t { margin-left: auto; color: var(--text-faint); }
-
-/* Player cards, shaped like the arcade's own pick list — choosing a player
-   and reading about one should look like the same act. */
-.rp-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 20px 4px;
-}
-
-.rp-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--divider-row);
-  border-radius: 9px;
-  background: none;
-  font: inherit;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
+  color: var(--text-faint);
+  padding: 4px 0;
   -webkit-tap-highlight-color: transparent;
 }
 
-.rp-card:hover,
-.rp-card:active { border-color: rgba(255, 255, 255, 0.34); }
+.rp-filter button.on,
+.rp-modes button.on { color: var(--text-strong); }
 
-.rp-left {
+.rp-modes {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: end;
+}
+
+.rp-modes button { font-size: 9px; }
+.rp-modes i { font-style: normal; font-size: 9px; color: var(--text-dot); }
+
+/* One card is short against a tall phone, and top-aligned it leaves the screen
+   looking unfinished. The auto margins centre it in whatever room is left,
+   which holds up across screen heights better than a chosen card size would. */
+.roster-page { display: flex; flex-direction: column; }
+.rp-deckwrap { margin: auto 0; }
+
+/* The deck. The cards behind are outlines only — depth without a second card
+   competing for attention. */
+.rp-deck {
+  position: relative;
+  margin: 14px 20px 0;
+  padding-bottom: 4px;
+}
+
+.rp-shell {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 14px;
+  pointer-events: none;
+}
+
+/* Rotation is what pushes a tall card's corners clear of the one in front; the
+   lift biases the peek upward so it reads as a stack rather than a scatter. */
+.rp-shell.s2 { transform: rotate(1.8deg) translateY(-6px); }
+.rp-shell.s3 { transform: rotate(-2.8deg) translateY(-10px); }
+
+/* The arcade pick card at the size it wants to be. */
+.rp-big {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--divider-strong);
+  border-radius: 14px;
+  background: #101114;
+  text-align: left;
+  cursor: pointer;
+  /* Sideways belongs to the deck; up and down still scrolls the page. */
+  touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rp-big:focus-visible { outline: 1px solid var(--divider-strong); outline-offset: 3px; }
+
+.rp-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rp-slot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* The stage: hash marks, the line to gain in gold, and your player on it. This
+   is the only place on the page that shows the thing you actually control. */
+.rp-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  margin: 6px 0 2px;
+  border: 1px solid var(--divider-hero);
+  border-radius: 3px;
+  background: #08090b;
+  overflow: hidden;
+}
+
+.rp-stage::before,
+.rp-stage::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 26px;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.13) 0 1px,
+    transparent 1px 19px
+  );
+}
+
+.rp-stage::before { left: 17%; }
+.rp-stage::after { right: 17%; }
+
+.rp-goal,
+.rp-forty {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  height: 1px;
+}
+
+/* 2px, not 1: gold this light reads as a plain white hairline at a single
+   pixel, and the line to gain is the one thing on the stage that has to be
+   recognisably the accent. */
+.rp-goal { top: 16px; height: 2px; background: var(--accent-live); }
+/* Clear of the player: he is 80px centred in 200, so anything past 52 crosses him. */
+.rp-forty {
+  top: 52px;
+  background: repeating-linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0.2) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+.rp-sprite { image-rendering: pixelated; position: relative; }
+
+/* A same-club passer and target, on both of their cards. */
+.rp-pair {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-live);
+}
+
+.rp-pair b {
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: var(--text-mid);
+}
+
+/* Where you are in the deck, and the two taps for anyone not swiping. */
+.rp-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 12px 20px 0;
+}
+
+.rp-nav button {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 4px 8px;
+}
+
+.rp-nav button:disabled { color: var(--text-dot); cursor: default; }
+
+.rp-count {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.rp-cue {
+  padding: 5px 20px 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--text-dot);
+}
+
+/* Two up, for comparing. Denser than the list it replaced. */
+.rp-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 12px 20px 4px;
+}
+
+.rp-gcard {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px 11px 11px;
+  border: 1px solid var(--divider-strong);
+  border-radius: 10px;
+  background: #101114;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.rp-gcard:active { border-color: rgba(255, 255, 255, 0.28); }
+
+/* The sprite stands in for the club colour chip — it is already team-kitted. */
+.rp-ghead {
+  display: flex;
+  align-items: center;
+  gap: 7px;
   min-width: 0;
 }
+
+.rp-gname {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rp-gmeta {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+}
+
+/* Under the name rather than beside it, so it must not read as a second name. */
+.rp-gcard .rp-rank { font-size: 11px; }
 
 .rp-line {
   display: flex;
@@ -1657,6 +1843,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* The deck has the room to let the name carry the card. */
+.rp-name.lg { font-size: 21px; letter-spacing: -0.015em; }
+.rp-big .rp-trend { font-size: 9px; }
 
 /* Same size as the name, a step back in colour — it reads as part of it. */
 .rp-rank {
@@ -1704,14 +1894,15 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  flex: none;
 }
 
+/* Label then rungs, the label column fixed so three bars line up and the rungs
+   take whatever the card has left. */
 .rp-bar {
   display: grid;
-  grid-template-columns: auto 62px;
+  grid-template-columns: 54px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 9px;
 }
 
 .rp-blabel {
@@ -1720,8 +1911,13 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-faint);
-  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
 }
+
+/* Two up leaves no room for a label column, so the bars run full width. */
+.rp-gcard .rp-bar { grid-template-columns: 46px minmax(0, 1fr); gap: 6px; }
+.rp-gcard .rp-blabel { font-size: 7px; letter-spacing: 0.1em; }
 
 /* Five rungs: gaps do the tick work, so the bar reads as levels. */
 .rp-rungs {
@@ -1826,7 +2022,8 @@
 
 /* Sidelined this week — still listed, because seeing who you have not got is
    the point of the mechanic. */
-.rp-card.off { opacity: 0.42; border-style: dashed; }
+.rp-big.off,
+.rp-gcard.off { opacity: 0.46; border-style: dashed; }
 
 .rp-status {
   font-family: var(--font-mono);

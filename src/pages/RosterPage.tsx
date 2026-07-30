@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { NavBar } from '../components/NavBar';
 import { TeamPicker, getMyRosterId } from '../components/TeamPicker';
 import { usePlayerCard } from '../components/PlayerCard';
+import { Sprite } from '../components/Sprite';
 import {
   defaultWeek,
   useLeague,
@@ -18,13 +19,13 @@ import { positionRanks } from '../lib/metrics';
 import { buildArcadeRosters, sidelined, type ArcadePlayer, type AttrDetail } from '../lib/arcadeRoster';
 import { teamKit } from '../lib/teamKits';
 
-const GROUPS: { key: 'run' | 'pass' | 'recv' | 'kick'; label: string }[] = [
-  { key: 'pass', label: 'PASSERS' },
-  { key: 'recv', label: 'RECEIVERS' },
-  { key: 'run', label: 'BACKS' },
-  { key: 'kick', label: 'KICKERS' },
-];
+/** Filter order, which is also the order the roster reads in. */
+const POSITIONS = ['QB', 'RB', 'WR', 'TE', 'K'];
 const TIERS = 5;
+/** How far a drag has to travel to turn the card. */
+const THRESHOLD = 44;
+/** Under this it is still a tap, not a swipe. */
+const SLOP = 6;
 
 /** Five rungs. Cleared ones full, the one you're on part-filled, and the rung
  *  just crossed lit — so the bar carries both level and recent movement. */
@@ -45,55 +46,221 @@ function Ladder({ a }: { a: AttrDetail }) {
   );
 }
 
-/** Passer + target on the same NFL club. Picking both in the pass game puts
- *  the ball where he is going, so it is worth knowing you have one. */
-function batteries(pass: ArcadePlayer[], recv: ArcadePlayer[]) {
-  const out: { key: string; qb: ArcadePlayer; wr: ArcadePlayer }[] = [];
-  for (const qb of pass)
-    for (const wr of recv)
-      if (qb.team && qb.team === wr.team && !sidelined(qb.status) && !sidelined(wr.status))
-        out.push({ key: `${qb.id}-${wr.id}`, qb, wr });
-  return out;
+function Bars({ p }: { p: ArcadePlayer }) {
+  return (
+    <span className="rp-bars">
+      {p.attrs.map((a) => (
+        <span className="rp-bar" key={a.label}>
+          <span className="rp-blabel">{a.label}</span>
+          <Ladder a={a} />
+        </span>
+      ))}
+    </span>
+  );
 }
 
-/** The same shape as the arcade's own pick card, so choosing a player and
- *  reading about one look like the same act. Tapping opens the full sheet. */
-function PlayerCardRow({ p, rank }: { p: ArcadePlayer; rank?: number }) {
-  const kit = teamKit(p.team);
-  const open = usePlayerCard();
+/** Rank and availability share the slot opposite the club, because they answer
+ *  the same question: where does this player stand this week. */
+function Slot({ p, rank }: { p: ArcadePlayer; rank?: number }) {
   const out = sidelined(p.status);
   return (
-    <button className={`rp-card${out ? ' off' : ''}`} onClick={() => open(p.id, undefined, p.attrs)}>
-      <span className="rp-left">
-        <span className="rp-line">
-          <span className="rp-name">{p.name}</span>
-          {rank ? (
-            <span className="rp-rank">
-              {p.position}
-              {rank}
+    <span className="rp-slot">
+      <span className="rp-rank">
+        {p.position}
+        {rank ?? ''}
+      </span>
+      {p.status && <i className={`rp-status ${out ? 'out' : 'risk'}`}>{p.status}</i>}
+    </span>
+  );
+}
+
+function Trend({ p }: { p: ArcadePlayer }) {
+  if (p.trend === 0 || sidelined(p.status)) return null;
+  return <i className={`rp-trend ${p.trend > 0 ? 'up' : 'down'}`}>{p.trend > 0 ? '▲' : '▼'}</i>;
+}
+
+/** One roster, in filter order, each position keeping its availability-then-
+ *  rating sort. The arcade groups by the game's four slots; the page reads by
+ *  NFL position, so it is flattened and re-cut here. */
+function ordered(built: Record<'run' | 'pass' | 'recv' | 'kick', ArcadePlayer[]>): ArcadePlayer[] {
+  const all = [...built.pass, ...built.run, ...built.recv, ...built.kick];
+  return POSITIONS.flatMap((pos) => all.filter((p) => p.position === pos));
+}
+
+/** Passer and target on the same NFL club. Picking both in the arcade puts the
+ *  ball where he is going, so it belongs on both of their cards rather than in
+ *  a banner of its own. */
+function chemistry(list: ArcadePlayer[]): Map<string, string> {
+  const map = new Map<string, string>();
+  const playing = list.filter((p) => !sidelined(p.status) && p.team);
+  for (const qb of playing.filter((p) => p.position === 'QB')) {
+    for (const t of playing.filter((p) => p.position === 'WR' || p.position === 'TE')) {
+      if (qb.team !== t.team) continue;
+      map.set(qb.id, t.name);
+      map.set(t.id, qb.name);
+    }
+  }
+  return map;
+}
+
+/**
+ * The card, at the size the arcade's pick card wants to be. Swipe turns the
+ * deck; a tap that never moved opens the full sheet. A movement threshold is
+ * what keeps those two apart, and a gesture that goes vertical first is handed
+ * back to the page so the roster still scrolls.
+ */
+function Deck({
+  list,
+  chem,
+  ranks,
+  idx,
+  setIdx,
+  onOpen,
+}: {
+  list: ArcadePlayer[];
+  chem: Map<string, string>;
+  ranks: Map<string, number>;
+  idx: number;
+  setIdx: (i: number) => void;
+  onOpen: (p: ArcadePlayer) => void;
+}) {
+  const [drag, setDrag] = useState(0);
+  const down = useRef<{ x: number; y: number; live: boolean } | null>(null);
+  const p = list[idx];
+  const kit = teamKit(p.team);
+  const partner = chem.get(p.id);
+  const go = (d: number) => {
+    setIdx(Math.max(0, Math.min(list.length - 1, idx + d)));
+    setDrag(0);
+  };
+
+  const onDown = (e: React.PointerEvent) => {
+    down.current = { x: e.clientX, y: e.clientY, live: false };
+  };
+  const onMove = (e: React.PointerEvent) => {
+    const s = down.current;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (!s.live) {
+      // A vertical gesture belongs to the page; the card only claims sideways.
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > SLOP) {
+        down.current = null;
+        return;
+      }
+      if (Math.abs(dx) < SLOP) return;
+      s.live = true;
+    }
+    // There is nothing behind the ends, so pulling past them gives way.
+    const edge = (dx > 0 && idx === 0) || (dx < 0 && idx === list.length - 1);
+    setDrag(dx * (edge ? 0.3 : 1));
+  };
+  const onUp = (e: React.PointerEvent) => {
+    const s = down.current;
+    down.current = null;
+    if (!s) return;
+    if (!s.live) {
+      onOpen(p);
+      return;
+    }
+    const dx = e.clientX - s.x;
+    if (dx <= -THRESHOLD) go(1);
+    else if (dx >= THRESHOLD) go(-1);
+    else setDrag(0);
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowRight') go(1);
+    else if (e.key === 'ArrowLeft') go(-1);
+    else if (e.key === 'Enter' || e.key === ' ') onOpen(p);
+    else return;
+    e.preventDefault();
+  };
+
+  return (
+    <>
+      <div className="rp-deck">
+        {list.length > 2 && <i className="rp-shell s3" />}
+        {list.length > 1 && <i className="rp-shell s2" />}
+        <div
+          className={`rp-big${sidelined(p.status) ? ' off' : ''}`}
+          role="button"
+          tabIndex={0}
+          aria-label={`${p.name}, open card`}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerCancel={() => {
+            down.current = null;
+            setDrag(0);
+          }}
+          onKeyDown={onKey}
+          style={{
+            transform: `translateX(${drag}px) rotate(${drag * 0.018}deg)`,
+            transition: drag === 0 ? 'transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)' : 'none',
+          }}
+        >
+          <span className="rp-top">
+            <span className="rp-team">
+              {kit && <i className="rp-kit" style={{ background: kit }} />}
+              {p.team || 'FA'}
             </span>
-          ) : null}
-          {p.status && (
-            <i className={`rp-status ${out ? 'out' : 'risk'}`}>{p.status}</i>
-          )}
-          {p.trend !== 0 && !out && (
-            <i className={`rp-trend ${p.trend > 0 ? 'up' : 'down'}`}>{p.trend > 0 ? '▲' : '▼'}</i>
-          )}
-        </span>
-        <span className="rp-team">
-          {kit && <i className="rp-kit" style={{ background: kit }} />}
-          {p.team || 'FA'}
-        </span>
-        <span className="rp-season">{p.summary}</span>
-      </span>
-      <span className="rp-bars">
-        {p.attrs.map((a) => (
-          <span className="rp-bar" key={a.label}>
-            <span className="rp-blabel">{a.label}</span>
-            <Ladder a={a} />
+            <Slot p={p} rank={ranks.get(p.id)} />
           </span>
-        ))}
+          <span className="rp-line">
+            <span className="rp-name lg">{p.name}</span>
+            <Trend p={p} />
+          </span>
+          <span className="rp-season">{p.summary}</span>
+          <span className="rp-stage">
+            <i className="rp-goal" />
+            <i className="rp-forty" />
+            <Sprite position={p.position} team={p.team} size={80} />
+          </span>
+          {partner && (
+            <span className="rp-pair">
+              Chemistry <b>{partner}</b>
+            </span>
+          )}
+          <Bars p={p} />
+        </div>
+      </div>
+      <div className="rp-nav">
+        <button onClick={() => go(-1)} disabled={idx === 0} aria-label="Previous player">
+          ◂
+        </button>
+        <span className="rp-count">
+          {idx + 1} / {list.length}
+        </span>
+        <button onClick={() => go(1)} disabled={idx === list.length - 1} aria-label="Next player">
+          ▸
+        </button>
+      </div>
+      <p className="rp-cue">Tap card to open</p>
+    </>
+  );
+}
+
+/** The same card with the stage taken out. What you compare on is the name, the
+ *  rank and the three ladders; the field and the full-size sprite are what you
+ *  want when looking at one player, so only the deck carries them. */
+function GridCard({ p, rank, onPick }: { p: ArcadePlayer; rank?: number; onPick: () => void }) {
+  return (
+    <button className={`rp-gcard${sidelined(p.status) ? ' off' : ''}`} onClick={onPick}>
+      <span className="rp-ghead">
+        <Sprite position={p.position} team={p.team} size={20} />
+        <span className="rp-gname">
+          <span className="rp-line">
+            <span className="rp-name">{p.name}</span>
+            <Trend p={p} />
+          </span>
+          <span className="rp-gmeta">
+            <span className="rp-team">{p.team || 'FA'}</span>
+            <Slot p={p} rank={rank} />
+          </span>
+        </span>
       </span>
+      <span className="rp-season">{p.summary}</span>
+      <Bars p={p} />
     </button>
   );
 }
@@ -105,6 +272,10 @@ export function RosterPage() {
   const players = usePlayers();
   const state = useNflState();
   const [picked, setPicked] = useState<number | null>(getMyRosterId());
+  const [mode, setMode] = useState<'deck' | 'grid'>('deck');
+  const [pos, setPos] = useState('ALL');
+  const [idx, setIdx] = useState(0);
+  const open = usePlayerCard();
 
   const week = defaultWeek(league.data, state.data);
   const weekly = useWeeklyStatsAll(league.data?.season, week, picked !== null);
@@ -122,12 +293,26 @@ export function RosterPage() {
     [season.data, players.data, league.data],
   );
 
-  const built = useMemo(() => {
+  const all = useMemo(() => {
     if (picked === null || !rosters.data || !players.data) return null;
     const mine = rosters.data.find((r) => r.roster_id === picked);
     if (!mine) return null;
-    return buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data);
+    return ordered(
+      buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data),
+    );
   }, [picked, rosters.data, players.data, weekly.weekly, prior.data, scoreboard.data]);
+
+  const chem = useMemo(() => (all ? chemistry(all) : new Map<string, string>()), [all]);
+  const tabs = useMemo(
+    () => ['ALL', ...POSITIONS.filter((k) => all?.some((p) => p.position === k))],
+    [all],
+  );
+  const list = useMemo(
+    () => (all ? (pos === 'ALL' ? all : all.filter((p) => p.position === pos)) : []),
+    [all, pos],
+  );
+  // A filter can shorten the deck under the card you were on.
+  const at = Math.min(idx, Math.max(0, list.length - 1));
 
   return (
     <div className="page roster-page">
@@ -138,38 +323,62 @@ export function RosterPage() {
         ) : (
           <div className="state-note">Loading</div>
         )
-      ) : !built || weekly.loading ? (
+      ) : !all || weekly.loading ? (
         <div className="state-note">Reading the season</div>
       ) : (
         <>
-          <p className="rp-intro">
-            Every ladder counts a stat that only goes up, so a player climbs across the season and
-            never slides back. Last season sets the opening rung. Tap anyone for the full card.
-          </p>
-          {batteries(built.pass, built.recv).map(({ key, qb, wr }) => (
-            <div className="rp-chem" key={key}>
-              <i className="rp-kit" style={{ background: teamKit(qb.team) ?? 'transparent' }} />
-              <span className="rp-chem-k">Chemistry</span>
-              <span className="rp-chem-v">
-                {qb.name} → {wr.name}
-              </span>
-              <span className="rp-chem-t">{qb.team}</span>
+          <div className="rp-controls">
+            <div className="rp-filter">
+              {tabs.map((k) => (
+                <button
+                  key={k}
+                  className={pos === k ? 'on' : ''}
+                  onClick={() => {
+                    setPos(k);
+                    setIdx(0);
+                  }}
+                >
+                  {k}
+                </button>
+              ))}
             </div>
-          ))}
-          {GROUPS.map(({ key, label }) =>
-            built[key].length ? (
-              <div key={key}>
-                <div className="section-header league-head">
-                  <span>{label}</span>
-                  <span className="week-label">{built[key].length}</span>
-                </div>
-                <div className="rp-list">
-                  {built[key].map((p) => (
-                    <PlayerCardRow key={p.id} p={p} rank={ranks.get(p.id)} />
-                  ))}
-                </div>
-              </div>
-            ) : null,
+            <div className="rp-modes">
+              <button className={mode === 'deck' ? 'on' : ''} onClick={() => setMode('deck')}>
+                Deck
+              </button>
+              <i>/</i>
+              <button className={mode === 'grid' ? 'on' : ''} onClick={() => setMode('grid')}>
+                Grid
+              </button>
+            </div>
+          </div>
+          {!list.length ? (
+            <div className="state-note">Nobody at that position</div>
+          ) : mode === 'deck' ? (
+            <div className="rp-deckwrap">
+              <Deck
+                list={list}
+                chem={chem}
+                ranks={ranks}
+                idx={at}
+                setIdx={setIdx}
+                onOpen={(p) => open(p.id, undefined, p.attrs)}
+              />
+            </div>
+          ) : (
+            <div className="rp-grid">
+              {list.map((p, i) => (
+                <GridCard
+                  key={p.id}
+                  p={p}
+                  rank={ranks.get(p.id)}
+                  onPick={() => {
+                    setIdx(i);
+                    setMode('deck');
+                  }}
+                />
+              ))}
+            </div>
           )}
         </>
       )}
