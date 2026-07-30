@@ -1961,62 +1961,64 @@
   text-overflow: ellipsis;
 }
 
-/* ---- Player sheet: the arcade ladders, when opened from the roster ---- */
+/* ---- the two ladder charts ---- */
 
-.sheet-arcade {
-  padding: 10px 20px 4px;
+.lad-wrap {
+  padding: 6px 20px 0;
   display: flex;
-  flex-direction: column;
-  gap: 9px;
+  justify-content: center;
 }
 
-.sa-row {
-  display: grid;
-  grid-template-columns: 58px 76px minmax(0, 1fr);
-  align-items: center;
-  gap: 10px;
-  row-gap: 3px;
+.lad-radar { width: 100%; max-width: 272px; height: auto; overflow: visible; }
+.lad-climb { width: 100%; height: auto; overflow: visible; }
+
+/* Recessive rings and spokes: hairline, solid, one step off the surface. The
+   rings are the rungs, so the shape can be counted and not only seen. */
+.lad-ring,
+.lad-spoke,
+.lad-grid {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.09);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
 }
 
-.sa-label {
+.lad-shape {
+  fill: rgba(201, 201, 207, 0.12);
+  stroke: var(--text-mid);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.lad-axis,
+.lad-tick,
+.lad-name {
   font-family: var(--font-mono);
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-}
-
-.sa-rungs {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 2px;
-}
-
-.sa-rungs i {
-  display: block;
-  height: 5px;
-  border-radius: 1px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-}
-
-.sa-rungs i b {
-  display: block;
-  height: 100%;
-  background: #c9c9cf;
-}
-
-.sa-tier {
-  font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 8px;
   letter-spacing: 0.13em;
-  text-transform: uppercase;
-  color: var(--accent-live);
 }
 
-/* Sits under the bar rather than beside it — the row is already three wide. */
-.sa-next {
-  grid-column: 2 / -1;
+/* Text wears text tokens; the mark beside it carries identity. The one
+   exception is the end-of-line label, which IS the legend. */
+.lad-axis { fill: var(--text-muted); }
+.lad-axis.fresh { fill: var(--accent-live); }
+.lad-tick { fill: var(--text-dot); font-size: 7.5px; }
+
+.lad-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/* What is left to climb, in the counter the ladder actually reads. */
+.lad-next {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  padding: 12px 20px 0;
   font-family: var(--font-mono);
   font-size: 8px;
   letter-spacing: 0.1em;
@@ -2024,40 +2026,10 @@
   color: #55575d;
 }
 
-/* The climb: one lane per ladder, a mark where each rung was crossed, placed
-   by the week it happened. The ladders say where a player stands; this says
-   how the season went — a fast start and a stall look different here. */
-.sa-row.climb { grid-template-columns: 58px minmax(0, 1fr); }
-
-.climb-track {
-  position: relative;
-  height: 5px;
-  margin: 4px 0 1px;
+.lad-next b {
+  font-weight: 600;
+  color: var(--text-muted);
 }
-
-.climb-track::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.climb-track i {
-  position: absolute;
-  bottom: 0;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent-live);
-}
-
-/* The dots carry position only; the line beneath names them with their weeks.
-   Labelling the track too put a legend half off the right edge whenever a rung
-   was crossed in the current week, which is exactly when it matters most. */
-.sa-row.climb .sa-next { color: var(--text-dim); }
 
 /* Sidelined this week — still listed, because seeing who you have not got is
    the point of the mechanic. */

@@ -317,16 +317,20 @@ export interface Rise {
   unit: string;
   /** Rungs gained this season, oldest first. Empty when he has not moved. */
   steps: Step[];
+  /** Progress in rungs (0..TIERS) at the end of each week, index = week - 1.
+   *  Every ladder lands on this one scale, which is what lets three counters
+   *  in different units share an axis. */
+  series: number[];
   /** What the most recent week put on this ladder's counter. */
   added: number;
 }
 
 /**
- * When each rung was crossed. The ladders only ever say where a player stands;
- * replaying them a week at a time says how he got there, which is the season
- * the card is otherwise missing.
+ * The season, replayed a week at a time. The ladders only say where a player
+ * stands; this says how he got there — both the weeks a rung was crossed and
+ * the progress line between them.
  *
- * Last season's carry-over sets the opening tier and is deliberately not a
+ * Last season's carry-over sets the opening position and is deliberately not a
  * step — it was not climbed this year.
  */
 export function climb(
@@ -343,12 +347,15 @@ export function climb(
 
   const at = rungs.map((r) => ladder(r, r.stat(running)).tier);
   const steps: Step[][] = rungs.map(() => []);
+  const series: number[][] = rungs.map(() => []);
   for (let w = 0; w < weekly.length; w++) {
     const s = weekly[w]?.[id];
-    if (!s) continue;
-    for (const [k, v] of Object.entries(s)) running[k] = (running[k] ?? 0) + v;
+    if (s) for (const [k, v] of Object.entries(s)) running[k] = (running[k] ?? 0) + v;
     rungs.forEach((r, i) => {
       const d = ladder(r, r.stat(running));
+      // A week he did not play still gets a point, at the level he was already
+      // on, so the line runs flat rather than breaking.
+      series[i].push(d.value * TIERS);
       if (d.tier > at[i]) {
         steps[i].push({ week: w + 1, tier: d.tier, name: d.name });
         at[i] = d.tier;
@@ -361,6 +368,7 @@ export function climb(
     label: r.label,
     unit: r.unit,
     steps: steps[i],
+    series: series[i],
     added: latest ? r.stat(latest) : 0,
   }));
 }

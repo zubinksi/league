@@ -11,6 +11,7 @@ import { useSeasonLog } from '../hooks/useSeasonLog';
 import { playerFullName } from '../api/players';
 import { gameLogColumns, projectedPoints, statPairs } from '../api/stats';
 import { Sprite } from './Sprite';
+import { ClimbChart, LadderRadar } from './LadderCharts';
 import { arcadePlayer, climb, sidelined, type Rise } from '../lib/arcadeRoster';
 import type { StarterView } from '../lib/matchup';
 
@@ -70,11 +71,14 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
     [meta?.position, card.playerId, log.playedWeeks, log.loading, prior.data],
   );
 
-  /** Rungs crossed, by the week they were crossed in. */
+  /** Rungs crossed, by the week they were crossed in. Named by the ladder that
+   *  moved and the rung it reached — which is the useful half of what the tier
+   *  names used to say, without a vocabulary to learn. */
   const crossings = useMemo(() => {
     const m = new Map<number, string[]>();
     for (const r of rises)
-      for (const s of r.steps) m.set(s.week, [...(m.get(s.week) ?? []), s.name]);
+      for (const s of r.steps)
+        m.set(s.week, [...(m.get(s.week) ?? []), `${r.label} ${s.tier + 1}`]);
     return m;
   }, [rises]);
 
@@ -122,7 +126,6 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const barMax = Math.max(10, ...log.entries.map((e) => e.points ?? 0));
   const n = Math.max(1, log.entries.length);
   const slot = 340 / n;
-  const spanW = Math.max(1, week - 1);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -148,34 +151,28 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           </div>
         </div>
 
-        {arc && arc.attrs.length > 0 && (
+        {arc && arc.attrs.length >= 3 && (
           <>
             <div className="sheet-section">
               <span>LADDERS</span>
-              <span />
+              <span>RUNG {arc.attrs.reduce((s, a) => s + a.tier + 1, 0)} / {arc.attrs.length * TIERS}</span>
             </div>
-            <div className="sheet-arcade">
+            <div className="lad-wrap">
+              <LadderRadar attrs={arc.attrs} />
+            </div>
+            <div className="lad-next">
               {arc.attrs.map((a) => (
-                <div className="sa-row" key={a.label}>
-                  <span className="sa-label">{a.label}</span>
-                  <span className="sa-rungs">
-                    {Array.from({ length: TIERS }, (_, i) => (
-                      <i key={i}>
-                        <b
-                          style={{
-                            width: `${Math.max(0, Math.min(1, a.value * TIERS - i)) * 100}%`,
-                          }}
-                        />
-                      </i>
-                    ))}
-                  </span>
-                  <span className="sa-tier">{a.name}</span>
-                  <span className="sa-next">
-                    {a.toNext === null
-                      ? `MAXED · ${a.stat} ${a.unit}`
-                      : `${a.stat} ${a.unit} · ${a.toNext} MORE → ${a.nextName}`}
-                  </span>
-                </div>
+                <span key={a.label}>
+                  {a.toNext === null ? (
+                    <>
+                      <b>MAXED</b> {a.label}
+                    </>
+                  ) : (
+                    <>
+                      <b>{a.toNext.toLocaleString()}</b> {a.unit} to {a.label} {a.tier + 2}
+                    </>
+                  )}
+                </span>
               ))}
             </div>
           </>
@@ -185,32 +182,10 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           <>
             <div className="sheet-section">
               <span>THE CLIMB</span>
-              <span>WEEKS 1–{week}</span>
+              <span>RUNGS BY WEEK</span>
             </div>
-            <div className="sheet-arcade">
-              {rises.map((r) => (
-                <div className="sa-row climb" key={r.label}>
-                  <span className="sa-label">{r.label}</span>
-                  <span className="climb-track">
-                    {r.steps.map((s) => {
-                      // Shifting by its own share of its width keeps the first
-                      // and last dot inside the lane instead of half off it.
-                      const pct = ((s.week - 1) / spanW) * 100;
-                      return (
-                        <i
-                          key={s.week}
-                          style={{ left: `${pct}%`, transform: `translateX(-${pct}%)` }}
-                        />
-                      );
-                    })}
-                  </span>
-                  <span className="sa-next">
-                    {r.steps.length
-                      ? r.steps.map((s) => `W${s.week} ${s.name}`).join('  ·  ')
-                      : 'No rungs gained yet'}
-                  </span>
-                </div>
-              ))}
+            <div className="lad-wrap">
+              <ClimbChart rises={rises} week={week} />
             </div>
           </>
         )}
