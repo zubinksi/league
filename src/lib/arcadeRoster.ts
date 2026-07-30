@@ -445,8 +445,10 @@ const encode = (list: ArcadePlayer[], limit = 6): string =>
   (list.some((p) => !sidelined(p.status)) ? list : list.map((p) => ({ ...p, status: '' as Availability })))
     .slice(0, limit)
     .map((p) =>
+      // The id rides along so the game can ask the host to open a player card
+      // — it has no other way to name who it is showing.
       [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2),
-       p.trend, p.ta, p.tb, p.tc, p.status].join(':'),
+       p.trend, p.ta, p.tb, p.tc, p.status, p.id].join(':'),
     )
     .join('|');
 

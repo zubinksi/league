@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { NavBar } from '../components/NavBar';
 import { TeamPicker, getMyRosterId } from '../components/TeamPicker';
+import { usePlayerCard } from '../components/PlayerCard';
 import {
   defaultWeek,
   useLeague,
@@ -39,6 +40,7 @@ export function ArcadePage() {
   const [board, setBoard] = useState<GameKey>('run');
   const [boardOpen, setBoardOpen] = useState(false);
   const [flash, setFlash] = useState<string>('');
+  const openCard = usePlayerCard();
 
   const week = defaultWeek(league.data, state.data);
   const weekly = useWeeklyStatsAll(league.data?.season, week, picked !== null);
@@ -67,7 +69,15 @@ export function ArcadePage() {
     if (picked === null) return;
     const onMessage = async (e: MessageEvent) => {
       const d = e.data;
-      if (!d || d.source !== 'arcade' || !GAMES.includes(d.game)) return;
+      if (!d || d.source !== 'arcade') return;
+      // The game only knows a player's id, so opening his card is ours to do.
+      // Checked before the game guard, which the card message has no reason to
+      // satisfy.
+      if (d.type === 'card') {
+        if (d.id) openCard(String(d.id));
+        return;
+      }
+      if (!GAMES.includes(d.game)) return;
       if (d.type === 'board') { setBoard(d.game as GameKey); setBoardOpen(true); return; }
       if (d.type !== 'score') return;
       const game = d.game as GameKey;
@@ -90,7 +100,7 @@ export function ArcadePage() {
     };
     window.addEventListener('message', onMessage);
     return () => window.removeEventListener('message', onMessage);
-  }, [picked, week]);
+  }, [picked, week, openCard]);
 
   useEffect(() => {
     if (!flash) return;
