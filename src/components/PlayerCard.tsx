@@ -178,11 +178,8 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
               <span>LADDERS</span>
               <span>RUNG {arc.attrs.reduce((s, a) => s + a.tier + 1, 0)} / {arc.attrs.length * TIERS}</span>
             </div>
-            {/* Short card: both charts at once, because picking between two
-                players is a question about shape and direction together. */}
-            <div className={full ? 'lad-wrap' : 'lad-pair'}>
-              <LadderRadar attrs={arc.attrs} compact={!full} />
-              {!full && rises.length > 0 && <ClimbChart rises={rises} week={week} compact />}
+            <div className="lad-wrap">
+              <LadderRadar attrs={arc.attrs} />
             </div>
             <div className="lad-next">
               {arc.attrs.map((a) => (
