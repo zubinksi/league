@@ -98,6 +98,11 @@
        them size to their text rather than squeezing "Edge L" onto two lines. */
     flex: none; white-space: nowrap;
   }
+  /* The key that picks this play. Only drawn where there is a keyboard. */
+  .propt .prkey {
+    font-style: normal; font-size: 8px; letter-spacing: 0.1em;
+    color: #6d6f76; margin-right: 6px;
+  }
   .propt:active { background: rgba(255,255,255,0.12); }
 
 
@@ -275,7 +280,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade47-brief';
+const BUILD = 'arcade48-keys';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -846,9 +851,11 @@ const RUN_GAME = (() => {
     /** Line up a single carry this many yards from the goal line. A drive
      *  hands over the alignment it already showed you; standalone play makes
      *  its own. */
-    startAt(losYards, driveNo, set) {
+    startAt(losYards, driveNo, set, marker) {
       g.los = EZ + Math.round(losYards * YARD);
       g.drive = driveNo || 0;
+      // Handed down rather than worked out here: the drive owns the chains.
+      g.marker = marker || null;
       this.startDown(set);
     },
     outcome() { return { kind: g.how, gain: g.gain }; },
@@ -1214,9 +1221,13 @@ const PASS_GAME = (() => {
     },
     choose2(p) { this.attach2(p); this.setup(); },
     /** Line up a single snap this many yards from the goal line. */
-    startAt(losYards, set) {
+    startAt(losYards, set, marker) {
       g.los = EZ + Math.round(losYards * YARD);
-      g.marker = this.lineToGain(g.los);
+      // The drive's line to gain when there is one. Working it out here meant
+      // drawing it a fixed ten yards out on every snap, so on 2nd and 3 the
+      // stripe sat seven yards past the one you actually had to reach — and
+      // you were awarded the first down without ever crossing what was drawn.
+      g.marker = marker != null ? marker : this.lineToGain(g.los);
       this.setup(set);
     },
     outcome() { return { kind: g.result, gain: g.gain }; },
@@ -1753,6 +1764,15 @@ const DRIVE_GAME = (() => {
                ['Pass', 'tap to throw'],
                ['4th down', 'take the field goal or go for it'],
                ['Points', 'TD is 6, XP is 1, FG is 3']],
+    /** Shown instead when there is a real pointer, which is as close as the
+     *  page gets to knowing there is a keyboard under it. */
+    controlsKeys: [['Pick a play', 'number keys, or click one'],
+                   ['Run cut', '← and →'],
+                   ['Run spin', 'space'],
+                   ['Run truck', '↑'],
+                   ['Pass', 'space to throw'],
+                   ['4th down', 'take the field goal or go for it'],
+                   ['Points', 'TD is 6, XP is 1, FG is 3']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
     roster3: PASS_GAME.roster2,
@@ -1824,8 +1844,11 @@ const DRIVE_GAME = (() => {
       const pass = key.startsWith('p:');
       const inner = key.slice(2);
       cur = pass ? PASS_GAME : RUN_GAME;
-      if (pass) PASS_GAME.startAt(g.losYards, g.set);
-      else RUN_GAME.startAt(g.losYards, g.driveNo, g.set);
+      // Where the chains actually are. Clamped at the goal line, which is its
+      // own marker already, so goal-to-go draws nothing extra.
+      const mark = Math.max(EZ, EZ + (g.losYards - g.toGo) * YARD);
+      if (pass) PASS_GAME.startAt(g.losYards, g.set, mark);
+      else RUN_GAME.startAt(g.losYards, g.driveNo, g.set, mark);
       g.calls[pass ? 'pass' : 'run']++;
       g.play = pass ? 'pass' : 'run';
       g.state = 'play';
@@ -2013,6 +2036,12 @@ function batteryTeam(line) {
 /** Standalone the card cannot be opened, so the control is not offered. */
 const EMBEDDED = (() => { try { return window.parent !== window; } catch (e) { return false; } })();
 
+/** A real pointer means a desktop, which is the closest this page gets to
+ *  knowing a keyboard is available. Only ever used to offer more, never less. */
+const FINE = (() => {
+  try { return window.matchMedia('(pointer: fine)').matches; } catch (e) { return false; }
+})();
+
 /** Ask the host for the full player card. It holds the season, the ladders and
  *  the climb; all the game has is nine numbers and a name. */
 function openCard(p) {
@@ -2132,7 +2161,7 @@ function showBrief() {
        + `<span class="bv">${team} battery · truer ball</span></div>`]
     : [];
   blist.innerHTML = levels.join('')
-    + active.controls
+    + ((FINE && active.controlsKeys) || active.controls)
       .map(([k, v]) => `<div class="brow"><span class="bk">${k}</span><span class="bv">${v}</span></div>`)
       .join('');
   briefing = true;
@@ -2210,6 +2239,8 @@ function paintUI() {
       if (!rows.has(n)) rows.set(n, []);
       rows.get(n).push(o);
     }
+    // The key that picks each play, in the order the menu is built.
+    const keyOf = new Map(pr.options.map((o, i) => [o.key, i + 1]));
     for (const [n, opts] of rows) {
       const wrap = document.createElement('div');
       wrap.className = 'prow';
@@ -2222,7 +2253,8 @@ function paintUI() {
       for (const o of opts) {
         const b = document.createElement('div');
         b.className = 'propt';
-        b.textContent = o.label;
+        if (FINE) b.innerHTML = `<i class="prkey">${keyOf.get(o.key)}</i>`;
+        b.appendChild(document.createTextNode(o.label));
         b.setAttribute('role', 'button');
         b.onclick = () => { g.pickOption(o.key); paintUI(); };
         wrap.appendChild(b);
@@ -2275,16 +2307,41 @@ canvas.addEventListener('pointerup', (e) => {
   paintUI();
 });
 window.addEventListener('keydown', (e) => {
-  if (briefing) { briefing = false; paintUI(); return; }
+  const tap = e.code === 'Space' || e.key === 'Enter';
+  if (briefing) { if (tap || e.key === 'Escape') { e.preventDefault(); briefing = false; paintUI(); } return; }
+
   if (active.state === 'select') {
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= active.roster.length) { pick = active.roster[n - 1]; active.choose(pick); paintUI(); }
+    if (e.key === 'Escape' && swapAt !== null) { swapAt = null; buildPicker(); }
+    else if (tap && swapAt === null) { e.preventDefault(); startRun(); }
     return;
   }
-  if (e.key === 'ArrowLeft') { active.onUp({ x: 0, y: 0 }, -40, 0); paintUI(); }
-  else if (e.key === 'ArrowRight') { active.onUp({ x: 0, y: 0 }, 40, 0); paintUI(); }
-  else if (e.key === 'ArrowUp') { e.preventDefault(); active.onUp({ x: 0, y: 0 }, 0, -40); paintUI(); }
-  else if (e.code === 'Space' || e.key === 'Enter') { e.preventDefault(); active.onUp({ x: VW / 2, y: 0 }, 0, 0); paintUI(); }
+
+  // Calling a play: number the menu and let a key take one straight off it.
+  const pr = active.prompt ? active.prompt() : null;
+  if (pr) {
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= pr.options.length) {
+      e.preventDefault();
+      active.pickOption(pr.options[n - 1].key);
+      paintUI();
+    }
+    return;
+  }
+
+  // Arrows steer the runner and nothing else. They used to fall through to the
+  // same onUp that advances a screen, so holding one as you crossed the goal
+  // line took the extra point for you before you had seen the touchdown.
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+    if (active.state !== 'play') return;
+    e.preventDefault();
+    const dx = e.key === 'ArrowLeft' ? -40 : e.key === 'ArrowRight' ? 40 : 0;
+    active.onUp({ x: 0, y: 0 }, dx, e.key === 'ArrowUp' ? -40 : 0);
+    paintUI();
+    return;
+  }
+  // A tap is one press. Auto-repeat would run the touchdown, the extra point
+  // and the next call together on a held key.
+  if (tap && !e.repeat) { e.preventDefault(); active.onUp({ x: VW / 2, y: 0 }, 0, 0); paintUI(); }
 });
 
 /** Terminal states differ per game: the kick run ends on the first miss. */
