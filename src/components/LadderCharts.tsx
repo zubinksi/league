@@ -68,7 +68,7 @@ export function LadderRadar({ attrs }: { attrs: AttrDetail[] }) {
         return (
           <text
             key={a.label}
-            className={`lad-axis${a.levelled ? ' fresh' : ''}`}
+            className={`lad-axis${a.levelled ? ' fresh' : a.dropped ? ' fell' : ''}`}
             x={x}
             y={y}
             textAnchor={i === 0 ? 'middle' : i === 1 ? 'start' : 'end'}

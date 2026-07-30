@@ -1198,6 +1198,9 @@
   color: var(--accent-live);
 }
 
+/* Form falls now, so the log has two kinds of week to mark. */
+.log-rung .down { color: #b0555f; }
+
 /* ---- game log grid ---- */
 
 .log-grid {
@@ -2003,6 +2006,7 @@
    exception is the end-of-line label, which IS the legend. */
 .lad-axis { fill: var(--text-muted); }
 .lad-axis.fresh { fill: var(--accent-live); }
+.lad-axis.fell { fill: #b0555f; }
 .lad-tick { fill: var(--text-dot); font-size: 7.5px; }
 
 .lad-line {

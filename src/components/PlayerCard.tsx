@@ -75,10 +75,13 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
    *  moved and the rung it reached — which is the useful half of what the tier
    *  names used to say, without a vocabulary to learn. */
   const crossings = useMemo(() => {
-    const m = new Map<number, string[]>();
+    const m = new Map<number, { text: string; dir: number }[]>();
     for (const r of rises)
       for (const s of r.steps)
-        m.set(s.week, [...(m.get(s.week) ?? []), `${r.label} ${s.tier + 1}`]);
+        m.set(s.week, [
+          ...(m.get(s.week) ?? []),
+          { text: `${r.label} ${s.tier + 1}`, dir: s.dir },
+        ]);
     return m;
   }, [rises]);
 
@@ -163,15 +166,10 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             <div className="lad-next">
               {arc.attrs.map((a) => (
                 <span key={a.label}>
-                  {a.toNext === null ? (
-                    <>
-                      <b>MAXED</b> {a.label}
-                    </>
-                  ) : (
-                    <>
-                      <b>{a.toNext.toLocaleString()}</b> {a.unit} to {a.label} {a.tier + 2}
-                    </>
-                  )}
+                  <b>{a.stat.toLocaleString()}</b> {a.unit} pace ·{' '}
+                  {a.nextAt === null
+                    ? `${a.label} maxed`
+                    : `${a.label} ${a.tier + 2} at ${a.nextAt.toLocaleString()}`}
                 </span>
               ))}
             </div>
@@ -304,7 +302,9 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
                   {gained && (
                     <div className="log-rung">
                       {gained.map((g) => (
-                        <span key={g}>▲ {g}</span>
+                        <span key={g.text} className={g.dir < 0 ? 'down' : ''}>
+                          {g.dir < 0 ? '▼' : '▲'} {g.text}
+                        </span>
                       ))}
                     </div>
                   )}
