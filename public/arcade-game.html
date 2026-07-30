@@ -220,7 +220,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade42-avail';
+const BUILD = 'arcade43-ramp';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -640,8 +640,26 @@ function yardLines(camY, worldH, yards, yard) {
 const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
   ? { label: 'Stacked front', spread: 0.64 } : { label: 'Spread front', spread: 1.32 };
 
+/**
+ * The defense speeds up with every score, and stops.
+ *
+ * The ceiling is not a taste call. A box defender's base pursuit is 0.58–0.86
+ * and a good back's straight-line speed is 0.82 + 0.24 * SPEED, so about 1.04.
+ * At 1.25 the quickest defender on the field just about matches your best back
+ * and the average one still cannot — hard, and still beatable. Measured, the
+ * cliff sits a little past that: at 1.36 nothing breaks free at all, longest
+ * run of the sample falls from twenty-one yards to six.
+ *
+ * Five scores to reach it, which is enough for the curve to be felt three or
+ * four times. What the ramp deliberately no longer does is end the run: it used
+ * to climb forever, so every game finished because the numbers ran out rather
+ * than because of anything you did.
+ */
+const RAMP_STEP = 0.05, RAMP_CAP = 5;
+const rampAt = (drive) => 1 + Math.min(drive, RAMP_CAP) * RAMP_STEP;
+
 function defenders(rnd, drive, los) {
-  const ramp = 1 + drive * 0.07, out = [];
+  const ramp = rampAt(drive), out = [];
   // The front used to be spaced purely off the line of scrimmage, which only
   // works with a whole field behind it: inside about five yards every
   // defender spawned past the end line and short yardage was an untouched
@@ -649,12 +667,19 @@ function defenders(rnd, drive, los) {
   // help thins out, because getting to the stripe already beat it.
   const room = Math.max(26, los - EZ + 4);
   const standoff = Math.max(26, Math.min(74, room * 0.45));
-  // Four deep. Thinning it out sounds like it should open the lanes and does
-  // the opposite: lane spacing is VW / (n + 0.6), so fewer men stand wider
-  // and cover the gaps more evenly. Measured, the interior went from 18% to
-  // 32% stuffed when the deepest man was removed.
-  const n = Math.max(1, Math.min(drive >= 2 ? 4 : 3,
-    1 + Math.floor((room - standoff) / 44)));
+  // Three deep, always. A fourth used to arrive on the third scoring drive and
+  // it was not difficulty, it was a lid: the longest run in a sample fell from
+  // twenty-one yards to six the moment he showed up, explosive runs went from
+  // eight per cent to zero, and neither ever came back. Twenty-one yards of
+  // field cannot hold four layers — that is a man every five yards, so there is
+  // no room left for a breakaway by construction. Delaying him to the fifth
+  // score just moves the same cliff. The speed ramp carries the difficulty
+  // instead, which shades the odds rather than removing a whole play type.
+  //
+  // (Thinning below three does the opposite of what it sounds like: lane
+  // spacing is VW / (n + 0.6), so fewer men stand wider and cover the gaps more
+  // evenly — the interior went from 18% to 32% stuffed at two.)
+  const n = Math.max(1, Math.min(3, 1 + Math.floor((room - standoff) / 44)));
   const gap = n > 1 ? Math.min(58, (room - standoff) / (n - 1)) : 0;
   // As the layers tighten the front also flattens across the width, so a
   // goal-line stand is a gap to find rather than a wall or a walk-in.
@@ -679,7 +704,7 @@ function defenders(rnd, drive, los) {
 
 /** The whole picture: box, corner over the receiver, safety over the top. */
 function alignDefense(rnd, drive, los, wrX) {
-  const ramp = 1 + drive * 0.07;
+  const ramp = rampAt(drive);
   return {
     front: defenders(rnd, drive, los),
     cb: { x: wrX + (rnd() * 6 - 3), y: los - 15 - rnd() * 5, frame: rnd() * 3, contain: true,
