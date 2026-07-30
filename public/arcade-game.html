@@ -161,6 +161,30 @@
     margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
     color: var(--gold);
   }
+  /* The lineup row: slot on the left, so four positions read as a list of
+     spots rather than four unrelated cards. */
+  .pick.lineup { display: grid; grid-template-columns: 50px minmax(0,1fr) auto; }
+  .pick .pslot {
+    font-size: 7.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #55575d;
+  }
+  .pchemline {
+    min-height: 11px; font-size: 8px; letter-spacing: 0.2em;
+    text-transform: uppercase; color: var(--gold);
+  }
+  .pstart {
+    margin-top: 3px; padding: 9px 32px; border: 1px solid rgba(255,255,255,0.32);
+    border-radius: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.24em;
+    text-transform: uppercase; color: #ececed; cursor: pointer; touch-action: manipulation;
+  }
+  .pstart:hover, .pstart:active { border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); }
+  .phow, .pback {
+    margin-top: 9px; font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: #4a4c52; cursor: pointer; touch-action: manipulation;
+  }
+  .pback { color: #6d6f76; }
+  /* Swapping one spot: the lineup chrome steps aside for the position's list. */
+  #picker.swapping .pchemline, #picker.swapping .pstart, #picker.swapping .phow { display: none; }
+  #picker:not(.swapping) .pback { display: none; }
   .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
   .pick .pbar { display: flex; gap: 1px; }
   .pick .pseg { width: 5px; height: 4px; background: rgba(255,255,255,0.10); }
@@ -196,6 +220,10 @@
       <div class="ptitle" id="ptitle"></div>
       <div class="pfront" id="pfront"></div>
       <div id="plist"></div>
+      <div class="pchemline" id="pchem"></div>
+      <div class="pstart" id="pstart" role="button">Start</div>
+      <div class="phow" id="phow" role="button">how to play</div>
+      <div class="pback" id="pback" role="button">← lineup</div>
     </div>
     <div id="brief">
       <div class="ptitle" id="btitle"></div>
@@ -220,7 +248,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade43-ramp';
+const BUILD = 'arcade44-lineup';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1884,7 +1912,8 @@ let pick = null;
 const el = (id) => document.getElementById(id);
 const picker = el('picker'), plist = el('plist');
 const promptEl = el('prompt'), propts = el('propts');
-let pick2 = null, pickStage = 0, picks = [];
+// The lineup being built, and which spot is open for a swap (null = none).
+let pick2 = null, picks = [], lineup = [], swapAt = null;
 // Set once a lineup is complete and the run has begun. The game drops itself
 // back to 'select' when it ends, and this is what tells the picker that what
 // it is looking at is last game's lineup rather than one being built.
@@ -1931,63 +1960,138 @@ function stagesOf(gm) {
     out.push({ title: gm.pickTitle4, list: gm.roster4, choose: gm.choose4 });
   return out;
 }
+/** "Choose your target" → "target". The stage titles are the only place the
+ *  slot is named, so the short label comes off them rather than a second list
+ *  to keep in step. */
+const slotOf = (title) => title.replace(/^choose your\s+/i, '');
+
+/** Lists arrive sorted available-first then strongest, so the head of each is
+ *  the pick you would almost always make. */
+const bestOf = (list) => list.find((p) => !SIDELINED.includes(p.status)) || list[0];
+
+const BRIEF_KEY = 'arcade:brief';
+const briefSeen = () => { try { return localStorage.getItem(BRIEF_KEY) === '1'; } catch (e) { return true; } };
+const markBrief = () => { try { localStorage.setItem(BRIEF_KEY, '1'); } catch (e) { /* private mode */ } };
+
+/** The club a battery shares, or null. */
+function batteryTeam(line) {
+  const pair = active.chemPair;
+  if (!pair) return null;
+  const a = line[pair[0]], b = line[pair[1]];
+  return a && b && a.team && a.team === b.team ? a.team : null;
+}
+
+function card(p, { chem = false, slot = '' } = {}) {
+  const out = SIDELINED.includes(p.status);
+  const kit = jerseyOf(p.team);
+  return (slot ? `<span class="pslot">${slot}</span>` : '')
+    + `<span><span class="pn">${p.name}</span><span class="pt">`
+    + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
+    + `${p.team}`
+    + (out ? `<b class="pout">${p.status}</b>`
+           : p.status ? `<b class="prisk">${p.status}</b>` : '')
+    + (chem && !out ? `<b class="pchem">chemistry</b>` : '')
+    + (p.trend && !out ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
+    + `</span></span>`
+    + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
+    + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
+    + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
+}
+
+/**
+ * One screen, pre-filled with the best available at each spot.
+ *
+ * It used to be four screens in sequence and two of them routinely held a
+ * single card — most rosters carry one kicker and one or two passers, so
+ * "choose" was a tap with nothing to choose between. Six taps stood between
+ * loading the page and the first snap; this is two, and the ones it kept are
+ * the ones that are actually decisions.
+ *
+ * Seeing all four at once is the other half of it: you can compare the ladders,
+ * and chemistry lights on the lineup as you swap rather than being a one-shot
+ * hint on a screen you have already left.
+ */
 function buildPicker() {
   const stages = stagesOf(active);
-  const st = stages[pickStage] || stages[0];
-  // The stage that pairs with an earlier pick, and who that pick was.
+  if (lineup.length !== stages.length) lineup = stages.map((s) => bestOf(s.list));
+  picker.classList.toggle('swapping', swapAt !== null);
+  if (swapAt !== null) return buildSwap(stages);
+
   const pair = active.chemPair;
-  const mate = pair && pickStage === pair[1] ? picks[pair[0]] : null;
+  const team = batteryTeam(lineup);
+  el('ptitle').textContent = 'Your lineup';
+  el('pfront').textContent = `${active.shell} this week`;
+  plist.innerHTML = '';
+  stages.forEach((st, i) => {
+    const p = lineup[i];
+    if (!p) return;
+    const lit = !!(team && pair && (i === pair[0] || i === pair[1]));
+    const d = document.createElement('div');
+    d.className = `pick lineup${lit ? ' chem' : ''}`;
+    d.innerHTML = card(p, { slot: slotOf(st.title) });
+    d.onclick = () => { swapAt = i; buildPicker(); };
+    plist.appendChild(d);
+  });
+  el('pchem').textContent = team ? `${team} battery · truer ball` : '';
+}
+
+/** One position's list, opened from the lineup. */
+function buildSwap(stages) {
+  const st = stages[swapAt];
+  const pair = active.chemPair;
+  // The other half of the battery, so a target that would light it is marked.
+  const mate = pair && swapAt === pair[1] ? lineup[pair[0]]
+             : pair && swapAt === pair[0] ? lineup[pair[1]] : null;
   el('ptitle').textContent = st.title;
-  el('pfront').textContent = mate
-    ? `${mate.name} throwing · ${mate.team} target = chemistry`
+  el('pfront').textContent = mate && mate.team
+    ? `${mate.name} · ${mate.team} = chemistry`
     : `${active.shell} this week`;
+  el('pchem').textContent = '';
   plist.innerHTML = '';
   st.list.forEach((p) => {
-    const d = document.createElement('div');
-    // A target who shares a club with the passer already picked.
-    const chem = !!(mate && p.team && p.team === mate.team);
     const out = SIDELINED.includes(p.status);
+    const chem = !!(mate && p.team && p.team === mate.team);
+    const d = document.createElement('div');
     d.className = `pick${chem && !out ? ' chem' : ''}${out ? ' off' : ''}`;
-    const kit = jerseyOf(p.team);
-    d.innerHTML = `<span><span class="pn">${p.name}</span><span class="pt">`
-      + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
-      + `${p.team}`
-      + (out ? `<b class="pout">${p.status}</b>`
-             : p.status ? `<b class="prisk">${p.status}</b>` : '')
-      + (chem && !out ? `<b class="pchem">chemistry</b>` : '')
-      + (p.trend && !out ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
-      + `</span></span>`
-      + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
-      + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
-      + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
-    if (out) { plist.appendChild(d); return; }        // on the sideline this week
-    d.onclick = () => {
-      picks[pickStage] = p;
-      pick = picks[0]; pick2 = picks[1];
-      if (pickStage === 0) setJersey(p.team);
-      st.choose.call(active, p);
-      // More players to field before the first snap.
-      if (pickStage < stages.length - 1) {
-        pickStage++; buildPicker(); paintUI(); return;
-      }
-      briefing = true;                        // show how-to-play before the first snap
-      ran = true;                             // the lineup is set; the run is this one's
-      el('btitle').textContent = `${active.label} — how to play`;
-      const levels = [];
-      const a = pair && picks[pair[0]], b = pair && picks[pair[1]];
-      if (a && b && a.team && a.team === b.team) {
-        levels.push(`<div class="brow blv"><span class="bk">Chemistry</span>`
-          + `<span class="bv">${a.team} battery · truer ball</span></div>`);
-      }
-      blist.innerHTML = levels.join('')
-        + active.controls
-          .map(([k, v]) => `<div class="brow"><span class="bk">${k}</span><span class="bv">${v}</span></div>`)
-          .join('');
-      paintUI();
-    };
+    d.innerHTML = card(p, { chem });
+    if (!out) d.onclick = () => { lineup[swapAt] = p; swapAt = null; buildPicker(); };
     plist.appendChild(d);
   });
 }
+
+/** Fill the how-to-play panel and show it. */
+function showBrief() {
+  el('btitle').textContent = `${active.label} — how to play`;
+  const team = batteryTeam(lineup);
+  const levels = team
+    ? [`<div class="brow blv"><span class="bk">Chemistry</span>`
+       + `<span class="bv">${team} battery · truer ball</span></div>`]
+    : [];
+  blist.innerHTML = levels.join('')
+    + active.controls
+      .map(([k, v]) => `<div class="brow"><span class="bk">${k}</span><span class="bv">${v}</span></div>`)
+      .join('');
+  briefing = true;
+  markBrief();
+  paintUI();
+}
+
+/** Attach the whole lineup and snap. The last stage's choose() calls the first
+ *  play, so every other man has to be attached before it fires. */
+function startRun() {
+  const stages = stagesOf(active);
+  picks = lineup.slice();
+  pick = picks[0]; pick2 = picks[1];
+  setJersey(picks[0] && picks[0].team);
+  stages.forEach((st, i) => { if (lineup[i]) st.choose.call(active, lineup[i]); });
+  ran = true;                               // the lineup is set; the run is this one's
+  if (briefSeen()) { briefing = false; paintUI(); return; }
+  showBrief();                              // first time only, from here on
+}
+
+el('pstart').addEventListener('pointerup', (e) => { e.stopPropagation(); startRun(); });
+el('phow').addEventListener('pointerup', (e) => { e.stopPropagation(); showBrief(); });
+el('pback').addEventListener('pointerup', (e) => { e.stopPropagation(); swapAt = null; buildPicker(); });
 /** Walk the picker back to its first stage. The lineup lives out here, not in
  *  the game, so a game that resets itself leaves all of this behind. */
 function restartPicks() {
@@ -1995,7 +2099,11 @@ function restartPicks() {
   picks = [];
   pick = null;
   pick2 = null;
-  pickStage = 0;
+  // The lineup survives a replay on purpose: if you went out of your way to
+  // swap someone in, having to do it again every run is a tax on the thing the
+  // screen exists for. It only rebuilds when the roster itself changes, which
+  // is a page load.
+  swapAt = null;
   setJersey(null);
   briefing = false;
   buildPicker();
@@ -2018,11 +2126,13 @@ function paintUI() {
   // blank white. Note the state is 'select' the whole time you are picking
   // too, so a run having started is the only safe signal here.
   if (inSelect && ran) { ran = false; restartPicks(); return paintUI(); }
-  picker.classList.toggle('show', inSelect);
-  brief.classList.toggle('show', briefing && !inSelect);
-  if (briefing && !inSelect) {
+  // The brief can be opened from the lineup now, not just on the way out of it,
+  // so it takes precedence over the picker rather than sitting behind it.
+  picker.classList.toggle('show', inSelect && !briefing);
+  brief.classList.toggle('show', briefing);
+  if (briefing) {
     overlay.classList.remove('show'); attrs.classList.remove('show');
-    el('status').innerHTML = g.status();
+    el('status').innerHTML = inSelect ? '' : g.status();
     return;
   }
   const pr = !inSelect && !briefing && g.prompt ? g.prompt() : null;
