@@ -917,17 +917,16 @@
   text-transform: uppercase;
 }
 
-.sheet-sub .sheet-owner { color: var(--text-mid); }
-
-.sheet-rank {
-  margin-top: 8px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  color: var(--accent-live);
-  font-variant-numeric: tabular-nums;
+/* The player, in his kit, at the top of his own card. */
+.sheet-id {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
 }
+
+.sheet-id .rp-sprite { flex: none; }
+.sheet-id .sheet-sub { margin-top: 5px; }
 
 .sheet-section {
   display: flex;
@@ -1157,22 +1156,23 @@
   letter-spacing: 0.13em;
 }
 
-/* ---- player card metrics ---- */
-
-.sw-matchup {
-  margin-top: 10px;
+/* What Sunday put on the counters — the line between a real game and the
+   character, which the card never used to draw. */
+.sw-added {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 11px;
   font-family: var(--font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.08em;
-  color: var(--text-dim);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-faint);
 }
 
-.metrics-wrap {
-  padding: 14px 20px 0;
-}
-
-.metrics-wrap .stat-tiles {
-  margin-top: 0;
+.sw-added b {
+  font-weight: 600;
+  color: var(--accent-live);
 }
 
 .log-right {
@@ -1184,14 +1184,18 @@
   display: block;
 }
 
-.log-rank {
-  display: block;
-  margin-top: 3px;
+/* The week a rung was crossed, under the week that did it. The log is the
+   character's changelog, so this is the only thing in it worth colouring. */
+.log-rung {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 12px;
+  padding: 0 20px 8px 62px;
   font-family: var(--font-mono);
   font-size: 8.5px;
-  letter-spacing: 0.08em;
-  color: var(--text-faint);
-  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--accent-live);
 }
 
 /* ---- game log grid ---- */
@@ -2019,6 +2023,41 @@
   text-transform: uppercase;
   color: #55575d;
 }
+
+/* The climb: one lane per ladder, a mark where each rung was crossed, placed
+   by the week it happened. The ladders say where a player stands; this says
+   how the season went — a fast start and a stall look different here. */
+.sa-row.climb { grid-template-columns: 58px minmax(0, 1fr); }
+
+.climb-track {
+  position: relative;
+  height: 5px;
+  margin: 4px 0 1px;
+}
+
+.climb-track::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.climb-track i {
+  position: absolute;
+  bottom: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent-live);
+}
+
+/* The dots carry position only; the line beneath names them with their weeks.
+   Labelling the track too put a legend half off the right edge whenever a rung
+   was crossed in the current week, which is exactly when it matters most. */
+.sa-row.climb .sa-next { color: var(--text-dim); }
 
 /* Sidelined this week — still listed, because seeing who you have not got is
    the point of the mechanic. */

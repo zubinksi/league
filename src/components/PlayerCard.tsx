@@ -3,19 +3,16 @@ import {
   useLeague,
   useNflState,
   usePlayers,
-  useRosters,
-  useSeasonTotals,
-  useUsers,
+  usePriorSeasonTotals,
   useWeekData,
   defaultWeek,
 } from '../hooks/useLeagueData';
 import { useSeasonLog } from '../hooks/useSeasonLog';
 import { playerFullName } from '../api/players';
-import { teamLabel } from '../api/sleeper';
 import { gameLogColumns, projectedPoints, statPairs } from '../api/stats';
-import { computeMetrics, computePointsAllowed, ordinal, type PlayerMetrics } from '../lib/metrics';
+import { Sprite } from './Sprite';
+import { arcadePlayer, climb, sidelined, type Rise } from '../lib/arcadeRoster';
 import type { StarterView } from '../lib/matchup';
-import type { AttrDetail } from '../lib/arcadeRoster';
 
 /** Optional context a card is opened from (a roster row) — carries the
  *  league-exact points and game string for the THIS WEEK section. */
@@ -24,59 +21,62 @@ export type CardSeed = Pick<StarterView, 'points' | 'projected' | 'gameText' | '
 interface CardState {
   playerId: string;
   seed?: CardSeed;
-  /** Arcade ladders, when the card was opened from the roster page. The card
-   *  face there is deliberately bare, so the tier names live in here. */
-  arcade?: AttrDetail[];
 }
 
-const PlayerCardContext = createContext<
-  (playerId: string, seed?: CardSeed, arcade?: AttrDetail[]) => void
->(() => {});
+const PlayerCardContext = createContext<(playerId: string, seed?: CardSeed) => void>(() => {});
 
 export const usePlayerCard = () => useContext(PlayerCardContext);
 
 const fmtPts = (n: number) => n.toFixed(1);
+const TIERS = 5;
 
+/**
+ * Everything here is one question: how did this arcade character get made.
+ *
+ * The card used to carry start/sit tooling — boom and bust rates, tier weeks,
+ * target share, a projection, what the opponent allows. All of it answered
+ * "should I start him", and there is no lineup to set any more. What is left is
+ * the ladders, the weeks they were climbed, and the real production underneath
+ * them, which were always the same numbers wearing two different hats.
+ */
 function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const league = useLeague();
   const players = usePlayers();
-  const rosters = useRosters();
-  const users = useUsers();
   const state = useNflState();
 
   const week = defaultWeek(league.data, state.data);
   const season = league.data?.season;
   const recValue = league.data?.scoring_settings?.rec ?? 0;
-  const { stats, scoreboard, projections } = useWeekData(season, week);
+  const { stats, scoreboard } = useWeekData(season, week);
+  const prior = usePriorSeasonTotals(season);
 
   const meta = players.data?.[card.playerId];
-  const seasonTotals = useSeasonTotals(season);
   const log = useSeasonLog(meta, players.data, season, week, recValue);
 
-  const metrics = useMemo(() => {
-    if (!meta || !players.data) return null;
-    const weeks = log.entries
-      .filter((e) => e.points !== undefined)
-      .map((e) => ({
-        points: e.points!,
-        posRank: e.posRank,
-        all: log.weeklyStats[e.week - 1] ?? {},
-      }));
-    return computeMetrics({
-      meta,
-      players: players.data,
-      recValue,
-      weeks,
-      seasonTotals: seasonTotals.data,
-    });
+  // Built here rather than handed in, so a card opened from anywhere in the app
+  // is the same card.
+  const arc = useMemo(
+    () =>
+      players.data
+        ? arcadePlayer(card.playerId, players.data, log.weeklyStats, prior.data, scoreboard.data)
+        : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meta, players.data, recValue, log.playedWeeks, log.loading, seasonTotals.data]);
+    [players.data, card.playerId, log.playedWeeks, log.loading, prior.data, scoreboard.data],
+  );
 
-  const pointsAllowed = useMemo(() => {
-    if (!players.data) return null;
-    return computePointsAllowed(log.weeklyStats, log.weeklyScoreboards, players.data, recValue);
+  const rises: Rise[] = useMemo(
+    () => (meta?.position ? climb(meta.position, card.playerId, log.weeklyStats, prior.data) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [players.data, recValue, log.playedWeeks, log.loading]);
+    [meta?.position, card.playerId, log.playedWeeks, log.loading, prior.data],
+  );
+
+  /** Rungs crossed, by the week they were crossed in. */
+  const crossings = useMemo(() => {
+    const m = new Map<number, string[]>();
+    for (const r of rises)
+      for (const s of r.steps) m.set(s.week, [...(m.get(s.week) ?? []), s.name]);
+    return m;
+  }, [rises]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -88,15 +88,6 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
     };
   }, [onClose]);
 
-  const ownedBy = useMemo(() => {
-    const roster = rosters.data?.find((r) => r.players?.includes(card.playerId));
-    if (!roster) return 'FREE AGENT';
-    const user = users.data?.find((u) => u.user_id === roster.owner_id);
-    return teamLabel(user, roster.roster_id);
-  }, [rosters.data, users.data, card.playerId]);
-
-  // THIS WEEK — prefer the roster-row seed (league-exact points); otherwise
-  // derive from the week's stats + scoreboard.
   const weekStats = stats.data?.[card.playerId];
   const game = meta?.team ? scoreboard.data?.[meta.team] : undefined;
   const seed = card.seed;
@@ -107,7 +98,6 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
       : gameState !== 'pre'
         ? projectedPoints(weekStats, recValue) ?? 0
         : null;
-  const projected = seed?.projected ?? projectedPoints(projections.data?.[card.playerId], recValue);
   const gameText =
     seed?.gameText ??
     (game
@@ -119,55 +109,20 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
         : '');
 
   const pairs = statPairs(meta?.position ?? null, weekStats);
-
   const logCols = gameLogColumns(meta?.position ?? null);
   const logGridStyle = {
     gridTemplateColumns:
-      logCols.length > 0 ? `30px 52px repeat(${logCols.length}, 1fr) 52px` : '30px 1fr 52px',
+      logCols.length > 0 ? `30px 52px repeat(${logCols.length}, 1fr) 46px` : '30px 1fr 46px',
   };
 
-  const matchupNote =
-    pointsAllowed && game && meta?.position
-      ? (() => {
-          const r = pointsAllowed.rank(game.opponent, meta.position!);
-          // Only rank against a reasonably full slate of defenses.
-          if (!r || r.teams < 8) return null;
-          return `${game.opponent} ALLOWS ${ordinal(r.rank)}-MOST TO ${meta.position}`;
-        })()
-      : null;
-
-  const pct = (v: number) => `${Math.round(v * 100)}%`;
-  const metricTiles = (m: PlayerMetrics): { label: string; value: string }[] => {
-    const pos = meta?.position ?? '';
-    const t: { label: string; value: string }[] = [
-      { label: 'BOOM', value: pct(m.boomRate) },
-      { label: 'BUST', value: pct(m.bustRate) },
-    ];
-    if (m.l4Avg !== undefined) t.push({ label: 'L4 AVG', value: m.l4Avg.toFixed(1) });
-    if (m.tier1Weeks || m.tier2Weeks) {
-      t.push({ label: `${pos}1 WKS`, value: `${m.tier1Weeks}/${m.gamesPlayed}` });
-      if (pos === 'RB' || pos === 'WR')
-        t.push({ label: `${pos}2 WKS`, value: `${m.tier2Weeks}/${m.gamesPlayed}` });
-    }
-    if (m.targetShare !== undefined && pos !== 'RB')
-      t.push({ label: 'TGT SHARE', value: pct(m.targetShare) });
-    if (m.carryShare !== undefined && pos === 'RB')
-      t.push({ label: 'CARRY SH', value: pct(m.carryShare) });
-    if (m.catchRate !== undefined) t.push({ label: 'CATCH', value: pct(m.catchRate) });
-    if (m.snapShare !== undefined && pos !== 'QB') t.push({ label: 'SNAP', value: pct(m.snapShare) });
-    return t;
-  };
-
-  const rankParts = [
-    metrics?.seasonPosRank !== undefined && meta?.position
-      ? `${meta.position}${metrics.seasonPosRank}`
-      : null,
-    metrics?.seasonOverallRank !== undefined ? `#${metrics.seasonOverallRank} OVERALL` : null,
-  ].filter(Boolean);
+  // What this week put on the counters — the line between a real Sunday and the
+  // character, which the card never used to draw.
+  const added = rises.filter((r) => r.added > 0);
 
   const barMax = Math.max(10, ...log.entries.map((e) => e.points ?? 0));
   const n = Math.max(1, log.entries.length);
   const slot = 340 / n;
+  const spanW = Math.max(1, week - 1);
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
@@ -175,15 +130,90 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
         <div className="sheet-grabber" />
 
         <div className="sheet-header">
-          <div className="sheet-name">{playerFullName(meta, card.playerId)}</div>
-          <div className="sheet-sub">
-            {meta?.position ?? '—'} · {meta?.team ?? 'FA'}
-            {meta?.number ? ` · #${meta.number}` : ''}
-            {meta?.injury_status ? ` · ${meta.injury_status.toUpperCase()}` : ''}
-            <span className="sheet-owner"> · {ownedBy}</span>
+          <div className="sheet-id">
+            {meta?.position && <Sprite position={meta.position} team={meta.team ?? ''} size={40} />}
+            <div>
+              <div className="sheet-name">{playerFullName(meta, card.playerId)}</div>
+              <div className="sheet-sub">
+                {meta?.position ?? '—'} · {meta?.team ?? 'FA'}
+                {meta?.number ? ` · #${meta.number}` : ''}
+                {arc?.status && (
+                  <i className={`rp-status ${sidelined(arc.status) ? 'out' : 'risk'}`}>
+                    {' '}
+                    {arc.status}
+                  </i>
+                )}
+              </div>
+            </div>
           </div>
-          {rankParts.length > 0 && <div className="sheet-rank">{rankParts.join(' · ')}</div>}
         </div>
+
+        {arc && arc.attrs.length > 0 && (
+          <>
+            <div className="sheet-section">
+              <span>LADDERS</span>
+              <span />
+            </div>
+            <div className="sheet-arcade">
+              {arc.attrs.map((a) => (
+                <div className="sa-row" key={a.label}>
+                  <span className="sa-label">{a.label}</span>
+                  <span className="sa-rungs">
+                    {Array.from({ length: TIERS }, (_, i) => (
+                      <i key={i}>
+                        <b
+                          style={{
+                            width: `${Math.max(0, Math.min(1, a.value * TIERS - i)) * 100}%`,
+                          }}
+                        />
+                      </i>
+                    ))}
+                  </span>
+                  <span className="sa-tier">{a.name}</span>
+                  <span className="sa-next">
+                    {a.toNext === null
+                      ? `MAXED · ${a.stat} ${a.unit}`
+                      : `${a.stat} ${a.unit} · ${a.toNext} MORE → ${a.nextName}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {rises.length > 0 && (
+          <>
+            <div className="sheet-section">
+              <span>THE CLIMB</span>
+              <span>WEEKS 1–{week}</span>
+            </div>
+            <div className="sheet-arcade">
+              {rises.map((r) => (
+                <div className="sa-row climb" key={r.label}>
+                  <span className="sa-label">{r.label}</span>
+                  <span className="climb-track">
+                    {r.steps.map((s) => {
+                      // Shifting by its own share of its width keeps the first
+                      // and last dot inside the lane instead of half off it.
+                      const pct = ((s.week - 1) / spanW) * 100;
+                      return (
+                        <i
+                          key={s.week}
+                          style={{ left: `${pct}%`, transform: `translateX(-${pct}%)` }}
+                        />
+                      );
+                    })}
+                  </span>
+                  <span className="sa-next">
+                    {r.steps.length
+                      ? r.steps.map((s) => `W${s.week} ${s.name}`).join('  ·  ')
+                      : 'No rungs gained yet'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
 
         <div className="sheet-section">
           <span>THIS WEEK</span>
@@ -197,12 +227,17 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             <span className="swmeta">
               {gameState === 'live' && <span className="live-dot" />}
               <span className={gameState === 'live' ? 'swgame live' : 'swgame'}>{gameText}</span>
-              {gameState !== 'final' && projected !== undefined && (
-                <span className="swproj">PROJ {fmtPts(projected)}</span>
-              )}
             </span>
           </div>
-          {matchupNote && <div className="sw-matchup">{matchupNote}</div>}
+          {added.length > 0 && (
+            <div className="sw-added">
+              {added.map((r) => (
+                <span key={r.label}>
+                  <b>+{Math.round(r.added)}</b> {r.label}
+                </span>
+              ))}
+            </div>
+          )}
           {pairs.length > 0 && (
             <div className="stat-tiles">
               {pairs.map((p) => (
@@ -214,52 +249,6 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             </div>
           )}
         </div>
-
-        {metrics && (
-          <>
-            <div className="sheet-section">
-              <span>METRICS</span>
-              <span />
-            </div>
-            <div className="metrics-wrap">
-              <div className="stat-tiles">
-                {metricTiles(metrics).map((t) => (
-                  <div className="stat-tile" key={t.label}>
-                    <div className="stat-tile-label">{t.label}</div>
-                    <div className="stat-tile-value">{t.value}</div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-
-        {card.arcade && card.arcade.length > 0 && (
-          <>
-            <div className="sheet-section">
-              <span>ARCADE</span>
-              <span />
-            </div>
-            <div className="sheet-arcade">
-              {card.arcade.map((a) => (
-                <div className="sa-row" key={a.label}>
-                  <span className="sa-label">{a.label}</span>
-                  <span className="sa-rungs">
-                    {Array.from({ length: 5 }, (_, i) => (
-                      <i key={i}>
-                        <b style={{ width: `${Math.max(0, Math.min(1, a.value * 5 - i)) * 100}%` }} />
-                      </i>
-                    ))}
-                  </span>
-                  <span className="sa-tier">{a.name}</span>
-                  <span className="sa-next">
-                    {a.toNext === null ? 'MAXED' : `${a.toNext} ${a.unit} → ${a.nextName}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
 
         <div className="sheet-section">
           <span>SEASON</span>
@@ -317,29 +306,33 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             )}
             {[...log.entries].reverse().map((e) => {
               const weekStatsRow = log.weeklyStats[e.week - 1]?.[card.playerId];
+              const gained = crossings.get(e.week);
               return (
-                <div className="log-grid" style={logGridStyle} key={e.week}>
-                  <span className="log-week">W{e.week}</span>
-                  <span className={`log-opp${e.live ? ' live' : ''}`}>
-                    {e.live && <span className="live-dot" />}
-                    {e.opponent || (e.loaded ? '—' : '')}
-                  </span>
-                  {logCols.map((c) => (
-                    <span key={c.label} className="log-stat">
-                      {e.points !== undefined ? c.value(weekStatsRow) : ''}
+                <div key={e.week}>
+                  <div className="log-grid" style={logGridStyle}>
+                    <span className="log-week">W{e.week}</span>
+                    <span className={`log-opp${e.live ? ' live' : ''}`}>
+                      {e.live && <span className="live-dot" />}
+                      {e.opponent || (e.loaded ? '—' : '')}
                     </span>
-                  ))}
-                  <span className="log-right">
-                    <span className={`log-pts${e.points === undefined ? ' none' : ''}`}>
-                      {e.points !== undefined ? fmtPts(e.points) : '—'}
-                    </span>
-                    {e.posRank !== undefined && meta?.position && (
-                      <span className="log-rank">
-                        {meta.position}
-                        {e.posRank}
+                    {logCols.map((c) => (
+                      <span key={c.label} className="log-stat">
+                        {e.points !== undefined ? c.value(weekStatsRow) : ''}
                       </span>
-                    )}
-                  </span>
+                    ))}
+                    <span className="log-right">
+                      <span className={`log-pts${e.points === undefined ? ' none' : ''}`}>
+                        {e.points !== undefined ? fmtPts(e.points) : '—'}
+                      </span>
+                    </span>
+                  </div>
+                  {gained && (
+                    <div className="log-rung">
+                      {gained.map((g) => (
+                        <span key={g}>▲ {g}</span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -352,10 +345,7 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
 
 export function PlayerCardProvider({ children }: { children: React.ReactNode }) {
   const [card, setCard] = useState<CardState | null>(null);
-  const open = useCallback(
-    (playerId: string, seed?: CardSeed, arcade?: AttrDetail[]) => setCard({ playerId, seed, arcade }),
-    [],
-  );
+  const open = useCallback((playerId: string, seed?: CardSeed) => setCard({ playerId, seed }), []);
   const close = useCallback(() => setCard(null), []);
 
   return (

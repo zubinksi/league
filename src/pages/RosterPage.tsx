@@ -362,7 +362,7 @@ export function RosterPage() {
                 ranks={ranks}
                 idx={at}
                 setIdx={setIdx}
-                onOpen={(p) => open(p.id, undefined, p.attrs)}
+                onOpen={(p) => open(p.id)}
               />
             </div>
           ) : (

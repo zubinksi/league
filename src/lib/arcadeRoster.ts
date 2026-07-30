@@ -293,6 +293,78 @@ export function buildArcadeRosters(
   return { run, pass, recv, kick };
 }
 
+/** One player, for the card that opens on him. */
+export function arcadePlayer(
+  id: string,
+  players: PlayerMap,
+  weekly: (WeekStats | undefined)[],
+  priorSeason?: WeekStats,
+  scoreboard?: Record<string, unknown>,
+): ArcadePlayer | null {
+  const g = buildArcadeRosters([id], players, weekly, priorSeason, scoreboard);
+  return g.pass[0] ?? g.run[0] ?? g.recv[0] ?? g.kick[0] ?? null;
+}
+
+/** A rung gained, and the week it happened. */
+export interface Step {
+  week: number;
+  tier: number;
+  name: string;
+}
+
+export interface Rise {
+  label: string;
+  unit: string;
+  /** Rungs gained this season, oldest first. Empty when he has not moved. */
+  steps: Step[];
+  /** What the most recent week put on this ladder's counter. */
+  added: number;
+}
+
+/**
+ * When each rung was crossed. The ladders only ever say where a player stands;
+ * replaying them a week at a time says how he got there, which is the season
+ * the card is otherwise missing.
+ *
+ * Last season's carry-over sets the opening tier and is deliberately not a
+ * step — it was not climbed this year.
+ */
+export function climb(
+  position: string,
+  id: string,
+  weekly: (WeekStats | undefined)[],
+  priorSeason?: WeekStats,
+): Rise[] {
+  const rungs = LADDERS[position];
+  if (!rungs) return [];
+  const running: StatMap = {};
+  const prior = priorSeason?.[id];
+  if (prior) for (const [k, v] of Object.entries(prior)) running[k] = v * PRIOR_WEIGHT;
+
+  const at = rungs.map((r) => ladder(r, r.stat(running)).tier);
+  const steps: Step[][] = rungs.map(() => []);
+  for (let w = 0; w < weekly.length; w++) {
+    const s = weekly[w]?.[id];
+    if (!s) continue;
+    for (const [k, v] of Object.entries(s)) running[k] = (running[k] ?? 0) + v;
+    rungs.forEach((r, i) => {
+      const d = ladder(r, r.stat(running));
+      if (d.tier > at[i]) {
+        steps[i].push({ week: w + 1, tier: d.tier, name: d.name });
+        at[i] = d.tier;
+      }
+    });
+  }
+
+  const latest = weekly.length ? weekly[weekly.length - 1]?.[id] : undefined;
+  return rungs.map((r, i) => ({
+    label: r.label,
+    unit: r.unit,
+    steps: steps[i],
+    added: latest ? r.stat(latest) : 0,
+  }));
+}
+
 const encode = (list: ArcadePlayer[], limit = 6): string =>
   // If every man at a position is out, send them anyway — an unplayable
   // position is worse than fielding someone on bye, and a real lineup has to
