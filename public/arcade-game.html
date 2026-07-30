@@ -131,12 +131,23 @@
   .ptitle { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #fbfbfd; }
   .pfront { font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
   #plist { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 318px; }
+  /* A container, not a control. Everything tappable is a child of it, so no
+     button is ever nested inside another one. */
   .pick {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    padding: 9px 11px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px;
-    cursor: pointer; touch-action: manipulation;
+    display: flex; align-items: stretch;
+    border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; overflow: hidden;
   }
-  .pick:hover, .pick:active { border-color: rgba(255,255,255,0.42); }
+  .pick button {
+    appearance: none; background: none; border: 0; font: inherit; color: inherit;
+    text-align: left; cursor: pointer; touch-action: manipulation;
+  }
+  .pick button:disabled { cursor: default; }
+  /* The player: who he is, and a tap for his card. */
+  .pick .pwho {
+    flex: 1; min-width: 0; display: flex; align-items: center;
+    justify-content: space-between; gap: 10px; padding: 9px 11px;
+  }
+  .pick .pwho:hover:not(:disabled), .pick .pwho:active:not(:disabled) { background: rgba(255,255,255,0.05); }
   .pick .pn { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #ececed; }
   .pick .ptrend {
     margin-left: 7px; font-size: 7px; font-weight: 400; letter-spacing: 0;
@@ -150,8 +161,7 @@
   .pick .pt { display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 4px; }
   .pick.chem { border-color: rgba(232,197,97,0.44); }
   /* Still listed, so you can see who you have not got this week. */
-  .pick.off { opacity: 0.34; border-style: dashed; cursor: default; }
-  .pick.off:hover, .pick.off:active { border-color: rgba(255,255,255,0.12); }
+  .pick.off { opacity: 0.34; border-style: dashed; }
   .pick .pout, .pick .prisk {
     margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
   }
@@ -161,33 +171,27 @@
     margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
     color: var(--gold);
   }
-  /* The lineup row: slot on the left, so four positions read as a list of
-     spots rather than four unrelated cards. */
-  .pick.lineup { display: grid; grid-template-columns: 44px minmax(0,1fr) auto auto auto; gap: 8px; }
   .pick .pmain { flex: 1; min-width: 0; }
-  /* The rows are buttons and used to look exactly like the read-only list they
-     replaced, so nothing said they could be pressed. */
-  .pgo { font-size: 14px; line-height: 1; color: #55575d; }
-  .pick:hover .pgo, .pick:active .pgo { color: #b6b8be; }
-  .pinfo {
-    position: relative;
-    width: 20px; height: 20px; flex: none; display: flex;
-    align-items: center; justify-content: center;
-    border: 1px solid rgba(255,255,255,0.20); border-radius: 50%;
-    font-size: 9px; font-style: italic; font-weight: 600; color: #8f9199;
-    cursor: pointer; touch-action: manipulation;
+  /* The position is the control that changes who fills it — the same move as
+     tapping a slot on a real roster page. It was dead label text before. */
+  .pick .pslot {
+    flex: none; width: 62px; display: flex; align-items: center; gap: 3px;
+    padding: 9px 0 9px 11px; border-right: 1px solid rgba(255,255,255,0.09);
+    font-size: 7.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #8f9199;
   }
-  /* A 20px circle is the right weight next to the bars and too small to hit.
-     The pad grows the target to 28px without growing the mark. */
-  .pinfo::before { content: ''; position: absolute; inset: -4px; border-radius: 50%; }
-  .pinfo:hover, .pinfo:active { border-color: rgba(255,255,255,0.55); color: #ececed; }
-  .pick.off .pinfo { border-color: rgba(255,255,255,0.14); }
+  .pick .pslot i { font-style: normal; font-size: 11px; line-height: 1; color: #55575d; }
+  .pick .pslot:hover, .pick .pslot:active { background: rgba(255,255,255,0.06); color: #ececed; }
+  .pick .pslot:hover i, .pick .pslot:active i { color: #b6b8be; }
+  /* Beside the row, never inside it. */
+  .pick .pinfo {
+    flex: none; width: 40px; display: flex; align-items: center; justify-content: center;
+    border-left: 1px solid rgba(255,255,255,0.09);
+    font-size: 9px; font-style: italic; font-weight: 600; color: #8f9199;
+  }
+  .pick .pinfo:hover, .pick .pinfo:active { background: rgba(255,255,255,0.06); color: #ececed; }
   .phint {
     font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase;
     color: #4a4c52;
-  }
-  .pick .pslot {
-    font-size: 7.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #55575d;
   }
   .pchemline {
     min-height: 11px; font-size: 8px; letter-spacing: 0.2em;
@@ -271,7 +275,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade45-cards';
+const BUILD = 'arcade46-slots';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2018,11 +2022,12 @@ function openCard(p) {
   } catch (e) { /* not embedded after all */ }
 }
 
-function card(p, { chem = false, slot = '', go = false } = {}) {
+/** Who he is: name, club and bars. Never a control itself — whatever wraps it
+ *  decides what tapping him does. */
+function who(p, chem) {
   const out = SIDELINED.includes(p.status);
   const kit = jerseyOf(p.team);
-  return (slot ? `<span class="pslot">${slot}</span>` : '')
-    + `<span class="pmain"><span class="pn">${p.name}</span><span class="pt">`
+  return `<span class="pmain"><span class="pn">${p.name}</span><span class="pt">`
     + (kit ? `<i class="pchip" style="background:${kit}"></i>` : '')
     + `${p.team}`
     + (out ? `<b class="pout">${p.status}</b>`
@@ -2032,17 +2037,7 @@ function card(p, { chem = false, slot = '', go = false } = {}) {
     + `</span></span>`
     + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
     + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
-    + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`
-    // Its own target, not a second zone on the row: one tap does one thing.
-    + (EMBEDDED && p.id ? `<span class="pinfo" role="button" aria-label="Player card">i</span>` : '')
-    + (go ? `<span class="pgo">›</span>` : '');
-}
-
-/** The card button sits inside a row that is itself a button, so it has to stop
- *  the row from also firing. */
-function wireInfo(d, p) {
-  const b = d.querySelector('.pinfo');
-  if (b) b.onclick = (e) => { e.stopPropagation(); openCard(p); };
+    + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
 }
 
 /**
@@ -2068,17 +2063,23 @@ function buildPicker() {
   const team = batteryTeam(lineup);
   el('ptitle').textContent = 'Your lineup';
   el('pfront').textContent = `${active.shell} this week`;
-  el('phint').textContent = EMBEDDED ? 'tap a spot to change · i for the card' : 'tap a spot to change';
+  el('phint').textContent = EMBEDDED
+    ? 'position to change · player for his card'
+    : 'tap a position to change';
   plist.innerHTML = '';
   stages.forEach((st, i) => {
     const p = lineup[i];
     if (!p) return;
     const lit = !!(team && pair && (i === pair[0] || i === pair[1]));
+    const slot = slotOf(st.title);
+    // Two siblings in a plain container, never one button inside another: the
+    // position opens the list for that spot, the player opens his card.
     const d = document.createElement('div');
     d.className = `pick lineup${lit ? ' chem' : ''}`;
-    d.innerHTML = card(p, { slot: slotOf(st.title), go: true });
-    d.onclick = () => { swapAt = i; buildPicker(); };
-    wireInfo(d, p);
+    d.innerHTML = `<button class="pslot" aria-label="Change ${slot}">${slot}<i>›</i></button>`
+      + `<button class="pwho"${EMBEDDED && p.id ? '' : ' disabled'}>${who(p, false)}</button>`;
+    d.querySelector('.pslot').onclick = () => { swapAt = i; buildPicker(); };
+    d.querySelector('.pwho').onclick = () => openCard(p);
     plist.appendChild(d);
   });
   el('pchem').textContent = team ? `${team} battery · truer ball` : '';
@@ -2098,16 +2099,22 @@ function buildSwap(stages) {
   el('pchem').textContent = '';
   // This is the screen where the card earns its place — you are comparing two
   // backs and want to know why one bar is longer.
-  el('phint').textContent = EMBEDDED ? 'i for the card' : '';
+  el('phint').textContent = EMBEDDED ? 'tap to field him · i for the card' : 'tap to field him';
   plist.innerHTML = '';
   st.list.forEach((p) => {
     const out = SIDELINED.includes(p.status);
     const chem = !!(mate && p.team && p.team === mate.team);
+    // Here the big target picks him — that is what this screen is for — and the
+    // card sits beside it as a sibling rather than nested inside.
     const d = document.createElement('div');
     d.className = `pick${chem && !out ? ' chem' : ''}${out ? ' off' : ''}`;
-    d.innerHTML = card(p, { chem });
-    if (!out) d.onclick = () => { lineup[swapAt] = p; swapAt = null; buildPicker(); };
-    wireInfo(d, p);
+    d.innerHTML = `<button class="pwho"${out ? ' disabled' : ''}>${who(p, chem)}</button>`
+      + (EMBEDDED && p.id ? `<button class="pinfo" aria-label="Player card">i</button>` : '');
+    if (!out) {
+      d.querySelector('.pwho').onclick = () => { lineup[swapAt] = p; swapAt = null; buildPicker(); };
+    }
+    const info = d.querySelector('.pinfo');
+    if (info) info.onclick = () => openCard(p);
     plist.appendChild(d);
   });
 }
