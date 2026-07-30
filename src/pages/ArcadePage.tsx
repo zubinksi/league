@@ -74,7 +74,8 @@ export function ArcadePage() {
       // Checked before the game guard, which the card message has no reason to
       // satisfy.
       if (d.type === 'card') {
-        if (d.id) openCard(String(d.id));
+        // Short version: you are mid-lineup, not settling in with a season.
+        if (d.id) openCard(String(d.id), undefined, true);
         return;
       }
       if (!GAMES.includes(d.game)) return;

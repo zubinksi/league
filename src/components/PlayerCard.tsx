@@ -22,9 +22,14 @@ export type CardSeed = Pick<StarterView, 'points' | 'projected' | 'gameText' | '
 interface CardState {
   playerId: string;
   seed?: CardSeed;
+  /** Open on the short version: who he is and what he can do, nothing else.
+   *  The arcade asks for this — you are mid-lineup, not reading a season. */
+  brief?: boolean;
 }
 
-const PlayerCardContext = createContext<(playerId: string, seed?: CardSeed) => void>(() => {});
+const PlayerCardContext = createContext<
+  (playerId: string, seed?: CardSeed, brief?: boolean) => void
+>(() => {});
 
 export const usePlayerCard = () => useContext(PlayerCardContext);
 
@@ -44,6 +49,9 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const league = useLeague();
   const players = usePlayers();
   const state = useNflState();
+  // The season, the game log and the week's box score are a lot to hand someone
+  // who asked "who is this guy" while picking a lineup. They are one tap away.
+  const [full, setFull] = useState(!card.brief);
 
   const week = defaultWeek(league.data, state.data);
   const season = league.data?.season;
@@ -70,6 +78,16 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [meta?.position, card.playerId, log.playedWeeks, log.loading, prior.data],
   );
+
+  /** The last rung to move, either way — the short card's whole answer to
+   *  "is he heating up or cooling off". */
+  const lastMove = useMemo(() => {
+    let best: { week: number; tier: number; dir: number; label: string } | null = null;
+    for (const r of rises)
+      for (const s of r.steps)
+        if (!best || s.week > best.week) best = { ...s, label: r.label };
+    return best;
+  }, [rises]);
 
   /** Rungs crossed, by the week they were crossed in. Named by the ladder that
    *  moved and the rung it reached — which is the useful half of what the tier
@@ -176,7 +194,25 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           </>
         )}
 
-        {rises.length > 0 && (
+        {!full && (
+          <div className="lad-brief">
+            <span className="lad-move">
+              {lastMove ? (
+                <>
+                  <i className={lastMove.dir < 0 ? 'down' : ''}>{lastMove.dir < 0 ? '▼' : '▲'}</i>{' '}
+                  {lastMove.label} {lastMove.tier + 1} in week {lastMove.week}
+                </>
+              ) : (
+                'No rungs moved this season'
+              )}
+            </span>
+            <button className="lad-more" onClick={() => setFull(true)}>
+              Full card
+            </button>
+          </div>
+        )}
+
+        {full && rises.length > 0 && (
           <>
             <div className="sheet-section">
               <span>THE CLIMB</span>
@@ -188,6 +224,8 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           </>
         )}
 
+        {full && (
+        <>
         <div className="sheet-section">
           <span>THIS WEEK</span>
           <span>WEEK {week}</span>
@@ -313,6 +351,8 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
             })}
           </>
         )}
+        </>
+        )}
       </div>
     </div>
   );
@@ -320,7 +360,10 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
 
 export function PlayerCardProvider({ children }: { children: React.ReactNode }) {
   const [card, setCard] = useState<CardState | null>(null);
-  const open = useCallback((playerId: string, seed?: CardSeed) => setCard({ playerId, seed }), []);
+  const open = useCallback(
+    (playerId: string, seed?: CardSeed, brief?: boolean) => setCard({ playerId, seed, brief }),
+    [],
+  );
   const close = useCallback(() => setCard(null), []);
 
   return (

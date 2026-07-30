@@ -275,7 +275,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade46-slots';
+const BUILD = 'arcade47-brief';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2063,23 +2063,27 @@ function buildPicker() {
   const team = batteryTeam(lineup);
   el('ptitle').textContent = 'Your lineup';
   el('pfront').textContent = `${active.shell} this week`;
-  el('phint').textContent = EMBEDDED
-    ? 'position to change · player for his card'
-    : 'tap a position to change';
+  el('phint').textContent = 'tap position to change';
   plist.innerHTML = '';
   stages.forEach((st, i) => {
     const p = lineup[i];
     if (!p) return;
     const lit = !!(team && pair && (i === pair[0] || i === pair[1]));
     const slot = slotOf(st.title);
-    // Two siblings in a plain container, never one button inside another: the
-    // position opens the list for that spot, the player opens his card.
+    // Siblings in a plain container, never one button inside another. The
+    // whole row bar the i is about changing the lineup — the position because
+    // that is what the hint names, and the player because missing a 62px chip
+    // should not be punished. The i is only ever information, on both screens.
     const d = document.createElement('div');
     d.className = `pick lineup${lit ? ' chem' : ''}`;
     d.innerHTML = `<button class="pslot" aria-label="Change ${slot}">${slot}<i>›</i></button>`
-      + `<button class="pwho"${EMBEDDED && p.id ? '' : ' disabled'}>${who(p, false)}</button>`;
-    d.querySelector('.pslot').onclick = () => { swapAt = i; buildPicker(); };
-    d.querySelector('.pwho').onclick = () => openCard(p);
+      + `<button class="pwho" aria-label="Change ${slot}">${who(p, false)}</button>`
+      + (EMBEDDED && p.id ? `<button class="pinfo" aria-label="Player card">i</button>` : '');
+    const swap = () => { swapAt = i; buildPicker(); };
+    d.querySelector('.pslot').onclick = swap;
+    d.querySelector('.pwho').onclick = swap;
+    const info = d.querySelector('.pinfo');
+    if (info) info.onclick = () => openCard(p);
     plist.appendChild(d);
   });
   el('pchem').textContent = team ? `${team} battery · truer ball` : '';
@@ -2099,7 +2103,7 @@ function buildSwap(stages) {
   el('pchem').textContent = '';
   // This is the screen where the card earns its place — you are comparing two
   // backs and want to know why one bar is longer.
-  el('phint').textContent = EMBEDDED ? 'tap to field him · i for the card' : 'tap to field him';
+  el('phint').textContent = 'tap player to field him';
   plist.innerHTML = '';
   st.list.forEach((p) => {
     const out = SIDELINED.includes(p.status);

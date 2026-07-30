@@ -2035,6 +2035,43 @@
   color: var(--text-muted);
 }
 
+/* The short card's last row: which way he is going, and the way out to
+   everything else. */
+.lad-brief {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 20px 2px;
+}
+
+.lad-move {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  min-width: 0;
+}
+
+.lad-move i { font-style: normal; color: var(--accent-live); }
+.lad-move i.down { color: #b0555f; }
+
+.lad-more {
+  flex: none;
+  padding: 8px 15px;
+  border: 1px solid var(--divider-strong);
+  border-radius: 8px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.lad-more:active { background: rgba(255, 255, 255, 0.07); }
+
 /* Sidelined this week — still listed, because seeing who you have not got is
    the point of the mechanic. */
 .rp-big.off,
