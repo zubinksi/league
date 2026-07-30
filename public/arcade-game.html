@@ -280,7 +280,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade48-keys';
+const BUILD = 'arcade49-poss';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1729,6 +1729,17 @@ const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
 // ===========================================================================
 const DRIVE_GAME = (() => {
   const START = 21, TO_GO = 10;
+  /**
+   * How many possessions a run gets. This is what ends a game now — the speed
+   * ramp used to, by climbing until nothing worked, so every run finished
+   * because the numbers ran out rather than because of anything you did.
+   *
+   * Ten because a decent run lands around five or six scores and six or seven
+   * minutes, which is right for something played once a week on a phone, and
+   * because a fixed count is the only way two players' scores mean the same
+   * thing — which is what a head-to-head matchup needs.
+   */
+  const POSSESSIONS = 10;
   // States in which the engine still has the ball. Anything else means the
   // play is over and the drive takes back control.
   const PLAYING = ['presnap', 'ready', 'live', 'ball', 'yac', 'charging', 'aiming', 'flight'];
@@ -1783,7 +1794,7 @@ const DRIVE_GAME = (() => {
       PASS_GAME.reset();
       KICK_GAME.reset();
       cur = null;
-      g = { losYards: START, down: 1, toGo: TO_GO, driveNo: 0,
+      g = { losYards: START, down: 1, toGo: TO_GO, driveNo: 0, poss: 1,
             tds: 0, yards: 0, gain: 0, how: '', first: false,
             points: 0, fgs: 0, kicking: null,
             calls: { run: 0, pass: 0 }, set: null, menu: null, state: 'select' };
@@ -1797,8 +1808,21 @@ const DRIVE_GAME = (() => {
       PASS_GAME.mate(g.backTeam);
     },
     choose4(p) { KICK_GAME.attach(p); this.callPlay(); },
-    /** Back to our own twenty-one after any score. */
-    newDrive() { g.losYards = START; g.down = 1; g.toGo = TO_GO; g.driveNo++; },
+    /**
+     * One possession is over, however it ended. Hand back the ball, or end the
+     * run if that was the last of them.
+     *
+     * `scored` is kept separate from the possession count on purpose: it is
+     * what the difficulty ramp reads, and the ramp is meant to answer "how well
+     * is this going", not "how long has this gone on". A turnover should not
+     * make the next defense faster.
+     */
+    newDrive(scored) {
+      if (scored) g.driveNo++;
+      if (g.poss >= POSSESSIONS) { SOUND.cue('over', 'final'); g.state = 'gameover'; return; }
+      g.poss++;
+      g.losYards = START; g.down = 1; g.toGo = TO_GO;
+    },
     /** Send the unit on. `kind` decides whether the power meter is yours. */
     kickAt(dist, kind) {
       cur = KICK_GAME;
@@ -1873,7 +1897,12 @@ const DRIVE_GAME = (() => {
         SOUND.cue('td', `td${g.tds}`);
         g.state = 'td'; return;            // the kicking unit is next
       }
-      if (o.kind === 'int') { SOUND.cue('int', 'int'); g.state = 'gameover'; return; }
+      if (o.kind === 'int') {
+        SOUND.cue('int', `int${g.poss}`);
+        this.newDrive(false);
+        if (g.state !== 'gameover') g.state = 'result';
+        return;
+      }
       g.losYards = Math.max(1, g.losYards - g.gain);
       g.toGo -= g.gain;
       if (g.toGo <= 0) {
@@ -1884,11 +1913,17 @@ const DRIVE_GAME = (() => {
         g.state = 'result'; return;
       }
       g.down++;
-      if (g.down > 4) SOUND.cue('over', 'downs');
-      g.state = g.down > 4 ? 'gameover' : 'result';
+      if (g.down > 4) {
+        SOUND.cue('over', `downs${g.poss}`);
+        g.how = 'downs';
+        this.newDrive(false);
+        if (g.state !== 'gameover') g.state = 'result';
+        return;
+      }
+      g.state = 'result';
     },
-    /** A kick is the one play that can end the run without a turnover: miss
-     *  it and the drive is over the same as failing on fourth down. */
+    /** The kick closes a possession either way — the touchdown that came before
+     *  it already counted, and a missed field goal is a possession spent. */
     settleKick() {
       const made = cur.outcome().made;
       const kind = g.kicking;
@@ -1896,15 +1931,18 @@ const DRIVE_GAME = (() => {
       if (kind === 'xp') {
         if (made) { g.points += XP; SOUND.cue('xp', `xp${g.tds}`); }
         g.how = made ? 'xp' : 'xpmiss';
-        this.newDrive();
-        g.state = 'result'; return;
+        this.newDrive(true);                 // the touchdown is what sped them up
+      } else if (made) {
+        g.points += FG; g.fgs++;
+        SOUND.cue('fg', `fg${g.fgs}`);
+        g.how = 'fg';
+        this.newDrive(true);
+      } else {
+        SOUND.cue('over', `fgmiss${g.poss}`);
+        g.how = 'fgmiss';
+        this.newDrive(false);
       }
-      if (!made) { SOUND.cue('over', 'fgmiss'); g.how = 'fgmiss'; g.state = 'gameover'; return; }
-      g.points += FG; g.fgs++;
-      SOUND.cue('fg', `fg${g.fgs}`);
-      g.how = 'fg';
-      this.newDrive();
-      g.state = 'result';
+      if (g.state !== 'gameover') g.state = 'result';
     },
     render() { if (cur) cur.render(); },
     /** Whichever engine has the ball. */
@@ -1921,26 +1959,34 @@ const DRIVE_GAME = (() => {
     },
     status() {
       const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
-      return `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
-        + `<span>BALL ON <b>${g.losYards}</b></span><span class="sc">${g.points} PTS</span>`;
+      // How many you have left is the shape of the whole run now, so it leads.
+      return `<span>DRIVE <b>${g.poss}/${POSSESSIONS}</b></span>`
+        + `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
+        + `<span>ON <b>${g.losYards}</b></span><span class="sc">${g.points} PTS</span>`;
     },
     overlay() {
       if (g.state === 'call' || g.state === 'play') return null;
       const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
       const NAME = { td: 'Touchdown', tackled: 'Tackled', stuffed: 'Stood up',
                      complete: 'Complete', incomplete: 'Incomplete', sack: 'Sacked' };
+      const next = `tap for drive ${g.poss}`;
       if (g.state === 'result') {
-        if (g.how === 'xp') return { ttl: 'Extra point', gold: true, sub: `${g.points} points`, tap: 'tap for the next drive' };
-        if (g.how === 'xpmiss') return { ttl: 'Missed the extra', bad: true, sub: `${g.points} points`, tap: 'tap for the next drive' };
-        if (g.how === 'fg') return { ttl: 'Field goal', gold: true, sub: `${g.points} points`, tap: 'tap for the next drive' };
+        if (g.how === 'xp') return { ttl: 'Extra point', gold: true, sub: `${g.points} points`, tap: next };
+        if (g.how === 'xpmiss') return { ttl: 'Missed the extra', bad: true, sub: `${g.points} points`, tap: next };
+        if (g.how === 'fg') return { ttl: 'Field goal', gold: true, sub: `${g.points} points`, tap: next };
+        // Losing the ball costs a possession now rather than the run, so these
+        // read as a setback and hand you the next one.
+        if (g.how === 'int') return { ttl: 'Intercepted', bad: true, sub: `${g.points} points`, tap: next };
+        if (g.how === 'fgmiss') return { ttl: 'Missed the kick', bad: true, sub: `${g.points} points`, tap: next };
+        if (g.how === 'downs') return { ttl: 'Turnover on downs', bad: true, sub: `${g.points} points`, tap: next };
         const ttl = g.first ? 'First down' : (NAME[g.how] || 'Stopped');
         return { ttl, gold: g.first, bad: g.how === 'sack' || g.how === 'stuffed',
                  sub: `${yds(g.gain)} · ${ORD[g.down]} & ${t}`, tap: 'tap for the next call' };
       }
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.points} points`, tap: 'tap for the extra point' };
-      const how = g.how === 'int' ? 'Intercepted'
-        : g.how === 'fgmiss' ? 'Missed the kick' : 'Turnover on downs';
-      return { ttl: how, bad: true,
+      // Every run ends the same way now — the possessions are spent — so the
+      // last play is detail rather than the headline.
+      return { ttl: 'Final', gold: true,
                sub: `${g.points} points · ${g.tds} TD · ${g.fgs} FG · ${g.yards} yards`,
                tap: 'tap to play again' };
     },
