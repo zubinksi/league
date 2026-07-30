@@ -203,18 +203,35 @@
     text-transform: uppercase; color: var(--gold);
   }
   .pstart {
+    /* Real buttons now, so the agent stylesheet has to be turned off first. */
+    appearance: none; -webkit-appearance: none; background: none; font: inherit;
     margin-top: 3px; padding: 9px 32px; border: 1px solid rgba(255,255,255,0.32);
     border-radius: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.24em;
     text-transform: uppercase; color: #ececed; cursor: pointer; touch-action: manipulation;
   }
   .pstart:hover, .pstart:active { border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); }
+  .pmodes { display: flex; gap: 9px; align-items: stretch; }
+  .pmodes .pstart { padding: 9px 20px; }
+  /* Practice is the safe one, so it reads as the quieter of the two. */
+  .pstart.ghost { border-color: rgba(255,255,255,0.16); color: #8f9199; }
+  .pstart.ghost:hover, .pstart.ghost:active { color: #ececed; }
+  .pstart:disabled {
+    border-color: rgba(255,255,255,0.10); color: #55575d;
+    cursor: default; background: none;
+  }
+  .pstart:disabled:hover { background: none; border-color: rgba(255,255,255,0.10); }
+  .pmnote {
+    min-height: 10px; font-size: 8px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #4a4c52;
+  }
+  #picker.swapping .pmodes, #picker.swapping .pmnote { display: none; }
   .phow, .pback {
     margin-top: 9px; font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase;
     color: #4a4c52; cursor: pointer; touch-action: manipulation;
   }
   .pback { color: #6d6f76; }
   /* Swapping one spot: the lineup chrome steps aside for the position's list. */
-  #picker.swapping .pchemline, #picker.swapping .pstart, #picker.swapping .phow { display: none; }
+  #picker.swapping .pchemline, #picker.swapping .phow { display: none; }
   #picker:not(.swapping) .pback { display: none; }
   .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
   .pick .pbar { display: flex; gap: 1px; }
@@ -253,7 +270,11 @@
       <div class="phint" id="phint"></div>
       <div id="plist"></div>
       <div class="pchemline" id="pchem"></div>
-      <div class="pstart" id="pstart" role="button">Start</div>
+      <div class="pmodes">
+        <button class="pstart ghost" id="ppract">Practice</button>
+        <button class="pstart" id="pmatch">Matchup</button>
+      </div>
+      <div class="pmnote" id="pmnote"></div>
       <div class="phow" id="phow" role="button">how to play</div>
       <div class="pback" id="pback" role="button">← lineup</div>
     </div>
@@ -280,10 +301,22 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade49-poss';
+const BUILD = 'arcade50-modes';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
+
+/**
+ * Empty on the run that counts, so every roster in the league faces the same
+ * alignments in the same order off the same seed. Practice re-salts on every
+ * attempt: you rehearse this week's front, coverage and wind — those come off
+ * SEED and stay put — without learning which gap opens on the third snap.
+ */
+let SALT = '';
+/** 'matchup' once, then practice. Set when the run starts. */
+let MODE = 'practice';
+/** What the host says about this week's matchup slot. */
+let matchupDone = false, matchupValue = 0;
 
 const PAL = {
   '.': null,
@@ -837,7 +870,7 @@ const RUN_GAME = (() => {
                ['Goal', 'four downs to reach the end zone']],
     roster: parseRoster('run', SAMPLE),
     reset() {
-      g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
+      g = { rnd: mulberry32(hashSeed(SEED + SALT)), roll: mulberry32(hashSeed(SEED + SALT + '|r')),
             drive: 0, down: 1, los: SNAP, tds: 0, yards: 0, gain: 0, state: 'select' };
       this.g = g;
     },
@@ -1198,7 +1231,7 @@ const PASS_GAME = (() => {
     roster2: parseRoster('recv', SAMPLE_WR),
     chemPair: [0, 1],
     reset() {
-      g = { rnd: mulberry32(hashSeed(SEED)), roll: mulberry32(hashSeed(SEED + '|r')),
+      g = { rnd: mulberry32(hashSeed(SEED + SALT)), roll: mulberry32(hashSeed(SEED + SALT + '|r')),
             drive: 0, down: 1, los: SNAP, marker: SNAP - 10 * YARD,
             tds: 0, comp: 0, att: 0, yards: 0, gain: 0, firstDown: false,
             result: '', state: 'select', t: 0, wr: null, rushers: [], ball: null, edge: 0 };
@@ -1986,7 +2019,7 @@ const DRIVE_GAME = (() => {
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.points} points`, tap: 'tap for the extra point' };
       // Every run ends the same way now — the possessions are spent — so the
       // last play is detail rather than the headline.
-      return { ttl: 'Final', gold: true,
+      return { ttl: MODE === 'matchup' ? 'Final' : 'Final · practice', gold: MODE === 'matchup',
                sub: `${g.points} points · ${g.tds} TD · ${g.fgs} FG · ${g.yards} yards`,
                tap: 'tap to play again' };
     },
@@ -2162,6 +2195,12 @@ function buildPicker() {
     plist.appendChild(d);
   });
   el('pchem').textContent = team ? `${team} battery · truer ball` : '';
+  const mb = el('pmatch');
+  mb.disabled = matchupDone;
+  mb.textContent = matchupDone ? `Matchup · ${matchupValue} pts` : 'Matchup';
+  el('pmnote').textContent = !EMBEDDED ? ''
+    : matchupDone ? 'this week is banked · practice is free'
+    : 'matchup counts once · ten drives';
 }
 
 /** One position's list, opened from the lineup. */
@@ -2215,10 +2254,18 @@ function showBrief() {
   paintUI();
 }
 
-/** Attach the whole lineup and snap. The last stage's choose() calls the first
- *  play, so every other man has to be attached before it fires. */
-function startRun() {
+/**
+ * Attach the whole lineup and snap. The last stage's choose() calls the first
+ * play, so every other man has to be attached before it fires.
+ *
+ * The mode is fixed here rather than at the end: it decides the salt, so it has
+ * to be settled before any engine resets and rolls its first alignment.
+ */
+function startRun(mode) {
+  MODE = matchupDone ? 'practice' : mode;
+  SALT = MODE === 'matchup' ? '' : `|p${Date.now().toString(36)}`;
   const stages = stagesOf(active);
+  active.reset();                           // re-roll the plays under the new salt
   picks = lineup.slice();
   pick = picks[0]; pick2 = picks[1];
   setJersey(picks[0] && picks[0].team);
@@ -2228,7 +2275,27 @@ function startRun() {
   showBrief();                              // first time only, from here on
 }
 
-el('pstart').addEventListener('pointerup', (e) => { e.stopPropagation(); startRun(); });
+/** What the host knows about this week's one counted run. */
+function setMatchup(done, value) {
+  matchupDone = !!done;
+  matchupValue = Number(value) || 0;
+  if (active.state === 'select') buildPicker();
+}
+
+el('ppract').addEventListener('pointerup', (e) => { e.stopPropagation(); startRun('practice'); });
+el('pmatch').addEventListener('pointerup', (e) => {
+  e.stopPropagation();
+  if (!matchupDone) startRun('matchup');
+});
+
+// The host owns the score store, so it is the one that knows whether this
+// week's matchup has been used. It answers on boot and again after banking.
+window.addEventListener('message', (e) => {
+  const d = e.data;
+  if (!d || d.source !== 'host' || d.type !== 'status') return;
+  setMatchup(d.done, d.value);
+});
+try { parent.postMessage({ source: 'arcade', type: 'ready', game: 'drive' }, '*'); } catch (e) { /* standalone */ }
 el('phow').addEventListener('pointerup', (e) => { e.stopPropagation(); showBrief(); });
 el('pback').addEventListener('pointerup', (e) => { e.stopPropagation(); swapAt = null; buildPicker(); });
 /** Walk the picker back to its first stage. The lineup lives out here, not in
@@ -2358,7 +2425,8 @@ window.addEventListener('keydown', (e) => {
 
   if (active.state === 'select') {
     if (e.key === 'Escape' && swapAt !== null) { swapAt = null; buildPicker(); }
-    else if (tap && swapAt === null) { e.preventDefault(); startRun(); }
+    // Enter takes the run that counts while it is still there.
+    else if (tap && swapAt === null) { e.preventDefault(); startRun(matchupDone ? 'practice' : 'matchup'); }
     return;
   }
 
@@ -2397,13 +2465,17 @@ let reported = '';
 function reportScore() {
   if (!active.score || !active.g) return;
   const r = active.score();
+  // A practice run is not reported at all. It used to be sent and quietly
+  // dropped by the host as a duplicate, which is how the first run of the week
+  // ended up being the one that counted whether you meant it to or not.
+  if (MODE !== 'matchup') return;
   // Guard against the same finish being posted twice by a repaint.
   const stamp = `${active.key}:${r.value}:${r.tie}:${r.detail}`;
   if (stamp === reported) return;
   reported = stamp;
   try {
     parent.postMessage({
-      source: 'arcade', type: 'score', game: active.key,
+      source: 'arcade', type: 'score', game: active.key, mode: MODE,
       value: r.value, tie: r.tie || 0, detail: r.detail,
       player: pick ? pick.name : '', team: pick ? pick.team : '', seed: SEED,
     }, '*');
@@ -2416,10 +2488,12 @@ function frame(now) {
   acc += Math.min(100, now - last); last = now;
   const before = active.state;
   while (acc >= 1000 / 60) { if (active.state !== 'select') active.step(); acc -= 1000 / 60; }
-  if (before !== active.state) {
-    paintUI();
-    if (isOver(active)) reportScore();
-  }
+  if (before !== active.state) paintUI();
+  // Checked every frame rather than only on the transition into it. reportScore
+  // already refuses to send the same finish twice, and a missed transition
+  // meant a banked run silently never reaching the host — the worst thing this
+  // can get wrong.
+  if (isOver(active)) reportScore();
   if (active.state !== 'select' && active.g) active.render();
   requestAnimationFrame(frame);
 }
@@ -2433,6 +2507,8 @@ soundEl.addEventListener('pointerup', (e) => { e.stopPropagation(); SOUND.toggle
 paintSound();
 
 window.__active = () => active;
+// For harnesses: which mode the current run is, and the salt behind its rolls.
+window.__mode = () => ({ mode: MODE, salt: SALT, matchupDone });
 </script>
 </body>
 </html>

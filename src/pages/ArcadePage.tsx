@@ -79,6 +79,16 @@ export function ArcadePage() {
         return;
       }
       if (!GAMES.includes(d.game)) return;
+      // The game asks on boot whether this week's one counted run is still
+      // there, so it knows whether to offer the Matchup button.
+      if (d.type === 'ready') {
+        const banked = weekStatus(await loadScores(), week, picked)[d.game as GameKey];
+        (e.source as Window | null)?.postMessage(
+          { source: 'host', type: 'status', done: !!banked, value: banked?.value ?? 0 },
+          '*',
+        );
+        return;
+      }
       if (d.type === 'board') { setBoard(d.game as GameKey); setBoardOpen(true); return; }
       if (d.type !== 'score') return;
       const game = d.game as GameKey;
@@ -92,11 +102,19 @@ export function ArcadePage() {
         player: String(d.player ?? ''),
         team: String(d.team ?? ''),
       });
-      setScores(await loadScores());
+      const fresh = await loadScores();
+      setScores(fresh);
+      // Tell the game the slot is spent, so the button reads what was banked
+      // rather than offering a second go at it.
+      const banked = weekStatus(fresh, week, picked)[game];
+      (e.source as Window | null)?.postMessage(
+        { source: 'host', type: 'status', done: !!banked, value: banked?.value ?? 0 },
+        '*',
+      );
       setFlash(
         counted
           ? `${GAME_LABEL[game]} banked — ${d.value} ${GAME_UNIT[game]}`
-          : `${GAME_LABEL[game]} already counted this week — that run was practice`,
+          : `${GAME_LABEL[game]} already counted this week`,
       );
     };
     window.addEventListener('message', onMessage);
