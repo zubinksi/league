@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade62-juice';
+const BUILD = 'arcade63-sky';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -639,6 +639,52 @@ const DEF20 = RUN20.map((f) => f.map((r) => r.replace(/[WLM]/g, 'G')));
 const PIVOT20 = LEGS20[1];
 const SPIN20 = [[...BODY20, ...PIVOT20], [...SIDE20, ...PIVOT20],
                 [...FRONT20, ...PIVOT20], [...SIDE20, ...PIVOT20]];
+/**
+ * The official, arms up. Two frames so the signal reads as held rather than
+ * as a sprite parked in the end zone.
+ *
+ * No helmet and no facemask, a striped shirt made of the outline tone against
+ * the highlight, and he is drawn in the neutral kit rather than anyone's
+ * colours — he is the one man out there who belongs to neither side, and at
+ * twenty pixels that has to be legible at a glance or he reads as a defender
+ * who wandered into the wrong half.
+ */
+const REF20 = [
+  [
+    '....................','.DWD............DWD.',
+    '.DWD..DDDDDDDD..DWD.','.DWD.DWWWWWWWWD.DWD.','.DWD.DWWWWWWWWD.DWD.',
+    '.DWD.DWWWWWWWWD.DWD.','.DWD.DDWWWWWWDD.DWD.','.DWD...DLLLLD...DWD.',
+    '.DWDDDDDDDDDDDDDDWD.',
+    '..DWWWWWWWWWWWWWWD..','..DDDDDDDDDDDDDDDD..','..DWWWWWWWWWWWWWWD..',
+    '..DDDDDDDDDDDDDDDD..','...DWWWWWWWWWWWWD...','...DDDDDDDDDDDDDD...',
+    '....DWWWWWWWWWWD....',
+    '......DLLDDLLD......','......DLLDDLLD......','......DLLDDLLD......','......DDDDDDD.......',
+  ],
+  [
+    'DWD..............DWD','DWD..............DWD',
+    'DWD...DDDDDDDD...DWD','DWD..DWWWWWWWWD..DWD','DWD..DWWWWWWWWD..DWD',
+    'DWD..DWWWWWWWWD..DWD','DWD..DDWWWWWWDD..DWD','DWD....DLLLLD....DWD',
+    'DWDDDDDDDDDDDDDDDDWD',
+    '..DWWWWWWWWWWWWWWD..','..DDDDDDDDDDDDDDDD..','..DWWWWWWWWWWWWWWD..',
+    '..DDDDDDDDDDDDDDDD..','...DWWWWWWWWWWWWD...','...DDDDDDDDDDDDDD...',
+    '....DWWWWWWWWWWD....',
+    '......DLLDDLLD......','......DLLDDLLD......','......DLLDDLLD......','......DDDDDDD.......',
+  ],
+];
+
+/**
+ * The call, from the man who makes it — off to one side of the end zone, so
+ * he never lands on top of the player who just scored.
+ */
+function refSignal(camY) {
+  const sy = Math.round(EZ - 36 - camY);
+  if (sy < -20 || sy > VH + 20) return;
+  // His own palette. setJersey has painted W/L/M in somebody's colours by now
+  // and he is not on anybody's team.
+  Object.assign(PAL, DEFAULT_KIT);
+  sprite(REF20[Math.floor(performance.now() / 240) % 2], VW - 48, sy - 10);
+}
+
 const SPIN_BALL_DX20 = [0, -6, -11, -4];
 const BALL20 = [[11, 16], [11, 17], [12, 15], [12, 16], [12, 17], [13, 16], [13, 17]];
 
@@ -785,12 +831,35 @@ const BACKFIELD = 44;                   // how far behind it the back sets up
 const QB_DROP = 26;                     // and how deep the passer sets up
 
 /** The grass, the stripes, the line and the chains — drawn once for everyone. */
+/**
+ * The week's light.
+ *
+ * Rolled from the same seed as the front, the coverage and the wind, so
+ * everyone in the league plays under the same sky. That is the whole point of
+ * it and the reason it is not a setting: two people comparing a screenshot in
+ * week 14 are looking at the same evening.
+ *
+ * It moves the turf and the lines and nothing else. The kits carry identity
+ * and gold means live, so neither is allowed to drift with the weather — and
+ * it is named nowhere, because naming it would promise it does something to
+ * the play, and it does not.
+ */
+const SKIES = [
+  { turf: '#08090b', line: '255,255,255' },   // clear
+  { turf: '#0e0a07', line: '255,240,220' },   // dusk
+  { turf: '#0a0b0d', line: '224,231,239' },   // overcast
+  { turf: '#07090f', line: '218,231,255' },   // cold
+];
+const SKY = SKIES[Math.floor(mulberry32(hashSeed(SEED + '|sky'))() * SKIES.length)];
+/** A line in this week's light, at the weight the field wants it. */
+const lit = (a) => `rgba(${SKY.line},${a})`;
+
 function drawField(camY, los, marker) {
   yardLines(camY, WORLD_H, DRIVE_YARDS + 10, YARD);
   const gy = Math.round(EZ - camY);
   if (gy > -WORLD_H && gy < VH + 40) {
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
-    ctx.fillStyle = 'rgba(255,255,255,0.030)';
+    ctx.fillStyle = lit(0.85); ctx.fillRect(0, gy, VW, 1);
+    ctx.fillStyle = lit(0.030);
     ctx.fillRect(0, Math.max(0, gy - EZ), VW, Math.min(EZ, gy));
   }
   if (marker && marker > EZ) {
@@ -802,7 +871,7 @@ function drawField(camY, los, marker) {
   }
   const ly = Math.round(los - camY);
   if (ly > -2 && ly < VH + 2) {
-    ctx.fillStyle = 'rgba(255,255,255,0.20)';
+    ctx.fillStyle = lit(0.20);
     for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
   }
   return ly;
@@ -930,17 +999,17 @@ function rimmed(rows, px, py, ballPts, ballDx, glow) {
 }
 
 function yardLines(camY, worldH, yards, yard) {
-  ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
+  ctx.fillStyle = SKY.turf; ctx.fillRect(0, 0, VW, VH);
   for (let i = 0; i <= yards; i++) {
     const sy = Math.round(worldH - i * yard - camY);
     if (sy < -2 || sy > VH + 2) continue;
-    if (i % 5 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(0, sy, VW, 1); }
+    if (i % 5 === 0) { ctx.fillStyle = lit(0.18); ctx.fillRect(0, sy, VW, 1); }
     else {
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillStyle = lit(0.06);
       ctx.fillRect(VW / 2 - 14, sy, 5, 1); ctx.fillRect(VW / 2 + 9, sy, 5, 1);
     }
   }
-  ctx.fillStyle = 'rgba(255,255,255,0.14)';
+  ctx.fillStyle = lit(0.14);
   ctx.fillRect(2, 0, 1, VH); ctx.fillRect(VW - 3, 0, 1, VH);
 }
 
@@ -1221,7 +1290,13 @@ const RUN_GAME = (() => {
       g.how = kind;
       g.gain = Math.round((g.startY - g.rb.y) / YARD);
       g.yards += g.gain;
-      if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = SNAP; g.state = 'td'; }
+      if (kind === 'td') {
+        g.tds++; g.drive++; g.down = 1; g.los = SNAP; g.state = 'td';
+        // A score gets turf and a soft kick — no hitstop, because nothing is
+        // stepping in this state anyway and a freeze you cannot see is a lie.
+        FX.kick(g.rb.x, g.rb.y, 16, 1.7);
+        FX.shake = Math.max(FX.shake, 1.4);
+      }
       else if (g.down >= 4) g.state = 'gameover';
       else { g.down++; g.los = g.rb.y; g.state = 'between'; }
     },
@@ -1389,6 +1464,7 @@ const RUN_GAME = (() => {
         rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0, rim);
       }
       FX.draw(g.camY);
+      if (g.state === 'td') refSignal(g.camY);
     },
     onUp(pt, dx, dy) {
       if (g.state === 'ready' || g.state === 'between' || g.state === 'td') { this.startDown(); return; }
@@ -1650,6 +1726,10 @@ const PASS_GAME = (() => {
     end(kind, gain) {
       g.result = kind; g.gain = Math.round(gain / YARD);
       g.yards += Math.max(0, g.gain);
+      if (kind === 'td') {
+        FX.kick(g.wr.x, g.wr.y, 16, 1.7);
+        FX.shake = Math.max(FX.shake, 1.4);
+      }
       g.firstDown = false;
       if (kind === 'td') {
         g.tds++; g.comp++; g.drive++; g.down = 1;
@@ -1875,6 +1955,7 @@ const PASS_GAME = (() => {
         ctx.fillRect(Math.round(g.ball.x), by - 1, 1, 4);
       }
       FX.draw(g.camY);
+      if (g.state === 'td') refSignal(g.camY);
     },
     onUp(pt) {
       if (g.state === 'ready' || g.state === 'yac') return;   // both play themselves
@@ -2370,7 +2451,7 @@ const DRIVE_GAME = (() => {
       // Painted flat first and untranslated: the world moves under the frame,
       // and a background that moved with it would leave an unpainted strip
       // along whichever edge the kick came from.
-      ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
+      ctx.fillStyle = SKY.turf; ctx.fillRect(0, 0, VW, VH);
       ctx.save();
       ctx.translate(Math.round((Math.random() - 0.5) * 2 * FX.shake),
                     Math.round((Math.random() - 0.5) * 2 * FX.shake));
