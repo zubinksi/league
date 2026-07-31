@@ -75,6 +75,13 @@ function palette(team: string): Record<string, string | null> {
   };
 }
 
+/** The rows for one pose, as the '.DWLM' strings above. The brand assets are
+ *  generated from this so the logo and the character stay the same drawing. */
+export function spriteRows(position: string): string[] {
+  const pose = POSE[position.toUpperCase()] ?? DEFAULT_POSE;
+  return [...BODY, ...LEGS[pose.legs]];
+}
+
 /** One pixel per logical unit, so the canvas is 20×20 and CSS does the scaling. */
 export function drawSprite(ctx: CanvasRenderingContext2D, position: string, team: string): void {
   const pose = POSE[position.toUpperCase()] ?? DEFAULT_POSE;
