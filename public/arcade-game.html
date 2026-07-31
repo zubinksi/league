@@ -101,17 +101,14 @@
      panel covers is empty grass and what it leaves is the whole defense, the
      line to gain and your backfield.
 
-     Translucent, so the grass it does cover is still there — the panel reads
-     as something laid over the game rather than a room you were moved into.
-     Held at 0.9: the cards are hairline-bordered on a near-black field, and
-     any more of the pitch coming through starts competing with them. */
+     The panel itself has no background at all — the tint moved onto the
+     controls, so the only thing between you and the grass is the buttons you
+     are choosing between. Everything else up there is field. */
   #prompt {
     position: absolute; left: 0; right: 0; top: 0; bottom: auto;
     max-height: 74%; display: none; flex-direction: column;
     align-items: center; gap: 7px;
     padding: 9px 10px 10px; text-align: center;
-    background: rgba(8,9,11,0.90);
-    border-bottom: 1px solid rgba(255,255,255,0.12);
     touch-action: pan-y; overflow-y: auto;
   }
   #prompt.show { display: flex; }
@@ -148,7 +145,8 @@
   /* Only drawn when it has something to say. "Choose a play" over a row that
      says RUN and PASS was 21px of the field spent on a caption. */
   .prsub {
-    font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: #6d6f76;
+    padding: 4px 10px; border-radius: 999px; background: rgba(8,9,11,0.82);
+    font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: #8f9199;
   }
   .prsub:empty { display: none; }
   /* Run or pass first, plays second. Two taps for a pass where there used to be
@@ -158,11 +156,12 @@
   .prtab {
     flex: 1; display: flex; align-items: center; justify-content: center;
     padding: 9px 4px; border: 1px solid rgba(255,255,255,0.16); border-radius: 9px;
+    background: rgba(8,9,11,0.82);
     font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
     color: #8f9199; cursor: pointer; touch-action: manipulation;
   }
   .prtab.on { border-color: rgba(232,197,97,0.62); color: var(--gold); }
-  .prtab:active { background: rgba(255,255,255,0.06); }
+  .prtab:active { background: rgba(28,30,34,0.86); }
   #propts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: 100%; max-width: 330px; }
   .prcard {
     /* Capped, so the one card a field goal offers is the same object as one of
@@ -173,9 +172,12 @@
     display: flex; flex-direction: column; align-items: center;
     gap: 4px; padding: 6px 3px 5px;
     border: 1px solid rgba(255,255,255,0.14); border-radius: 9px;
+    /* Opaque enough for a hairline diagram to hold its own over yard lines and
+       a sprite, which is what sets this a touch darker than the tabs. */
+    background: rgba(8,9,11,0.86);
     cursor: pointer; touch-action: manipulation;
   }
-  .prcard:active { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.34); }
+  .prcard:active { background: rgba(28,30,34,0.9); border-color: rgba(255,255,255,0.34); }
   .prname {
     font-size: 8.5px; font-weight: 600; letter-spacing: 0.1em;
     text-transform: uppercase; color: #ececed; white-space: nowrap;
@@ -422,7 +424,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade59-fits';
+const BUILD = 'arcade60-seethru';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';

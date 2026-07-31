@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { NavBar } from '../components/NavBar';
 import { TeamPicker, getMyRosterId } from '../components/TeamPicker';
 import { usePlayerCard } from '../components/PlayerCard';
 import {
@@ -165,7 +164,6 @@ export function ArcadePage() {
 
   return (
     <div className="page arcade-page">
-      <NavBar title={`Week ${week} Arcade`} />
       {picked === null ? (
         rosters.data && users.data ? (
           <TeamPicker rosters={rosters.data} users={users.data} onPick={setPicked} />

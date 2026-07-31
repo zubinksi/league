@@ -1456,8 +1456,9 @@
 .arcade-frame {
   display: block;
   width: 100%;
-  /* everything left under the nav bar — the game is the page now */
-  height: calc(100dvh - 58px - env(safe-area-inset-bottom));
+  /* The whole viewport. There is no nav bar over the game any more — the 58px
+     it held is 29 rows of field on a phone, which is worth more than a title. */
+  height: calc(100dvh - env(safe-area-inset-bottom));
   border: 0;
   background: #08090b;
 }
