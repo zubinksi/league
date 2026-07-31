@@ -37,9 +37,11 @@ function Ladder({ a }: { a: AttrDetail }) {
     <span className="rp-rungs">
       {Array.from({ length: TIERS }, (_, i) => {
         const pct = Math.max(0, Math.min(1, filled - i)) * 100;
-        const fresh = a.levelled && i === a.tier;
+        // Both directions: the ladder reads a rolling window now, so a rung can
+        // be given back as easily as taken.
+        const moved = a.levelled ? 'fresh' : a.dropped ? 'fell' : '';
         return (
-          <i key={i} className={fresh ? 'fresh' : ''}>
+          <i key={i} className={i === a.tier ? moved : ''}>
             <b style={{ width: `${pct}%` }} />
           </i>
         );

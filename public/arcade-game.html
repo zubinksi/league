@@ -203,6 +203,16 @@
     font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase;
     color: #4a4c52;
   }
+  /* Nothing at all on a quiet week — an empty headline is worse than none. */
+  .pmoved {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 12px;
+    max-width: 320px; font-size: 8px; letter-spacing: 0.16em;
+    text-transform: uppercase; color: #6d6f76;
+  }
+  .pmoved b { font-weight: 600; color: #c9c9cf; }
+  .pmoved i { font-style: normal; }
+  .pmoved i.up { color: var(--gold); }
+  .pmoved i.down { color: #b0555f; }
   .pchemline {
     min-height: 11px; font-size: 8px; letter-spacing: 0.2em;
     text-transform: uppercase; color: var(--gold);
@@ -242,6 +252,9 @@
   .pick .pbar { display: flex; gap: 1px; }
   .pick .pseg { width: 5px; height: 4px; background: rgba(255,255,255,0.10); }
   .pick .pseg.on { background: #c9c9cf; }
+  /* What last weekend did. Gold for ground gained, red for ground given back. */
+  .pick .pseg.up { background: var(--gold); }
+  .pick .pseg.down { background: rgba(176,85,95,0.55); }
 
   #status {
     display: flex; gap: 15px; align-items: baseline;
@@ -272,6 +285,7 @@
     <div id="picker">
       <div class="ptitle" id="ptitle"></div>
       <div class="pfront" id="pfront"></div>
+      <div class="pmoved" id="pmoved"></div>
       <div class="phint" id="phint"></div>
       <div id="plist"></div>
       <div class="pchemline" id="pchem"></div>
@@ -306,7 +320,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade53-steeper';
+const BUILD = 'arcade54-moved';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1790,6 +1804,13 @@ const KICK_GAME = (() => {
 /** A carry or a sack can go backwards, so say so rather than printing -3. */
 const yds = (n) => (n < 0 ? `${-n} yd loss` : `${n} yd`);
 const SIDELINED = ['BYE', 'OUT', 'IR', 'PUP', 'SUS'];
+
+/** `name:label:dir` per rung crossed since last week. */
+const MOVES = (new URLSearchParams(location.search).get('moves') || '')
+  .split('|').filter(Boolean).map((r) => {
+    const [name, label, dir] = r.split(':');
+    return { name, label, dir: parseInt(dir, 10) || 0 };
+  });
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
 // ===========================================================================
 // GAME 4 — DRIVE
@@ -2099,7 +2120,7 @@ brief.addEventListener('pointerup', () => { briefing = false; paintUI(); });
 // The id is only used to ask the host for a player card.
 function parseRoster(param, sample) {
   return (new URLSearchParams(location.search).get(param) || sample).split('|').map((r) => {
-    const [name, tm, a, b, c, tr, ta, tb, tc, st, id, fat] = r.split(':');
+    const [name, tm, a, b, c, tr, ta, tb, tc, st, id, fat, wa, wb, wc] = r.split(':');
     const tier = (v) => Math.max(0, Math.min(4, parseInt(v, 10) || 0));
     return {
       name: (name || 'Player').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -2111,17 +2132,39 @@ function parseRoster(param, sample) {
       // 0 fresh to 1 gassed. The ratings arriving above are already faded by
       // it — this is only so the row can say why they look low.
       fatigue: clamp01(parseFloat(fat)),
+      // Where each rating stood a week ago, so a bar can show what moved.
+      was: [wa, wb, wc].map((v) => (v === undefined || v === '' ? null : clamp01(parseFloat(v)))),
       tiers: [tier(ta), tier(tb), tier(tc)].map((t, i) => tierName(param, i, t)),
     };
   });
 }
 
-function segs(v, n, cls) {
+/**
+ * `was` is last week's level.
+ *
+ * A week moves a rating by about a thirtieth on a 0..1 scale — a quarter of a
+ * segment here — so marking the stretch between then and now shows nothing at
+ * all most weeks. The mark goes on the leading segment instead: direction on
+ * the bar, magnitude left to the strip above, which only speaks when a rung
+ * actually changed hands. When a move is big enough to span segments, the whole
+ * span is marked and it reads as the bigger week it was.
+ */
+const MOVED = 0.004;
+function segs(v, n, cls, was) {
   const on = Math.max(1, Math.round(v * n));
+  const dir = was == null ? 0 : v - was > MOVED ? 1 : was - v > MOVED ? -1 : 0;
+  const before = was == null ? on : Math.max(1, Math.round(was * n));
+  const lo = Math.min(before, on), hi = Math.max(before, on);
   let s = '';
-  for (let i = 0; i < n; i++) s += `<span class="${cls}${i < on ? ' on' : ''}"></span>`;
+  for (let i = 0; i < n; i++) {
+    const lit = i < on;
+    const inSpan = hi > lo ? i >= lo && i < hi : i === on - 1;
+    s += `<span class="${cls}${lit ? ' on' : ''}`
+      + `${dir > 0 && inSpan ? ' up' : ''}${dir < 0 && inSpan ? ' down' : ''}"></span>`;
+  }
   return s;
 }
+
 /** A game asks for one, two or three players; the picker walks the stages it
  *  declares. chemPair names which two of them are the battery. */
 function stagesOf(gm) {
@@ -2188,9 +2231,9 @@ function who(p, chem) {
     + (chem && !out ? `<b class="pchem">chemistry</b>` : '')
     + (p.trend && !out ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
     + `</span></span>`
-    + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg')}</span>`
-    + `<span class="pbar">${segs(p.b, 8, 'pseg')}</span>`
-    + `<span class="pbar">${segs(p.c, 8, 'pseg')}</span></span>`;
+    + `<span class="pbars"><span class="pbar">${segs(p.a, 8, 'pseg', p.was[0])}</span>`
+    + `<span class="pbar">${segs(p.b, 8, 'pseg', p.was[1])}</span>`
+    + `<span class="pbar">${segs(p.c, 8, 'pseg', p.was[2])}</span></span>`;
 }
 
 /**
@@ -2217,6 +2260,9 @@ function buildPicker() {
   el('ptitle').textContent = 'Your lineup';
   el('pfront').textContent = `${active.shell} this week`;
   el('phint').textContent = 'tap position to change';
+  el('pmoved').innerHTML = MOVES.map((m) =>
+    `<span><i class="${m.dir > 0 ? 'up' : 'down'}">${m.dir > 0 ? '▲' : '▼'}</i> `
+    + `<b>${m.name}</b> ${m.label}</span>`).join('');
   plist.innerHTML = '';
   stages.forEach((st, i) => {
     const p = lineup[i];
@@ -2263,6 +2309,7 @@ function buildSwap(stages) {
   // This is the screen where the card earns its place — you are comparing two
   // backs and want to know why one bar is longer.
   el('phint').textContent = 'tap player to field him';
+  el('pmoved').innerHTML = '';
   plist.innerHTML = '';
   st.list.forEach((p) => {
     const out = SIDELINED.includes(p.status);

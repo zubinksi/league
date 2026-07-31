@@ -1951,6 +1951,8 @@
 /* The rung just crossed, so recent movement lives on the bar itself. */
 .rp-rungs i.fresh { background: rgba(232, 197, 97, 0.18); }
 .rp-rungs i.fresh b { background: var(--accent-live); }
+.rp-rungs i.fell { background: rgba(176, 85, 95, 0.18); }
+.rp-rungs i.fell b { background: #b0555f; }
 
 .rp-tier {
   font-family: var(--font-mono);
