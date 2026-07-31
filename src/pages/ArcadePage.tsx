@@ -26,6 +26,7 @@ import {
   type GameKey,
   type ScoreEntry,
 } from '../lib/arcadeScores';
+import { fatigueByPlayer } from '../lib/fatigue';
 import { teamLabel } from '../api/sleeper';
 import { LEAGUE_ID } from '../config';
 
@@ -101,6 +102,7 @@ export function ArcadePage() {
         detail: String(d.detail ?? ''),
         player: String(d.player ?? ''),
         team: String(d.team ?? ''),
+        lineup: Array.isArray(d.lineup) ? d.lineup.map(String) : undefined,
       });
       const fresh = await loadScores();
       setScores(fresh);
@@ -127,15 +129,21 @@ export function ArcadePage() {
     return () => clearTimeout(t);
   }, [flash]);
 
+  // Mileage from every counted run so far this season.
+  const tired = useMemo(
+    () => (picked === null ? new Map<string, number>() : fatigueByPlayer(scores, picked, week)),
+    [scores, picked, week],
+  );
+
   const src = useMemo(() => {
     if (picked === null || !rosters.data || !players.data || weekly.loading) return null;
     const mine = rosters.data.find((r) => r.roster_id === picked);
     if (!mine) return null;
-    const built = buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data);
+    const built = buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data, tired);
     // Everyone in the league gets the same defense, coverage and wind each week.
     const seed = `${LEAGUE_ID}-W${week}`;
     return `/arcade-game.html?${arcadeQuery(built, seed)}`;
-  }, [picked, rosters.data, players.data, weekly.loading, weekly.weekly, prior.data, scoreboard.data, week]);
+  }, [picked, rosters.data, players.data, weekly.loading, weekly.weekly, prior.data, scoreboard.data, week, tired]);
 
   const status = useMemo(
     () => (picked === null ? null : weekStatus(scores, week, picked)),

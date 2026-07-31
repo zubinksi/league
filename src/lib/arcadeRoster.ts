@@ -1,6 +1,7 @@
 import type { PlayerMap } from '../api/players';
 import { playerShortName } from '../api/players';
 import type { WeekStats, StatMap } from '../api/stats';
+import { carriesLoad, freshness } from './fatigue';
 
 /**
  * Turns a real roster into arcade characters — three ratings in 0..1 each.
@@ -89,6 +90,11 @@ export interface ArcadePlayer {
   trend: number;
   /** '' when he can play; otherwise why not. */
   status: Availability;
+  /** Season mileage, 0 fresh to 1 gassed. Never folded into a, b or c: the
+   *  ladder is who he is and this is his condition this week, and a card that
+   *  mixed them could not say which had moved. Applied on the way into the
+   *  game instead. */
+  fatigue: number;
   /** Ladder detail, for showing progress outside the game. */
   attrs: AttrDetail[];
   /** This season's real production, for context. Excludes the prior-season
@@ -304,6 +310,7 @@ export function buildArcadeRosters(
   weekly: (WeekStats | undefined)[],
   priorSeason?: WeekStats,
   scoreboard?: Record<string, unknown>,
+  fatigue?: Map<string, number>,
 ): { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] } {
   const run: ArcadePlayer[] = [];
   const pass: ArcadePlayer[] = [];
@@ -339,6 +346,7 @@ export function buildArcadeRosters(
       summary: summarise(meta.position, thisSeason),
       trend: before ? Math.sign(tierSum(now) - tierSum(before)) : 0,
       status: availability(meta, scoreboard),
+      fatigue: (carriesLoad(meta.position) && fatigue?.get(id)) || 0,
     };
     if (meta.position === 'RB') run.push(entry);
     else if (meta.position === 'QB') pass.push(entry);
@@ -447,8 +455,11 @@ const encode = (list: ArcadePlayer[], limit = 6): string =>
     .map((p) =>
       // The id rides along so the game can ask the host to open a player card
       // — it has no other way to name who it is showing.
-      [p.name, p.team, p.a.toFixed(2), p.b.toFixed(2), p.c.toFixed(2),
-       p.trend, p.ta, p.tb, p.tc, p.status, p.id].join(':'),
+      [p.name, p.team,
+       (p.a * freshness(p.fatigue)).toFixed(2),
+       (p.b * freshness(p.fatigue)).toFixed(2),
+       (p.c * freshness(p.fatigue)).toFixed(2),
+       p.trend, p.ta, p.tb, p.tc, p.status, p.id, p.fatigue.toFixed(2)].join(':'),
     )
     .join('|');
 

@@ -171,6 +171,11 @@
     margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
   }
   .pick .pout { color: #b0555f; }
+  /* Mileage. Worn is a shrug, gassed is a reason to sit him. */
+  .pick .pwear {
+    margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
+    color: #b08a4a;
+  }
   .pick .prisk { color: #b08a4a; }
   .pick .pchem {
     margin-left: 7px; font-size: 7.5px; font-weight: 600; letter-spacing: 0.14em;
@@ -301,7 +306,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade51-harder';
+const BUILD = 'arcade52-fatigue';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2093,7 +2098,7 @@ brief.addEventListener('pointerup', () => { briefing = false; paintUI(); });
 // The id is only used to ask the host for a player card.
 function parseRoster(param, sample) {
   return (new URLSearchParams(location.search).get(param) || sample).split('|').map((r) => {
-    const [name, tm, a, b, c, tr, ta, tb, tc, st, id] = r.split(':');
+    const [name, tm, a, b, c, tr, ta, tb, tc, st, id, fat] = r.split(':');
     const tier = (v) => Math.max(0, Math.min(4, parseInt(v, 10) || 0));
     return {
       name: (name || 'Player').toUpperCase(), team: (tm || '').toUpperCase(),
@@ -2102,6 +2107,9 @@ function parseRoster(param, sample) {
       // '' when he can play, otherwise why not. SIDELINED cannot be chosen.
       status: (st || '').toUpperCase(),
       id: id || '',
+      // 0 fresh to 1 gassed. The ratings arriving above are already faded by
+      // it — this is only so the row can say why they look low.
+      fatigue: clamp01(parseFloat(fat)),
       tiers: [tier(ta), tier(tb), tier(tc)].map((t, i) => tierName(param, i, t)),
     };
   });
@@ -2174,6 +2182,8 @@ function who(p, chem) {
     + `${p.team}`
     + (out ? `<b class="pout">${p.status}</b>`
            : p.status ? `<b class="prisk">${p.status}</b>` : '')
+    + (!out && p.fatigue >= 0.33
+        ? `<b class="pwear">${p.fatigue >= 0.66 ? 'gassed' : 'worn'}</b>` : '')
     + (chem && !out ? `<b class="pchem">chemistry</b>` : '')
     + (p.trend && !out ? `<b class="ptrend ${p.trend > 0 ? 'up' : 'down'}">${p.trend > 0 ? '▲' : '▼'}</b>` : '')
     + `</span></span>`
@@ -2512,6 +2522,8 @@ function reportScore() {
       source: 'arcade', type: 'score', game: active.key, mode: MODE,
       value: r.value, tie: r.tie || 0, detail: r.detail,
       player: pick ? pick.name : '', team: pick ? pick.team : '', seed: SEED,
+      // Who was on the field, so the host can put miles on them.
+      lineup: picks.filter((p) => p && p.id).map((p) => p.id),
     }, '*');
   } catch { /* standalone, not embedded */ }
 }

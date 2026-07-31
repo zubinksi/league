@@ -40,6 +40,10 @@ export interface ScoreEntry {
   detail: string;
   player: string;
   team: string;
+  /** Sleeper ids of everyone fielded, which is what season-long fatigue is
+   *  derived from. Optional: entries banked before this existed still parse,
+   *  they just carry no load. */
+  lineup?: string[];
   at: number;
 }
 

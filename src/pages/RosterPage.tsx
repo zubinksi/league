@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { NavBar } from '../components/NavBar';
 import { TeamPicker, getMyRosterId } from '../components/TeamPicker';
 import { usePlayerCard } from '../components/PlayerCard';
@@ -17,6 +17,8 @@ import {
 import { useWeeklyStatsAll } from '../hooks/useWeeklyStats';
 import { positionRanks } from '../lib/metrics';
 import { buildArcadeRosters, sidelined, type ArcadePlayer, type AttrDetail } from '../lib/arcadeRoster';
+import { fatigueByPlayer, fatigueLabel } from '../lib/fatigue';
+import { loadScores, type ScoreEntry } from '../lib/arcadeScores';
 import { teamKit } from '../lib/teamKits';
 
 /** Filter order, which is also the order the roster reads in. */
@@ -70,6 +72,9 @@ function Slot({ p, rank }: { p: ArcadePlayer; rank?: number }) {
         {rank ?? ''}
       </span>
       {p.status && <i className={`rp-status ${out ? 'out' : 'risk'}`}>{p.status}</i>}
+      {!out && fatigueLabel(p.fatigue) && (
+        <i className="rp-status risk">{fatigueLabel(p.fatigue)}</i>
+      )}
     </span>
   );
 }
@@ -293,14 +298,25 @@ export function RosterPage() {
     [season.data, players.data, league.data],
   );
 
+  const [scores, setScores] = useState<ScoreEntry[]>([]);
+  useEffect(() => {
+    let live = true;
+    loadScores().then((s) => { if (live) setScores(s); });
+    return () => { live = false; };
+  }, []);
+  const tired = useMemo(
+    () => (picked === null ? new Map<string, number>() : fatigueByPlayer(scores, picked, week)),
+    [scores, picked, week],
+  );
+
   const all = useMemo(() => {
     if (picked === null || !rosters.data || !players.data) return null;
     const mine = rosters.data.find((r) => r.roster_id === picked);
     if (!mine) return null;
     return ordered(
-      buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data),
+      buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data, tired),
     );
-  }, [picked, rosters.data, players.data, weekly.weekly, prior.data, scoreboard.data]);
+  }, [picked, rosters.data, players.data, weekly.weekly, prior.data, scoreboard.data, tired]);
 
   const chem = useMemo(() => (all ? chemistry(all) : new Map<string, string>()), [all]);
   const tabs = useMemo(
