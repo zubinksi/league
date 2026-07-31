@@ -21,8 +21,21 @@
      is left, which is what lets the call panel sit over the top of the field
      without eating it — on a short screen the field is centred in a taller
      stage rather than being the whole of one. */
+  /*
+   * 100% of the body, not 100dvh.
+   *
+   * This document is always in an iframe, and a dynamic viewport unit inside
+   * one is two kinds of wrong on iOS: it can resolve against the top-level
+   * viewport rather than the frame — which on an installed phone is the frame
+   * plus both safe-area insets, about 90px of footer pushed below the fold —
+   * and the "dynamic" half means it re-resolves mid-gesture and does not
+   * always come back. fit() has always measured the frame itself, so the two
+   * disagreed and the canvas was sized for a box the layout did not believe
+   * in. html and body are both height:100%, so this is the frame, exactly,
+   * and it cannot move.
+   */
   #wrap {
-    height: 100dvh; display: grid;
+    height: 100%; display: grid;
     grid-template-rows: auto minmax(0, 1fr) auto;
     align-items: center; justify-items: center; gap: 7px; padding: 8px 0;
   }
@@ -424,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade60-seethru';
+const BUILD = 'arcade61-frame';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -803,8 +816,11 @@ const ctx = canvas.getContext('2d');
 // rather than a line of text, which is most of this number.
 const CHROME = 152;
 function fit() {
-  const availW = Math.min(window.innerWidth - 12, 520);
-  const availH = Math.max(220, window.innerHeight - CHROME);
+  // The frame's own box, from the same source the layout uses.
+  const vw = document.documentElement.clientWidth || window.innerWidth;
+  const vh = document.documentElement.clientHeight || window.innerHeight;
+  const availW = Math.min(vw - 12, 520);
+  const availH = Math.max(220, vh - CHROME);
   const scale = Math.max(1, Math.min(5, Math.floor(availW / VW)));
   VH = Math.max(180, Math.min(340, Math.floor(availH / scale)));
   canvas.width = VW; canvas.height = VH;

@@ -1456,11 +1456,15 @@
 
 /* ---- arcade ---- */
 
-.arcade-page { padding-bottom: 0; }
+/* The game owns every gesture inside it. Without this a drag that starts over
+   the frame — cutting the runner left or right — can pan the host page, and on
+   an installed phone there is no browser chrome to spring it back. */
+.arcade-page { padding-bottom: 0; touch-action: none; }
 
 .arcade-frame {
   display: block;
   width: 100%;
+  touch-action: none;
   /* The whole viewport, less what the notch and the home indicator take. There
      is no nav bar over the game any more — the 58px it held is 29 rows of
      field on a phone, which is worth more than a title. The page pads itself
