@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade61-frame';
+const BUILD = 'arcade62-juice';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -832,13 +832,13 @@ function fit() {
 window.addEventListener('resize', fit);
 fit();
 
-function sprite(rows, px, py, ballPts, ballDx) {
+function sprite(rows, px, py, ballPts, ballDx, tint) {
   for (let y = 0; y < rows.length; y++) {
     const row = rows[y];
     for (let x = 0; x < row.length; x++) {
       const c = PAL[row[x]];
       if (!c) continue;
-      ctx.fillStyle = c; ctx.fillRect(px + x, py + y, 1, 1);
+      ctx.fillStyle = tint || c; ctx.fillRect(px + x, py + y, 1, 1);
     }
   }
   if (ballPts) {
@@ -853,6 +853,82 @@ function sprite(rows, px, py, ballPts, ballDx) {
     for (const [y, x] of ballPts) ctx.fillRect(px + x + (ballDx || 0), py + y, 1, 1);
   }
 }
+/**
+ * Weight, without touching the simulation.
+ *
+ * Every random number in here comes from Math.random and not from the game's
+ * seeded stream. That stream is why the whole league faces the same fronts and
+ * the same wind: it is consumed in exactly the same order by every player, so
+ * a single dust mote drawn from it would hand you a different defense to
+ * everyone else. Nothing below may ever move a body or decide an outcome — it
+ * reacts to what already happened.
+ */
+const FX = {
+  dust: [],
+  /** Screen kick, in logical pixels, decaying to nothing. */
+  shake: 0,
+  /** Frames of hitstop still owed. The loop holds the sim while this burns. */
+  stop: 0,
+  reset() { FX.dust.length = 0; FX.shake = 0; FX.stop = 0; },
+  /** Turf, thrown up from a point of contact. */
+  kick(x, y, n, spread) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 0.35 + Math.random() * (spread || 1);
+      FX.dust.push({
+        x, y,
+        vx: Math.cos(a) * s,
+        // Squashed vertically and biased downfield: the camera is overhead,
+        // so a puff spreads across the grass rather than up into the air.
+        vy: Math.sin(a) * s * 0.55 - 0.25,
+        life: 11 + Math.random() * 13,
+      });
+    }
+  },
+  /** A collision worth feeling: turf, a kick of the screen, and two frames
+   *  where nothing moves at all. */
+  hit(x, y, mag) {
+    FX.kick(x, y, 9 + Math.round(mag * 5), 1.5);
+    FX.shake = Math.max(FX.shake, mag);
+    FX.stop = Math.max(FX.stop, 2);
+  },
+  step() {
+    if (FX.shake > 0) FX.shake = Math.max(0, FX.shake - 0.32);
+    for (let i = FX.dust.length - 1; i >= 0; i--) {
+      const p = FX.dust[i];
+      p.x += p.vx; p.y += p.vy;
+      p.vx *= 0.9; p.vy = p.vy * 0.9 + 0.05;
+      if (--p.life <= 0) FX.dust.splice(i, 1);
+    }
+  },
+  draw(camY) {
+    if (!FX.dust.length) return;
+    ctx.fillStyle = '#c9c9cf';
+    for (const p of FX.dust) {
+      const sy = Math.round(p.y - camY);
+      if (sy < -1 || sy > VH + 1) continue;
+      ctx.globalAlpha = Math.min(0.44, p.life / 30);
+      ctx.fillRect(Math.round(p.x), sy, 1, 1);
+    }
+    ctx.globalAlpha = 1;
+  },
+};
+
+/**
+ * The man with the ball, with a light along his leading edge.
+ *
+ * The same sprite drawn a pixel downfield in one flat tone, then the real one
+ * over the top of it — only the edge survives being covered, which is exactly
+ * the rim. It costs one extra pass over a 20x20 sprite and it is the whole
+ * difference between the carrier and another silhouette in the same kit.
+ */
+function rimmed(rows, px, py, ballPts, ballDx, glow) {
+  ctx.globalAlpha = glow;
+  sprite(rows, px, py - 1, null, 0, '#f2f2f4');
+  ctx.globalAlpha = 1;
+  sprite(rows, px, py, ballPts, ballDx);
+}
+
 function yardLines(camY, worldH, yards, yard) {
   ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
   for (let i = 0; i <= yards; i++) {
@@ -1002,6 +1078,9 @@ const RUN_GAME = (() => {
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
   const SPIN_LEN = 30, SPIN_CD = 74, TACKLE_R = 17;
+  /** Daylight. Two and a half tackle radii from the nearest man is the point
+   *  where a carry stops being a collision waiting to happen. */
+  const CLEAR = 42;
   const TRUCK_LEN = 24, TRUCK_CD = 46;
   const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
     + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
@@ -1080,6 +1159,7 @@ const RUN_GAME = (() => {
       // getting caught in the backfield is a loss.
       g.startY = g.los;
       g.lane = null; g.flow = 1; g.truckLane = 1;
+      FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
       // The front is set but frozen: this is where you get to look at it.
       g.state = 'presnap';
@@ -1223,17 +1303,30 @@ const RUN_GAME = (() => {
             if (g.roll() < A.TRUCK * g.truckLane * (0.45 + 0.55 * square)) {
               d.stumble = A.STUMBLE * 1.5;
               rb.truck = 0; rb.stagger = 26;
+              // You ran a man over. Of everything that happens out here this
+              // is the one that has earned two frames of nothing.
+              FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2, 2.6);
               continue;
             }
+            FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2, 2.2);
             this.end('stuffed'); return;
           }
           if (rb.breakCd <= 0 && g.roll() < A.BREAK) {
-            rb.breakCd = 80; rb.stagger = 22; d.stumble = A.STUMBLE; continue;
+            rb.breakCd = 80; rb.stagger = 22; d.stumble = A.STUMBLE;
+            // Broken, not stopped: turf but no hold, or every play would stutter.
+            FX.kick((rb.x + d.x) / 2, (rb.y + d.y) / 2, 7, 1.1);
+            continue;
           }
+          FX.kick((rb.x + d.x) / 2, (rb.y + d.y) / 2, 9, 1.2);
           this.end('tackled'); return;
         }
       }
       if (rb.y <= EZ) { this.end('td'); return; }
+      // How close the nearest man is. Six distances a frame, and it is what
+      // tells the renderer whether this is a run or a run away.
+      let near = Infinity;
+      for (const d of g.defenders) near = Math.min(near, Math.hypot(rb.x - d.x, rb.y - d.y));
+      rb.alone = near;
       const want = eyeAt(rb.y, PLAY_EYE);
       if (g.camEase > 0) { g.camEase--; g.camY += (want - g.camY) * 0.22; }
       else g.camY = want;
@@ -1265,22 +1358,37 @@ const RUN_GAME = (() => {
       // repainted the kit for its own two players since our last carry.
       setJersey(g.backTeam);
       const rb = g.rb, ry = Math.round(rb.y - g.camY);
+      // Nobody within CLEAR is running away; it ramps over the next twenty so
+      // the trail arrives with the daylight rather than snapping on.
+      const loose = Math.max(0, Math.min(1, ((rb.alone || 0) - CLEAR) / 20));
+      const rim = 0.3 + 0.45 * loose;
       if (rb.truck > 0) {
         for (let i = 2; i >= 1; i--) {
           ctx.globalAlpha = 0.10 * i;
           sprite(RUN20[Math.floor(rb.frame + i) % 3], Math.round(rb.x) - HALF, ry - HALF + i * 3);
         }
         ctx.globalAlpha = 1;
-        sprite(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL20, 0);
+        rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL20, 0, 0.6);
       } else if (rb.spin > 0) {
         const s = Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 4)) % 4;
         ctx.globalAlpha = 0.22;
         sprite(SPIN20[(s + 3) % 4], Math.round(rb.x - rb.spinDir * 4) - HALF, ry - HALF);
         ctx.globalAlpha = 1;
-        sprite(SPIN20[s], Math.round(rb.x) - HALF, ry - HALF, BALL20, SPIN_BALL_DX20[s]);
+        rimmed(SPIN20[s], Math.round(rb.x) - HALF, ry - HALF, BALL20, SPIN_BALL_DX20[s], rim);
       } else {
-        sprite(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0);
+        // The trail is the ground he has already covered, so it lies behind
+        // him — downfield is up, which puts each image lower than the last.
+        if (loose > 0) {
+          for (let i = 3; i >= 1; i--) {
+            ctx.globalAlpha = loose * 0.34 / i;
+            const f = (((Math.floor(rb.frame) - i) % 3) + 3) % 3;
+            sprite(RUN20[f], Math.round(rb.x - rb.vx * i * 1.6) - HALF, ry - HALF + i * 4);
+          }
+          ctx.globalAlpha = 1;
+        }
+        rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0, rim);
       }
+      FX.draw(g.camY);
     },
     onUp(pt, dx, dy) {
       if (g.state === 'ready' || g.state === 'between' || g.state === 'td') { this.startDown(); return; }
@@ -1387,6 +1495,9 @@ const PASS_GAME = (() => {
    * a real battery is a decision, not enough that it plays the game for you.
    */
   const CHEM = { edge: 0.10, scatter: 0.84 };
+  /** Daylight after the catch. Lower than the run game's — out here there are
+   *  two men chasing rather than six, so clear means clear sooner. */
+  const YAC_CLEAR = 34;
   const MENU = ['slant', 'out', 'go', 'post'];
   const RED_MENU = ['quick', 'drag', 'fade', 'flat'];
   const LABEL = {
@@ -1496,6 +1607,7 @@ const PASS_GAME = (() => {
       g.qb = off.qb;
       g.rb = { x: VW / 2 - 16, y: g.los + BACKFIELD, frame: 0 };
       g.ball = null; g.t = 0; g.edge = 0;
+      FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
       g.state = 'ready';
     },
@@ -1639,7 +1751,11 @@ const PASS_GAME = (() => {
         for (const d of g.rushers) {
           const dx = g.qb.x - d.x, dy = g.qb.y - d.y, dist = Math.hypot(dx, dy) || 1;
           d.x += (dx / dist) * A.RUSH; d.y += (dy / dist) * A.RUSH; d.frame += 0.18;
-          if (dist < 13) { this.end('sack', -3 * YARD); return; }
+          if (dist < 13) {
+            // Taken down in his own backfield: the hardest hit in the game.
+            FX.hit((g.qb.x + d.x) / 2, (g.qb.y + d.y) / 2, 3);
+            this.end('sack', -3 * YARD); return;
+          }
         }
       }
       if (g.state === 'ball') {
@@ -1657,10 +1773,16 @@ const PASS_GAME = (() => {
       r.x += Math.sign(VW / 2 - r.x) * 0.34;      // works back to the grass
       r.x = Math.max(10, Math.min(VW - 10, r.x));
       r.frame += 0.24;
+      let near = Infinity;
       for (const d of [r.db, g.safety]) {
         const dx = r.x - d.x, dy = r.y - d.y, dist = Math.hypot(dx, dy) || 1;
+        near = Math.min(near, dist);
+        r.alone = near;
         d.x += (dx / dist) * 1.54; d.y += (dy / dist) * 1.54; d.frame += 0.22;
-        if (dist < 12) { this.end('complete', g.los - r.y); return; }
+        if (dist < 12) {
+          FX.kick((r.x + d.x) / 2, (r.y + d.y) / 2, 9, 1.2);
+          this.end('complete', g.los - r.y); return;
+        }
       }
       if (r.y <= EZ) { this.end('td', g.los - r.y); return; }
       if (g.yacFrames > 150) { this.end('complete', g.los - r.y); return; }
@@ -1718,12 +1840,24 @@ const PASS_GAME = (() => {
         for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF);
       // Each of your two players wears his own club's colours.
       setJersey(g.wrTeam);
-      sprite(RUN20[Math.floor(r.frame) % 3], Math.round(r.x) - HALF, Math.round(r.y - g.camY) - HALF);
+      const rx = Math.round(r.x) - HALF, ry0 = Math.round(r.y - g.camY) - HALF;
       if (g.state === 'yac') {
-        // The ball is his now.
+        // He is the carrier now, so he gets what the carrier gets.
+        const loose = Math.max(0, Math.min(1, ((r.alone || 0) - YAC_CLEAR) / 20));
+        if (loose > 0) {
+          for (let i = 3; i >= 1; i--) {
+            ctx.globalAlpha = loose * 0.32 / i;
+            const f = (((Math.floor(r.frame) - i) % 3) + 3) % 3;
+            sprite(RUN20[f], rx, ry0 + i * 4);
+          }
+          ctx.globalAlpha = 1;
+        }
+        rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, 0.3 + 0.45 * loose);
         const ry = Math.round(r.y - g.camY);
         ctx.fillStyle = PAL.D; ctx.fillRect(Math.round(r.x) + 3, ry + 1, 4, 4);
         ctx.fillStyle = PAL.O; ctx.fillRect(Math.round(r.x) + 4, ry + 2, 2, 2);
+      } else {
+        sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0);
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
@@ -1740,6 +1874,7 @@ const PASS_GAME = (() => {
         ctx.fillRect(Math.round(g.ball.x) - 1, by, 3, 2);
         ctx.fillRect(Math.round(g.ball.x), by - 1, 1, 4);
       }
+      FX.draw(g.camY);
     },
     onUp(pt) {
       if (g.state === 'ready' || g.state === 'yac') return;   // both play themselves
@@ -2229,7 +2364,19 @@ const DRIVE_GAME = (() => {
       }
       if (g.state !== 'gameover') g.state = 'result';
     },
-    render() { if (cur) cur.render(); },
+    render() {
+      if (!cur) return;
+      if (FX.shake < 0.05) { cur.render(); return; }
+      // Painted flat first and untranslated: the world moves under the frame,
+      // and a background that moved with it would leave an unpainted strip
+      // along whichever edge the kick came from.
+      ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
+      ctx.save();
+      ctx.translate(Math.round((Math.random() - 0.5) * 2 * FX.shake),
+                    Math.round((Math.random() - 0.5) * 2 * FX.shake));
+      cur.render();
+      ctx.restore();
+    },
     /** Whichever engine has the ball. */
     get engine() { return cur; },
     onUp(pt, dx, dy) {
@@ -2869,7 +3016,13 @@ let acc = 0, last = performance.now();
 function frame(now) {
   acc += Math.min(100, now - last); last = now;
   const before = active.state;
-  while (acc >= 1000 / 60) { if (active.state !== 'select') active.step(); acc -= 1000 / 60; }
+  while (acc >= 1000 / 60) {
+    // Hitstop stops everything, dust included. A collision reads as a
+    // collision because the world admits it happened before carrying on.
+    if (FX.stop > 0) FX.stop--;
+    else if (active.state !== 'select') { active.step(); FX.step(); }
+    acc -= 1000 / 60;
+  }
   if (before !== active.state) paintUI();
   // Checked every frame rather than only on the transition into it. reportScore
   // already refuses to send the same finish twice, and a missed transition
