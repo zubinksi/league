@@ -301,7 +301,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade50-modes';
+const BUILD = 'arcade51-harder';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -748,7 +748,7 @@ const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
  * to climb forever, so every game finished because the numbers ran out rather
  * than because of anything you did.
  */
-const RAMP_STEP = 0.05, RAMP_CAP = 5;
+const RAMP_STEP = 0.06, RAMP_CAP = 6;
 const rampAt = (drive) => 1 + Math.min(drive, RAMP_CAP) * RAMP_STEP;
 
 function defenders(rnd, drive, los) {
@@ -828,7 +828,7 @@ const RUN_GAME = (() => {
   // a tackle at 17px looked like the defender standing inside the runner, and
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
-  const SPIN_LEN = 30, SPIN_CD = 34, SPIN_IF = 8, TACKLE_R = 17;
+  const SPIN_LEN = 30, SPIN_CD = 34, TACKLE_R = 17;
   const TRUCK_LEN = 24, TRUCK_CD = 46;
   const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
     + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
@@ -896,7 +896,7 @@ const RUN_GAME = (() => {
       const off = (set && set.off) || alignOffense(g.rnd, g.los);
       const D = (set && set.def) || alignDefense(g.rnd, g.drive, g.los, off.wrX);
       g.rb = { x: VW / 2, y: g.los + BACKFIELD, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
-               clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0,
+               clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0, evade: 0,
                burst: 0, pace: 1 };
       g.qb = off.qb; g.wrX = off.wrX;
       g.wr = { x: off.wrX, y: g.los - 2, frame: 0 };   // on the line, clear of the corner
@@ -971,6 +971,7 @@ const RUN_GAME = (() => {
       if (g.state !== 'live') return;
       const rb = g.rb;
       if (rb.spinCd > 0) rb.spinCd--;
+      if (rb.evade > 0) rb.evade--;
       if (rb.breakCd > 0) rb.breakCd--;
       if (rb.stagger > 0) rb.stagger--;
       if (rb.truckCd > 0) rb.truckCd--;
@@ -1031,7 +1032,7 @@ const RUN_GAME = (() => {
         // While the burst is on they are still flowing to their own read.
         const flow = rb.burst > 0 ? g.flow : 1;
         d.x += (dx / dist) * d.lateral * flow; d.y += (dy / dist) * d.speed; d.frame += 0.2;
-        if (rb.spin <= SPIN_IF && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
+        if (rb.evade <= 0 && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
           if (rb.truck > 0) {
             // Committed to contact: run him over, or get stood up for a loss.
             // Trucking is for defenders in front of you — a man on your hip
@@ -1124,6 +1125,12 @@ const RUN_GAME = (() => {
       }
       rb.spin = SPIN_LEN; rb.spinCd = SPIN_LEN + SPIN_CD;
       rb.clean = !!near && nd < A.CONTACT;
+      // A spin beats a man you are about to meet. It used to be twenty-two
+      // frames where the tackle check was skipped outright, granted on every
+      // tap wherever you were, so in the open field it was a free escape with
+      // no failure case. Now the frames are only earned by spinning into
+      // contact, and how many you get is what Elusive buys.
+      rb.evade = rb.clean ? Math.round(5 + 17 * A.ELU) : 0;
       rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
       if (rb.clean) for (const d of g.defenders)
         if (Math.hypot(rb.x - d.x, rb.y - d.y) < A.CONTACT + 10) d.stumble = A.STUMBLE;
@@ -1152,6 +1159,12 @@ const RUN_GAME = (() => {
 // ===========================================================================
 const PASS_GAME = (() => {
   const SPR = 20, HALF = 10, CATCH_R = 11;
+  /**
+   * How far off the solved lead a tap can land and still be pulled onto it, at
+   * average accuracy. About a fifth of the field's width — forgiving enough for
+   * a thumb, tight enough that where you point is a real input.
+   */
+  const ASSIST = 44;
   const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
     + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
   // One of these shares a club with one of the passers, so the standalone
@@ -1242,7 +1255,8 @@ const PASS_GAME = (() => {
       // The rush has to actually arrive. At the old rate two men needed ~110
       // frames to cover the last stretch to a passer who had already thrown
       // by 100, so a dropback carried no risk at all and Escape did nothing.
-      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.52 - 0.22 * p.c };
+      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.52 - 0.22 * p.c,
+            ACC: p.b };
       g.qbTeam = p.team;
     },
     /** Stage two: the target. Sharing a club with the passer is the bonus. */
@@ -1342,11 +1356,30 @@ const PASS_GAME = (() => {
       g.down++;
       g.state = g.down > 4 ? 'gameover' : 'result';
     },
-    throwTo() {
+    /**
+     * `pt` is where you tapped, in world coordinates.
+     *
+     * The engine still solves the lead — where the receiver will be when the
+     * ball lands — but that is now a hand on your elbow rather than the throw
+     * itself. Tap on the solved spot and you get all of the help; tap a long
+     * way off and the ball goes where you pointed it. How much slack you have
+     * is the passer's accuracy, so a checkdown artist has to be nearly right
+     * and a surgeon can be sloppy.
+     *
+     * Before this, timing was the only input: the throw aimed itself, so the
+     * only question was when to release.
+     */
+    throwTo(pt) {
       const rec = g.wr, from = g.qb;
       let f = Math.hypot(rec.x - from.x, rec.y - from.y) / A.V;
       for (let i = 0; i < 3; i++) { const p = at(rec, g.t + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
       const aim = at(rec, g.t + f);
+      if (pt) {
+        const help = ASSIST * (0.55 + 0.75 * A.ACC);
+        const k = Math.max(0, 1 - Math.hypot(pt.x - aim.x, pt.y - aim.y) / help);
+        aim.x = pt.x + (aim.x - pt.x) * k;
+        aim.y = pt.y + (aim.y - pt.y) * k;
+      }
       // The miss grows with how far the ball has to travel, so a checkdown is
       // nearly automatic and a deep shot is a genuine risk.
       const spread = A.SCATTER * (g.chem ? CHEM.scatter : 1)
@@ -1502,11 +1535,12 @@ const PASS_GAME = (() => {
         ctx.fillRect(Math.round(g.ball.x), by - 1, 1, 4);
       }
     },
-    onUp() {
+    onUp(pt) {
       if (g.state === 'ready' || g.state === 'yac') return;   // both play themselves
       if (g.state === 'result' || g.state === 'td') { this.setup(); return; }
       if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
-      if (g.state === 'live') this.throwTo();
+      // The tap arrives in screen space; the throw is aimed in world space.
+      if (g.state === 'live') this.throwTo(pt ? { x: pt.x, y: pt.y + g.camY } : null);
     },
     score() { return { value: g.tds, tie: g.yards, detail: `${g.comp}/${g.att} · ${g.yards} yd` }; },
     status() {
