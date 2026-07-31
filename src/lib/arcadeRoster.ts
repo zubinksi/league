@@ -470,31 +470,6 @@ const encode = (list: ArcadePlayer[], limit = 6): string =>
     )
     .join('|');
 
-/**
- * Everything that crossed a rung since last week, loudest first. The bars carry
- * the fine movement; this is what tells you something happened at all, and it
- * says nothing on a quiet week rather than inventing a headline.
- */
-export function movers(
-  rosters: { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] },
-): { up: number; down: number } {
-  // Players, not rungs: a back who levelled two ladders is one man who got
-  // better, and "4 player upgrades" is a promise about the roster. Which rungs
-  // moved is on his own row, in the segments that light up.
-  const up = new Set<string>();
-  const down = new Set<string>();
-  for (const list of [rosters.pass, rosters.run, rosters.recv, rosters.kick]) {
-    for (const p of list) {
-      if (sidelined(p.status)) continue;
-      for (const a of p.attrs) {
-        if (a.levelled) up.add(p.name);
-        else if (a.dropped) down.add(p.name);
-      }
-    }
-  }
-  return { up: up.size, down: down.size };
-}
-
 /** Query string the arcade page reads. Omits a game with no eligible players
  *  so it falls back to its sample roster rather than rendering empty. */
 export function arcadeQuery(
@@ -509,8 +484,6 @@ export function arcadeQuery(
   // Receivers are the deepest group on a roster, so the list runs longer.
   if (rosters.recv.length) q.set('recv', encode(rosters.recv, 8));
   if (rosters.kick.length) q.set('kick', encode(rosters.kick));
-  const moved = movers(rosters);
-  if (moved.up || moved.down) q.set('moves', `${moved.up}:${moved.down}`);
   if (opponent) q.set('opp', opponent);
   return q.toString();
 }

@@ -1,6 +1,6 @@
 {
-  "name": "Sprites",
-  "short_name": "Sprites",
+  "name": "Minicamp",
+  "short_name": "Minicamp",
   "description": "Your fantasy roster, as an arcade football game.",
   "start_url": "/arcade",
   "display": "standalone",

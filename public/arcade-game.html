@@ -85,14 +85,20 @@
    */
   /* A panel over the top of the field, not a screen instead of it. The plays
      and the alignment they are called against belong to the same glance: the
-     camera puts the line of scrimmage two thirds of the way down, so what the
-     panel covers is empty grass and what it leaves is the box, the line and
-     your backfield. */
+     camera drops the line of scrimmage to 80% while this is open, so what the
+     panel covers is empty grass and what it leaves is the whole defense, the
+     line to gain and your backfield.
+
+     Translucent, so the grass it does cover is still there — the panel reads
+     as something laid over the game rather than a room you were moved into.
+     Held at 0.9: the cards are hairline-bordered on a near-black field, and
+     any more of the pitch coming through starts competing with them. */
   #prompt {
     position: absolute; left: 0; right: 0; top: 0; bottom: auto;
     max-height: 74%; display: none; flex-direction: column;
     align-items: center; gap: 9px;
-    padding: 12px 10px 13px; text-align: center; background: #08090b;
+    padding: 12px 10px 13px; text-align: center;
+    background: rgba(8,9,11,0.90);
     border-bottom: 1px solid rgba(255,255,255,0.12);
     touch-action: pan-y; overflow-y: auto;
   }
@@ -131,14 +137,12 @@
      and the choice is sticky, so a preference only costs the first call. */
   #prtabs { display: flex; flex-wrap: wrap; gap: 9px; width: 100%; max-width: 330px; }
   .prtab {
-    flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
-    padding: 9px 4px; border: 1px solid rgba(255,255,255,0.16); border-radius: 9px;
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    padding: 11px 4px; border: 1px solid rgba(255,255,255,0.16); border-radius: 9px;
     font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
     color: #8f9199; cursor: pointer; touch-action: manipulation;
   }
-  .prtab canvas { image-rendering: pixelated; opacity: 0.6; }
   .prtab.on { border-color: rgba(232,197,97,0.62); color: var(--gold); }
-  .prtab.on canvas { opacity: 1; }
   .prtab:active { background: rgba(255,255,255,0.06); }
   #propts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: 100%; max-width: 330px; }
   .prcard {
@@ -164,12 +168,6 @@
     font-style: normal; font-size: 7px; letter-spacing: 0.1em;
     color: #55575d; margin-right: 4px;
   }
-  .prdiag .front { fill: #9a9ca3; }
-  .prdiag .corner { fill: #6d6f76; }
-  /* On a route card the box is context and the corner is the read, so the two
-     trade places. */
-  .prdiag.pass .front { fill: #4a4c52; }
-  .prdiag.pass .corner { fill: #c9c9cf; }
   .prdiag .mine { fill: #ececed; }
   .prdiag .los { stroke: rgba(255,255,255,0.22); stroke-width: 1; stroke-dasharray: 3 3; }
   .prdiag .post { stroke: #9a9ca3; stroke-width: 1.6; }
@@ -281,19 +279,6 @@
     font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
     color: #55575d;
   }
-  /* Nothing at all on a quiet week — an empty headline is worse than none, and
-     an empty box worse still, so the border belongs to the text and not to a
-     slot reserved for it. */
-  .pmoved { display: flex; justify-content: center; }
-  .pmovedcard {
-    padding: 8px 16px; border: 1px solid rgba(255,255,255,0.13); border-radius: 999px;
-    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
-    color: #8f9199; white-space: nowrap;
-  }
-  .pmoved b { font-weight: 600; color: #ececed; }
-  .pmoved i { font-style: normal; font-size: 9px; }
-  .pmoved i.up { color: var(--gold); }
-  .pmoved i.down { color: #b0555f; }
   .pchemline {
     min-height: 12px; font-size: 9px; letter-spacing: 0.2em;
     text-transform: uppercase; color: var(--gold);
@@ -330,11 +315,7 @@
     cursor: default; background: none;
   }
   .pstart:disabled:hover { background: none; border-color: rgba(255,255,255,0.10); }
-  .pmnote {
-    min-height: 11px; font-size: 9px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: #55575d;
-  }
-  #picker.swapping .pmodes, #picker.swapping .pmnote { display: none; }
+  #picker.swapping .pmodes { display: none; }
   .phow, .pback {
     margin-top: 7px; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase;
     color: #6d6f76; cursor: pointer; touch-action: manipulation;
@@ -389,7 +370,6 @@
     <div id="picker">
       <div class="ptitle" id="ptitle"></div>
       <div class="pfront" id="pfront"></div>
-      <div class="pmoved" id="pmoved"></div>
       <div class="phint" id="phint"></div>
       <div id="plist"></div>
       <div class="pchemline" id="pchem"></div>
@@ -397,7 +377,6 @@
         <button class="pstart" id="pmatch">Matchup</button>
         <button class="pstart ghost" id="ppract">Practice</button>
       </div>
-      <div class="pmnote" id="pmnote"></div>
       <div class="phow" id="phow" role="button">how to play <i>›</i></div>
       <div class="pback" id="pback" role="button">← lineup</div>
     </div>
@@ -424,7 +403,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade57-readout';
+const BUILD = 'arcade58-minicamp';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1965,13 +1944,6 @@ const KICK_GAME = (() => {
 const yds = (n) => (n < 0 ? `${-n} yd loss` : `${n} yd`);
 const SIDELINED = ['BYE', 'OUT', 'IR', 'PUP', 'SUS'];
 
-/** `up:down` — how many players climbed and how many slipped since last week.
- *  Which rungs moved is on each player's own row. */
-const MOVES = (() => {
-  const [u, d] = (new URLSearchParams(location.search).get('moves') || '').split(':');
-  return { up: parseInt(u, 10) || 0, down: parseInt(d, 10) || 0 };
-})();
-
 /** Who the matchup is against. Empty when the game is not embedded. */
 const OPPONENT = new URLSearchParams(location.search).get('opp') || '';
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
@@ -2111,9 +2083,6 @@ const DRIVE_GAME = (() => {
       // Fourth down buys a third tab: take the three, or go for seven.
       const fg = fgYards(g.losYards);
       const canKick = g.down === 4 && fg <= KICK_GAME.maxRange();
-      // The diagrams measure depth off the line, so the cards need to know
-      // where it is as well as who is standing behind it.
-      g.set.los = los;
       const kick = canKick
         ? [{ key: 'k:fg', label: `${fg} yards`, tab: 'kick', best: 'Leg' }]
         : [];
@@ -2418,26 +2387,6 @@ function who(p, chem) {
 }
 
 /**
- * One line for the whole week's movement.
- *
- * It used to name up to four rungs that had moved, which was the right idea at
- * the wrong size: four names in a wrapping strip is a paragraph above a list
- * that already shows the same thing per row, in the segments that light up. A
- * count says "something happened, go look" and gets out of the way.
- */
-function movedSummary() {
-  const { up, down } = MOVES;
-  if (!up && !down) return '';
-  const plural = (v, word) => `player ${word}${v === 1 ? '' : 's'}`;
-  const body = up && down
-    ? `<i class="up">▲</i> <b>${up}</b> up · <i class="down">▼</i> <b>${down}</b> down this week`
-    : up
-      ? `<i class="up">▲</i> <b>${up}</b> ${plural(up, 'upgrade')} this week`
-      : `<i class="down">▼</i> <b>${down}</b> ${plural(down, 'downgrade')} this week`;
-  return `<span class="pmovedcard">${body}</span>`;
-}
-
-/**
  * One screen, pre-filled with the best available at each spot.
  *
  * It used to be four screens in sequence and two of them routinely held a
@@ -2459,9 +2408,10 @@ function buildPicker() {
   const pair = active.chemPair;
   const team = batteryTeam(lineup);
   el('ptitle').textContent = 'Your lineup';
-  el('pfront').textContent = `${active.shell} this week`;
+  // The front and the coverage are on the readout above the field, where you
+  // are actually choosing against them. Here they were trivia.
+  el('pfront').textContent = '';
   el('phint').textContent = 'tap position to change';
-  el('pmoved').innerHTML = movedSummary();
   plist.innerHTML = '';
   stages.forEach((st, i) => {
     const p = lineup[i];
@@ -2494,10 +2444,6 @@ function buildPicker() {
   mb.innerHTML = matchupDone
     ? `Matchup · ${matchupValue} pts`
     : OPPONENT ? `Matchup <i>vs ${OPPONENT}</i>` : 'Matchup';
-  // Nothing to say once it is banked: a disabled button showing what it scored
-  // already says the week is spent, and Practice sitting live above it says
-  // the other one is still free.
-  el('pmnote').textContent = !EMBEDDED || matchupDone ? '' : 'matchup counts once · ten drives';
 }
 
 /** One position's list, opened from the lineup. */
@@ -2508,14 +2454,11 @@ function buildSwap(stages) {
   const mate = pair && swapAt === pair[1] ? lineup[pair[0]]
              : pair && swapAt === pair[0] ? lineup[pair[1]] : null;
   el('ptitle').textContent = st.title;
-  el('pfront').textContent = mate && mate.team
-    ? `${mate.name} · ${mate.team} = chemistry`
-    : `${active.shell} this week`;
+  el('pfront').textContent = mate && mate.team ? `${mate.name} · ${mate.team} = chemistry` : '';
   el('pchem').textContent = '';
   // This is the screen where the card earns its place — you are comparing two
   // backs and want to know why one bar is longer.
   el('phint').textContent = 'tap player to field him';
-  el('pmoved').innerHTML = '';
   plist.innerHTML = '';
   st.list.forEach((p) => {
     const out = SIDELINED.includes(p.status);
@@ -2626,40 +2569,17 @@ function select(game) {
  *  extra tap the first time and none after it. */
 let playTab = 'run';
 
-/** One 20px sprite in a club's kit, drawn into its own canvas so the DOM can
- *  hold it. Its own palette, so the field's is never touched. */
-function spriteChip(team) {
-  const base = jerseyOf(team);
-  const kit = base
-    ? { W: mix(base, '#ffffff', 0.38), L: base, M: mix(base, '#191b1f', 0.42), D: PAL.D }
-    : { W: DEFAULT_KIT.W, L: DEFAULT_KIT.L, M: DEFAULT_KIT.M, D: PAL.D };
-  const rows = RUN20[0];
-  const c = document.createElement('canvas');
-  c.width = 20; c.height = 20;
-  c.style.width = c.style.height = '22px';
-  const x = c.getContext('2d');
-  for (let y = 0; y < rows.length; y++) {
-    for (let i = 0; i < rows[y].length; i++) {
-      const col = kit[rows[y][i]];
-      if (!col) continue;
-      x.fillStyle = col; x.fillRect(i, y, 1, 1);
-    }
-  }
-  return c;
-}
-
 /**
- * The play, drawn small.
+ * The play, drawn small — where the ball is going, and nothing else.
  *
- * The front in every card is the real one — the same `alignDefense` roll the
- * snap will be run against — because the menu now covers the field and this is
- * where the pre-snap read went. The path over it is schematic: where the ball
- * is going, not a simulation of it.
+ * The cards used to draw the real defensive front behind the path, back when
+ * the panel covered the field and this was the only pre-snap read there was.
+ * The field is underneath now, at full size, with every defender on it; a
+ * second smaller copy of the same eleven in a 62-unit box was the same
+ * information twice, and the worse of the two.
  */
 const DW = 62, DH = 52, LOS_Y = 36;
 const dgx = (x) => 4 + (x / VW) * (DW - 8);
-/** Depth downfield of the line, in world units, to a y inside the box. */
-const dgy = (d) => LOS_Y - 5 - (Math.min(Math.max(d, 0), 84) / 84) * (LOS_Y - 13);
 const clampx = (x) => Math.max(3, Math.min(DW - 3, x));
 const box = (x, y, w, cls) =>
   `<rect class="${cls}" x="${(clampx(x) - w / 2).toFixed(1)}" y="${(y - w / 2).toFixed(1)}" `
@@ -2680,8 +2600,6 @@ function diagram(tab, o, set) {
   const line = `<line class="los" x1="3" y1="${LOS_Y}" x2="${DW - 3}" y2="${LOS_Y}" />`;
 
   if (tab === 'kick') {
-    // No defense on this one. Nobody in the box is between a kick and the
-    // posts, and drawing them there would be a picture of the wrong play.
     const M = DW / 2;
     const s = `<line class="post" x1="${M - 10}" y1="5" x2="${M - 10}" y2="15" />`
       + `<line class="post" x1="${M + 10}" y1="5" x2="${M + 10}" y2="15" />`
@@ -2693,11 +2611,7 @@ function diagram(tab, o, set) {
     return `<svg class="prdiag" viewBox="0 0 ${DW} ${DH}">${s}</svg>`;
   }
 
-  // The box, then the corner. The safety plays 160 units deep — off the top of
-  // a 52-unit card — so he is left out rather than drawn somewhere he is not.
   let s = line;
-  for (const d of set.def.front) s += box(dgx(d.x), dgy(set.los - d.y), 5, 'front');
-  s += box(dgx(set.def.cb.x), dgy(set.los - set.def.cb.y), 4.4, 'corner');
 
   if (tab === 'pass') {
     const wx = dgx(set.off.wrX);
@@ -2765,10 +2679,7 @@ function paintUI() {
       b.className = `prtab${t.key === playTab ? ' on' : ''}`;
       b.setAttribute('role', 'button');
       b.setAttribute('aria-pressed', String(t.key === playTab));
-      // The man who runs it, in his own kit — the tab says whose play this is
-      // before you have read a word of it.
-      b.appendChild(spriteChip(t.who && t.who.team));
-      b.appendChild(document.createTextNode(t.label));
+      b.textContent = t.label;
       b.onclick = () => { playTab = t.key; paintUI(); };
       prtabs.appendChild(b);
     }
