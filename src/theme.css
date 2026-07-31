@@ -52,6 +52,9 @@
 html,
 body {
   background: var(--bg-app);
+  /* Installed to the home screen there is no browser chrome to absorb a
+     rubber-band drag, so the whole page slides up and can stay there. */
+  overscroll-behavior: none;
 }
 
 body {

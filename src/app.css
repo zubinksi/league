@@ -2,8 +2,13 @@
    Component styles. All exact values come from the design handoff.
    ========================================================================= */
 
+/* Installed, the status bar is translucent and the page starts underneath it
+   — that is what viewport-fit=cover and black-translucent buy, and the price
+   is insetting yourself. In a browser tab both insets are 0 and none of this
+   does anything. */
 .page {
   min-height: 100dvh;
+  padding-top: env(safe-area-inset-top);
   padding-bottom: calc(28px + env(safe-area-inset-bottom));
 }
 
@@ -1456,9 +1461,12 @@
 .arcade-frame {
   display: block;
   width: 100%;
-  /* The whole viewport. There is no nav bar over the game any more — the 58px
-     it held is 29 rows of field on a phone, which is worth more than a title. */
-  height: calc(100dvh - env(safe-area-inset-bottom));
+  /* The whole viewport, less what the notch and the home indicator take. There
+     is no nav bar over the game any more — the 58px it held is 29 rows of
+     field on a phone, which is worth more than a title. The page pads itself
+     down by the top inset, so the frame has to give that back or the document
+     grows past the viewport and the whole thing scrolls. */
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
   border: 0;
   background: #08090b;
 }
