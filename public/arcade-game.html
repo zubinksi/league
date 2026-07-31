@@ -306,7 +306,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade52-fatigue';
+const BUILD = 'arcade53-steeper';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -741,19 +741,20 @@ const FRONT = mulberry32(hashSeed(SEED + '|front'))() < 0.5
 /**
  * The defense speeds up with every score, and stops.
  *
- * The ceiling is not a taste call. A box defender's base pursuit is 0.58–0.86
- * and a good back's straight-line speed is 0.82 + 0.24 * SPEED, so about 1.04.
- * At 1.25 the quickest defender on the field just about matches your best back
- * and the average one still cannot — hard, and still beatable. Measured, the
- * cliff sits a little past that: at 1.36 nothing breaks free at all, longest
- * run of the sample falls from twenty-one yards to six.
+ * It counts scores, never possessions, and that is what makes it safe to be
+ * this steep: it only ever bites a player who is already scoring. A roster
+ * having a bad day never reaches the top of it.
  *
- * Five scores to reach it, which is enough for the curve to be felt three or
- * four times. What the ramp deliberately no longer does is end the run: it used
- * to climb forever, so every game finished because the numbers ran out rather
- * than because of anything you did.
+ * The ceiling used to be held at 1.25 because the ramp was the only thing that
+ * ended a run, and past about 1.36 nothing breaks free at all. The possession
+ * limit ends runs now, so that reason is gone — an eighth score puts the box at
+ * 1.64, where the quickest defender is faster than any back alive and the last
+ * drives of a good game are meant to feel desperate.
+ *
+ * A box defender's base pursuit is 0.58–0.86 and a good back runs about 1.04,
+ * for scale.
  */
-const RAMP_STEP = 0.06, RAMP_CAP = 6;
+const RAMP_STEP = 0.08, RAMP_CAP = 8;
 const rampAt = (drive) => 1 + Math.min(drive, RAMP_CAP) * RAMP_STEP;
 
 function defenders(rnd, drive, los) {
@@ -833,7 +834,7 @@ const RUN_GAME = (() => {
   // a tackle at 17px looked like the defender standing inside the runner, and
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
-  const SPIN_LEN = 30, SPIN_CD = 34, TACKLE_R = 17;
+  const SPIN_LEN = 30, SPIN_CD = 74, TACKLE_R = 17;
   const TRUCK_LEN = 24, TRUCK_CD = 46;
   const SAMPLE = 'J. Gibbs:DET:0.86:0.38:0.90|D. Henry:BAL:0.62:0.96:0.18|'
     + 'B. Robinson:ATL:0.78:0.70:0.62|T. Bigsby:JAX:0.66:0.58:0.34';
@@ -1129,13 +1130,13 @@ const RUN_GAME = (() => {
         if (dist < nd) { nd = dist; near = d; }
       }
       rb.spin = SPIN_LEN; rb.spinCd = SPIN_LEN + SPIN_CD;
-      rb.clean = !!near && nd < A.CONTACT;
+      rb.clean = !!near && nd < 30;
       // A spin beats a man you are about to meet. It used to be twenty-two
       // frames where the tackle check was skipped outright, granted on every
       // tap wherever you were, so in the open field it was a free escape with
       // no failure case. Now the frames are only earned by spinning into
       // contact, and how many you get is what Elusive buys.
-      rb.evade = rb.clean ? Math.round(5 + 17 * A.ELU) : 0;
+      rb.evade = rb.clean ? Math.round(3 + 11 * A.ELU) : 0;
       rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
       if (rb.clean) for (const d of g.defenders)
         if (Math.hypot(rb.x - d.x, rb.y - d.y) < A.CONTACT + 10) d.stumble = A.STUMBLE;
@@ -1844,7 +1845,7 @@ const DRIVE_GAME = (() => {
                ['Run cut', 'swipe left / right'],
                ['Run spin', 'tap to spin'],
                ['Run truck', 'swipe up'],
-               ['Pass', 'tap to throw'],
+               ['Pass', 'tap where you want it thrown'],
                ['4th down', 'take the field goal or go for it'],
                ['Points', 'TD is 6, XP is 1, FG is 3']],
     /** Shown instead when there is a real pointer, which is as close as the
@@ -1853,7 +1854,7 @@ const DRIVE_GAME = (() => {
                    ['Run cut', '← and →'],
                    ['Run spin', 'space'],
                    ['Run truck', '↑'],
-                   ['Pass', 'space to throw'],
+                   ['Pass', 'click where you want it thrown'],
                    ['4th down', 'take the field goal or go for it'],
                    ['Points', 'TD is 6, XP is 1, FG is 3']],
     roster: RUN_GAME.roster,
