@@ -51,9 +51,8 @@ export function fatigueByPlayer(
 /** What a player's ratings are worth this week, given the miles on him. */
 export const freshness = (fatigue: number) => 1 - FADE * Math.max(0, Math.min(1, fatigue));
 
-/** Three bands, because a number nobody can act on is worse than a word. */
-export function fatigueLabel(fatigue: number): '' | 'FRESH' | 'WORN' | 'GASSED' {
-  if (fatigue >= 0.66) return 'GASSED';
-  if (fatigue >= 0.33) return 'WORN';
-  return '';
-}
+/* The word for a fatigue value — "worn" past a third, "gassed" past two —
+   lives in the lineup screen in arcade-game.html, which is the only place a
+   lineup is set and so the only place it was ever read. It was duplicated here
+   for the roster page; with that page gone, the copy went with it rather than
+   sitting around waiting to disagree with the original. */

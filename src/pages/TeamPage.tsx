@@ -68,7 +68,7 @@ export function TeamPage() {
   if (rosterId === null) {
     return (
       <div className="page">
-        <NavBar title="Team" />
+        <NavBar title="Team" home />
         {rosters.data && users.data ? (
           <TeamPicker rosters={rosters.data} users={users.data} onPick={setPicked} />
         ) : (
@@ -90,6 +90,7 @@ export function TeamPage() {
       <NavBar
         title="Team"
         back={!!params.rosterId}
+        home={!params.rosterId}
         action={
           roster ? (
             <button className="navbar-action" onClick={() => setAnalysisOpen(true)} aria-label="Roster analysis">

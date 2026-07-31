@@ -100,6 +100,7 @@ export function MatchupPage() {
       <NavBar
         title={`WEEK ${week} MATCHUP`}
         back={!!params.matchupId}
+        home={!params.matchupId}
         action={
           view ? (
             <button className="navbar-action" onClick={() => setAnalysisOpen(true)} aria-label="Roster analysis">

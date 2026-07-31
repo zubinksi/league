@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   useLeague,
   useNflState,
@@ -36,6 +44,18 @@ export const usePlayerCard = () => useContext(PlayerCardContext);
 const fmtPts = (n: number) => n.toFixed(1);
 const TIERS = 5;
 
+/** Past this, a downward drag is a dismissal rather than a fidget. Capped so a
+ *  tall card is not harder to close than a short one. */
+const DISMISS = (h: number) => Math.min(120, h * 0.28);
+/** px per ms — a flick, not a drag. */
+const FLING = 0.5;
+/** Velocity over the last of these, not since the last frame: one slow frame at
+ *  the end of a real flick is normal, and reading only that frame throws the
+ *  gesture away. */
+const VWINDOW = 100;
+/** Enough movement that the pointer-up was a gesture, not a tap. */
+const SLOP = 6;
+
 /**
  * Everything here is one question: how did this arcade character get made.
  *
@@ -44,13 +64,20 @@ const TIERS = 5;
  * "should I start him", and there is no lineup to set any more. What is left is
  * the ladders, the weeks they were climbed, and the real production underneath
  * them, which were always the same numbers wearing two different hats.
+ *
+ * The three of those that fit on one screen — the radar, the climb and this
+ * week — sit side by side in a pager, because they are peers: three readings of
+ * the same player, none of them the parent of the others. Stacked, the second
+ * and third were a scroll nobody took. The season strip and the game log are
+ * still behind "Full card": the log alone is 633px, four times any page, and
+ * paging to a section that tall is a worse deal than scrolling to it.
  */
 function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const league = useLeague();
   const players = usePlayers();
   const state = useNflState();
-  // The season, the game log and the week's box score are a lot to hand someone
-  // who asked "who is this guy" while picking a lineup. They are one tap away.
+  // The season and the game log are a lot to hand someone who asked "who is
+  // this guy" while picking a lineup. They are one tap away.
   const [full, setFull] = useState(!card.brief);
 
   const week = defaultWeek(league.data, state.data);
@@ -103,6 +130,77 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
     return m;
   }, [rises]);
 
+  // ---- the pager ----
+  // A native scroll-snap track rather than a translated rail: it gets momentum,
+  // rubber-banding and the platform's own fling curve for free, and because the
+  // pages are equal-width flex children the browser's page maths is the same as
+  // ours. They also stretch to the tallest of them, so switching pages never
+  // resizes the sheet.
+  const trackRef = useRef<HTMLDivElement>(null);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [page, setPage] = useState(0);
+
+  const goTo = useCallback((i: number) => {
+    const el = trackRef.current;
+    if (!el) return;
+    // scrollTo ignores the CSS scroll-behavior override, so ask directly.
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollTo({ left: i * el.clientWidth, behavior: still ? 'auto' : 'smooth' });
+    setPage(i);
+  }, []);
+
+  // ---- drag to dismiss ----
+  // Only from the grabber. The card scrolls vertically and pages horizontally,
+  // so a third gesture needs its own patch of screen or it steals from one of
+  // them; the grabber is that patch, and it sits above both.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const grab = useRef<{ y: number; trail: { y: number; t: number }[] } | null>(null);
+  const dragged = useRef(false);
+  const [drag, setDrag] = useState<number | null>(null);
+
+  /** How fast the finger was moving down, over the trailing window. */
+  const speed = (trail: { y: number; t: number }[]) => {
+    const now = trail[trail.length - 1];
+    const from = trail.find((s) => now.t - s.t <= VWINDOW) ?? trail[0];
+    return now.t > from.t ? (now.y - from.y) / (now.t - from.t) : 0;
+  };
+
+  const onGrabDown = (e: React.PointerEvent<HTMLButtonElement>) => {
+    // Keeps the moves coming when the finger leaves the 26px handle, which it
+    // does immediately. Throws if the pointer is already gone; the drag still
+    // works, it just ends early.
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      /* no capture, no harm */
+    }
+    grab.current = { y: e.clientY, trail: [{ y: e.clientY, t: performance.now() }] };
+    dragged.current = false;
+    setDrag(0);
+  };
+
+  const onGrabMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const g = grab.current;
+    if (!g) return;
+    g.trail.push({ y: e.clientY, t: performance.now() });
+    if (g.trail.length > 12) g.trail.shift();
+    const dy = e.clientY - g.y;
+    if (Math.abs(dy) > SLOP) dragged.current = true;
+    // Up is resisted rather than blocked, so the card answers the finger.
+    setDrag(dy > 0 ? dy : dy / 4);
+  };
+
+  const onGrabUp = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const g = grab.current;
+    if (!g) return;
+    grab.current = null;
+    g.trail.push({ y: e.clientY, t: performance.now() });
+    const dy = e.clientY - g.y;
+    const h = sheetRef.current?.offsetHeight ?? 480;
+    if (dy > DISMISS(h) || (speed(g.trail) > FLING && dy > SLOP)) onClose();
+    else setDrag(null);
+  };
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
     window.addEventListener('keydown', onKey);
@@ -148,10 +246,127 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
   const n = Math.max(1, log.entries.length);
   const slot = 340 / n;
 
+  // The pages, in the order they answer "who is this": what he is good at, how
+  // he got there, what he did on Sunday. A ladder needs three axes to draw and
+  // the climb needs at least one rung crossed, so either can be missing.
+  const pages: { key: string; label: string; meta: string; body: React.ReactNode }[] = [];
+
+  if (arc && arc.attrs.length >= 3) {
+    pages.push({
+      key: 'ladders',
+      label: 'LADDERS',
+      meta: `RUNG ${arc.attrs.reduce((s, a) => s + a.tier + 1, 0)} / ${arc.attrs.length * TIERS}`,
+      body: (
+        <>
+          <div className="lad-wrap">
+            <LadderRadar attrs={arc.attrs} />
+          </div>
+          <div className="lad-next">
+            {arc.attrs.map((a) => (
+              <span key={a.label}>
+                <b>{a.stat.toLocaleString()}</b> {a.unit} pace ·{' '}
+                {a.nextAt === null
+                  ? `${a.label} maxed`
+                  : `${a.label} ${a.tier + 2} at ${a.nextAt.toLocaleString()}`}
+              </span>
+            ))}
+          </div>
+        </>
+      ),
+    });
+  }
+
+  if (rises.length > 0) {
+    pages.push({
+      key: 'climb',
+      label: 'THE CLIMB',
+      meta: 'RUNGS BY WEEK',
+      body: (
+        <div className="lad-wrap">
+          <ClimbChart rises={rises} week={week} />
+        </div>
+      ),
+    });
+  }
+
+  pages.push({
+    key: 'week',
+    label: 'THIS WEEK',
+    meta: `WEEK ${week}`,
+    body: (
+      <div className="sheet-week">
+        <div className="sheet-week-score">
+          <span className={`swpts${gameState === 'live' ? ' live' : ''}`}>
+            {points === null || points === undefined ? '—' : fmtPts(points)}
+          </span>
+          <span className="swmeta">
+            {gameState === 'live' && <span className="live-dot" />}
+            <span className={gameState === 'live' ? 'swgame live' : 'swgame'}>{gameText}</span>
+          </span>
+        </div>
+        {added.length > 0 && (
+          <div className="sw-added">
+            {added.map((r) => (
+              <span key={r.label}>
+                <b>+{Math.round(r.added)}</b> {r.label}
+              </span>
+            ))}
+          </div>
+        )}
+        {pairs.length > 0 && (
+          <div className="stat-tiles">
+            {pairs.map((p) => (
+              <div className="stat-tile" key={p.label}>
+                <div className="stat-tile-label">{p.label}</div>
+                <div className="stat-tile-value">{p.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    ),
+  });
+
+  // A page can disappear between renders (the climb, once the data says no rung
+  // ever moved), so the index is clamped rather than trusted.
+  const cur = Math.min(page, pages.length - 1);
+
+  const onTabKey = (e: React.KeyboardEvent) => {
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const next = (cur + step + pages.length) % pages.length;
+    goTo(next);
+    tabRefs.current[next]?.focus();
+  };
+
   return (
-    <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet-grabber" />
+    <div
+      className="sheet-backdrop"
+      onClick={onClose}
+      style={drag ? { opacity: Math.max(0.2, 1 - drag / 260) } : undefined}
+    >
+      <div
+        className={`sheet${drag === null ? '' : ' dragging'}`}
+        ref={sheetRef}
+        onClick={(e) => e.stopPropagation()}
+        style={drag === null ? undefined : { transform: `translateY(${drag.toFixed(1)}px)` }}
+      >
+        <button
+          className="sheet-grab"
+          aria-label="Close player card"
+          onPointerDown={onGrabDown}
+          onPointerMove={onGrabMove}
+          onPointerUp={onGrabUp}
+          onPointerCancel={onGrabUp}
+          onClick={() => {
+            // A drag that fell short of the threshold ends in a pointerup on
+            // this button, which the browser then calls a click.
+            if (!dragged.current) onClose();
+          }}
+        >
+          <span className="sheet-grabber" />
+        </button>
 
         <div className="sheet-header">
           <div className="sheet-id">
@@ -162,7 +377,7 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
                 {meta?.position ?? '—'} · {meta?.team ?? 'FA'}
                 {meta?.number ? ` · #${meta.number}` : ''}
                 {arc?.status && (
-                  <i className={`rp-status ${sidelined(arc.status) ? 'out' : 'risk'}`}>
+                  <i className={`status-flag ${sidelined(arc.status) ? 'out' : 'risk'}`}>
                     {' '}
                     {arc.status}
                   </i>
@@ -172,27 +387,45 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           </div>
         </div>
 
-        {arc && arc.attrs.length >= 3 && (
-          <>
-            <div className="sheet-section">
-              <span>LADDERS</span>
-              <span>RUNG {arc.attrs.reduce((s, a) => s + a.tier + 1, 0)} / {arc.attrs.length * TIERS}</span>
+        <div className="pg-tabs" role="tablist" aria-label="Player sections" onKeyDown={onTabKey}>
+          {pages.map((p, i) => (
+            <button
+              key={p.key}
+              role="tab"
+              id={`pgt-${p.key}`}
+              aria-controls={`pgp-${p.key}`}
+              aria-selected={i === cur}
+              tabIndex={i === cur ? 0 : -1}
+              ref={(el) => {
+                tabRefs.current[i] = el;
+              }}
+              onClick={() => goTo(i)}
+            >
+              {p.label}
+            </button>
+          ))}
+          <span className="pg-meta">{pages[cur].meta}</span>
+        </div>
+        <div
+          className="pg-track"
+          ref={trackRef}
+          onScroll={(e) => {
+            const el = e.currentTarget;
+            setPage(Math.round(el.scrollLeft / Math.max(1, el.clientWidth)));
+          }}
+        >
+          {pages.map((p) => (
+            <div
+              key={p.key}
+              className="pg-page"
+              role="tabpanel"
+              id={`pgp-${p.key}`}
+              aria-labelledby={`pgt-${p.key}`}
+            >
+              {p.body}
             </div>
-            <div className="lad-wrap">
-              <LadderRadar attrs={arc.attrs} />
-            </div>
-            <div className="lad-next">
-              {arc.attrs.map((a) => (
-                <span key={a.label}>
-                  <b>{a.stat.toLocaleString()}</b> {a.unit} pace ·{' '}
-                  {a.nextAt === null
-                    ? `${a.label} maxed`
-                    : `${a.label} ${a.tier + 2} at ${a.nextAt.toLocaleString()}`}
-                </span>
-              ))}
-            </div>
-          </>
-        )}
+          ))}
+        </div>
 
         {!full && (
           <div className="lad-brief">
@@ -212,55 +445,8 @@ function Sheet({ card, onClose }: { card: CardState; onClose: () => void }) {
           </div>
         )}
 
-        {full && rises.length > 0 && (
-          <>
-            <div className="sheet-section">
-              <span>THE CLIMB</span>
-              <span>RUNGS BY WEEK</span>
-            </div>
-            <div className="lad-wrap">
-              <ClimbChart rises={rises} week={week} />
-            </div>
-          </>
-        )}
-
         {full && (
         <>
-        <div className="sheet-section">
-          <span>THIS WEEK</span>
-          <span>WEEK {week}</span>
-        </div>
-        <div className="sheet-week">
-          <div className="sheet-week-score">
-            <span className={`swpts${gameState === 'live' ? ' live' : ''}`}>
-              {points === null || points === undefined ? '—' : fmtPts(points)}
-            </span>
-            <span className="swmeta">
-              {gameState === 'live' && <span className="live-dot" />}
-              <span className={gameState === 'live' ? 'swgame live' : 'swgame'}>{gameText}</span>
-            </span>
-          </div>
-          {added.length > 0 && (
-            <div className="sw-added">
-              {added.map((r) => (
-                <span key={r.label}>
-                  <b>+{Math.round(r.added)}</b> {r.label}
-                </span>
-              ))}
-            </div>
-          )}
-          {pairs.length > 0 && (
-            <div className="stat-tiles">
-              {pairs.map((p) => (
-                <div className="stat-tile" key={p.label}>
-                  <div className="stat-tile-label">{p.label}</div>
-                  <div className="stat-tile-value">{p.value}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         <div className="sheet-section">
           <span>SEASON</span>
           <span>{log.playedWeeks} GP</span>

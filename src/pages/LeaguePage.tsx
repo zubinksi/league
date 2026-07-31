@@ -143,7 +143,7 @@ export function LeaguePage() {
 
   return (
     <div className="page league-page">
-      <NavBar title={league.data ? league.data.name : 'League'} />
+      <NavBar title={league.data ? league.data.name : 'League'} home />
 
       <div className="section-header league-head">
         <span>MATCHUPS</span>

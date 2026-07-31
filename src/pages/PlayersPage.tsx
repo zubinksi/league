@@ -137,7 +137,7 @@ export function PlayersPage() {
 
   return (
     <div className="page">
-      <NavBar title="Players" />
+      <NavBar title="Players" home />
       <div className="search-wrap">
         <input
           className="search-input"

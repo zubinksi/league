@@ -12,7 +12,7 @@ export function Sprite({ position, team, size }: { position: string; team: strin
   return (
     <canvas
       ref={ref}
-      className="rp-sprite"
+      className="sprite"
       width={SPRITE}
       height={SPRITE}
       style={{ width: size, height: size }}
