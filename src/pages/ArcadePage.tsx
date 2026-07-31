@@ -48,7 +48,7 @@ export function ArcadePage() {
   const prior = usePriorSeasonTotals(league.data?.season);
   // Bye weeks: Sleeper carries injuries but no schedule, so availability
   // needs the board we already fetch for this week.
-  const { scoreboard } = useWeekData(league.data?.season, week);
+  const { scoreboard, matchups } = useWeekData(league.data?.season, week);
 
   useEffect(() => {
     let live = true;
@@ -135,6 +135,18 @@ export function ArcadePage() {
     [scores, picked, week],
   );
 
+  // Who the counted run is played against. The game names him on the button
+  // that spends the week, because "matchup" on its own never said against whom.
+  const opponent = useMemo(() => {
+    if (picked === null || !matchups.data) return '';
+    const mine = matchups.data.find((m) => m.roster_id === picked);
+    if (!mine || mine.matchup_id == null) return '';
+    const foe = matchups.data.find(
+      (m) => m.matchup_id === mine.matchup_id && m.roster_id !== picked,
+    );
+    return foe ? nameOf(foe.roster_id) : '';
+  }, [matchups.data, picked, nameOf]);
+
   const src = useMemo(() => {
     if (picked === null || !rosters.data || !players.data || weekly.loading) return null;
     const mine = rosters.data.find((r) => r.roster_id === picked);
@@ -142,8 +154,8 @@ export function ArcadePage() {
     const built = buildArcadeRosters(mine.players ?? [], players.data, weekly.weekly, prior.data, scoreboard.data, tired);
     // Everyone in the league gets the same defense, coverage and wind each week.
     const seed = `${LEAGUE_ID}-W${week}`;
-    return `/arcade-game.html?${arcadeQuery(built, seed)}`;
-  }, [picked, rosters.data, players.data, weekly.loading, weekly.weekly, prior.data, scoreboard.data, week, tired]);
+    return `/arcade-game.html?${arcadeQuery(built, seed, opponent)}`;
+  }, [picked, rosters.data, players.data, weekly.loading, weekly.weekly, prior.data, scoreboard.data, week, tired, opponent]);
 
   const status = useMemo(
     () => (picked === null ? null : weekStatus(scores, week, picked)),

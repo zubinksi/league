@@ -23,8 +23,12 @@
     align-items: center; justify-items: center; gap: 7px; padding: 8px 0;
   }
   #stage { align-self: center; }
-  /* game switcher */
-  #stage { position: relative; }
+  /* The field can only take a whole multiple of 180 logical pixels, but the
+     lineup and the play call are DOM and have no such rule — so the stage is
+     as wide as the screen allows and the canvas sits centred inside it. Below
+     390px that is the difference between four readable play cards and four
+     36px ones. */
+  #stage { position: relative; display: flex; justify-content: center; }
   canvas {
     image-rendering: pixelated; image-rendering: crisp-edges;
     touch-action: none;                   /* the field owns every gesture */
@@ -65,58 +69,128 @@
     text-transform: uppercase; color: var(--gold);
   }
 
-  /* Pre-snap route menu: choosing the concept is what snaps the ball. */
+  /*
+   * The play call. It used to be eight small text buttons under a scrim thin
+   * enough to read the live alignment through, which asked the screen to be a
+   * menu and a picture at once and left both cramped. It is a full menu now,
+   * and the read moved into the cards: every diagram draws the front you are
+   * actually facing, with that play's path over it, so choosing a gap is still
+   * choosing the empty one.
+   */
   #prompt {
-    /* Anchored to the top: pre-snap the players are down by the line, and the
-       alignment you're reading is the whole point of choosing a route. */
     position: absolute; inset: 0; display: none; flex-direction: column;
-    align-items: center; justify-content: flex-start; gap: 7px;
-    padding: 14px 14px 0; text-align: center;
-    background: linear-gradient(180deg,
-      rgba(8,9,11,0.92) 0%, rgba(8,9,11,0.72) 34%, rgba(8,9,11,0) 58%);
+    align-items: center; gap: 9px;
+    padding: 12px 10px; text-align: center; background: #08090b;
+    touch-action: pan-y; overflow-y: auto;
   }
   #prompt.show { display: flex; }
-  .prtitle {
-    font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
+  /* Same struts as the picker: centred where it fits, scrolled from the top
+     on a screen too short to hold the whole call. */
+  #prompt::before, #prompt::after { content: ''; margin: auto; }
+  .prdef {
+    font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #c9c9cf;
+  }
+  .prdef i { font-style: normal; color: var(--gold); }
+  /* Down, distance, field position, drives left, points — the whole situation
+     in one card, because during a call it is the only thing on screen. */
+  .prsit {
+    display: flex; align-items: center; width: 100%; max-width: 330px;
+    border: 1px solid rgba(255,255,255,0.13); border-radius: 9px;
+    padding: 9px 6px;
+  }
+  .prdd {
+    flex: 1.35; font-size: 14px; font-weight: 600; letter-spacing: 0.08em;
     text-transform: uppercase; color: var(--gold);
+    border-right: 1px solid rgba(255,255,255,0.10);
   }
-  .prsub {
-    font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase;
-    color: #6d6f76; margin-bottom: 4px;
+  .prcell {
+    flex: 1; display: flex; flex-direction: column; gap: 4px; align-items: center;
+    border-right: 1px solid rgba(255,255,255,0.10);
   }
-  #propts { display: flex; flex-direction: column; gap: 6px; align-items: center; margin-top: 4px; }
-  .prow { display: flex; align-items: center; gap: 6px; }
-  .prlab {
-    width: 34px; text-align: right; font-size: 8px; letter-spacing: 0.16em;
+  .prcell:last-child { border-right: 0; }
+  .prcell i {
+    font-style: normal; font-size: 7.5px; letter-spacing: 0.16em;
     text-transform: uppercase; color: #6d6f76;
   }
-  .propt {
-    padding: 9px 11px; border: 1px solid rgba(255,255,255,0.18); border-radius: 8px;
-    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
-    color: #ececed; cursor: pointer; touch-action: manipulation;
-    /* A row of four plus its label is the tightest thing on the screen; let
-       them size to their text rather than squeezing "Edge L" onto two lines. */
-    flex: none; white-space: nowrap;
+  .prcell b { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; color: #ececed; }
+  .prsub {
+    font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: #6d6f76;
   }
+  /* Run or pass first, plays second. Two taps for a pass where there used to be
+     one, bought with targets four times the size and a diagram on every card —
+     and the choice is sticky, so a preference only costs the first call. */
+  #prtabs { display: flex; flex-wrap: wrap; gap: 9px; width: 100%; max-width: 330px; }
+  .prtab {
+    flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 9px 4px; border: 1px solid rgba(255,255,255,0.16); border-radius: 9px;
+    font-size: 13px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase;
+    color: #8f9199; cursor: pointer; touch-action: manipulation;
+  }
+  .prtab canvas { image-rendering: pixelated; opacity: 0.6; }
+  .prtab.on { border-color: rgba(232,197,97,0.62); color: var(--gold); }
+  .prtab.on canvas { opacity: 1; }
+  .prtab:active { background: rgba(255,255,255,0.06); }
+  #propts { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; width: 100%; max-width: 330px; }
+  .prcard {
+    /* Capped, so the one card a field goal offers is the same object as one of
+       four and not a billboard. */
+    /* Four across wherever four fit — the basis is under a quarter of the
+       narrowest track that still holds them — and two rows of two below that. */
+    flex: 1 1 62px; min-width: 62px; max-width: 92px;
+    display: flex; flex-direction: column; align-items: center;
+    gap: 6px; padding: 8px 3px 7px;
+    border: 1px solid rgba(255,255,255,0.14); border-radius: 9px;
+    cursor: pointer; touch-action: manipulation;
+  }
+  .prcard:active { background: rgba(255,255,255,0.07); border-color: rgba(255,255,255,0.34); }
+  .prname {
+    font-size: 8.5px; font-weight: 600; letter-spacing: 0.1em;
+    text-transform: uppercase; color: #ececed; white-space: nowrap;
+  }
+  .prdiag { width: 100%; height: auto; display: block; }
+  /* The line under the diagram, and what the play asks of your man. */
+  .prbest {
+    display: flex; flex-direction: column; gap: 3px; width: 100%;
+    padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.10);
+    font-size: 7px; letter-spacing: 0.14em; text-transform: uppercase; color: #6d6f76;
+  }
+  .prbest i { font-style: normal; }
+  .prbest b { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; color: #c9c9cf; }
   /* The key that picks this play. Only drawn where there is a keyboard. */
-  .propt .prkey {
-    font-style: normal; font-size: 8px; letter-spacing: 0.1em;
-    color: #6d6f76; margin-right: 6px;
+  .prkey {
+    font-style: normal; font-size: 7px; letter-spacing: 0.1em; color: #55575d;
   }
-  .propt:active { background: rgba(255,255,255,0.12); }
+  .prdiag .front { fill: #9a9ca3; }
+  .prdiag .corner { fill: #6d6f76; }
+  /* On a route card the box is context and the corner is the read, so the two
+     trade places. */
+  .prdiag.pass .front { fill: #4a4c52; }
+  .prdiag.pass .corner { fill: #c9c9cf; }
+  .prdiag .mine { fill: #ececed; }
+  .prdiag .los { stroke: rgba(255,255,255,0.22); stroke-width: 1; stroke-dasharray: 3 3; }
+  .prdiag .post { stroke: #9a9ca3; stroke-width: 1.6; }
+  .prdiag .path {
+    fill: none; stroke: #ececed; stroke-width: 1.4; stroke-dasharray: 2.5 2.5;
+    stroke-linejoin: round; stroke-linecap: round;
+  }
+  .prdiag .tip { fill: var(--gold); }
 
 
   #picker {
     position: absolute; inset: 0; display: none; flex-direction: column;
-    align-items: center; justify-content: center; gap: 7px; padding: 0 14px;
-    background: rgba(8,9,11,0.93); touch-action: manipulation;
+    align-items: center; gap: 7px; padding: 0 14px;
+    background: #08090b; touch-action: pan-y; overflow-y: auto;
   }
   #picker.show { display: flex; }
+  /* Centred when it fits, scrolled from the top when it does not. Auto margins
+     on a pair of struts do both; justify-content: center would centre it and
+     then put the first row out of reach above the scroll origin. */
+  #picker::before, #picker::after { content: ''; margin: auto; }
   /* How-to-play, shown once you've picked and before the first snap. */
   #brief {
     position: absolute; inset: 0; display: none; flex-direction: column;
     align-items: center; justify-content: center; gap: 8px; padding: 0 18px;
-    background: rgba(8,9,11,0.94);
+    background: #08090b;
   }
   #brief.show { display: flex; }
   #blist { display: flex; flex-direction: column; gap: 9px; margin-top: 6px; }
@@ -133,9 +207,9 @@
     margin-top: 12px; font-size: 8.5px; letter-spacing: 0.24em;
     text-transform: uppercase; color: #4a4c52;
   }
-  .ptitle { font-size: 13px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #fbfbfd; }
-  .pfront { font-size: 8.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 6px; }
-  #plist { display: flex; flex-direction: column; gap: 5px; width: 100%; max-width: 318px; }
+  .ptitle { font-size: 15px; font-weight: 600; letter-spacing: 0.22em; text-transform: uppercase; color: #fbfbfd; }
+  .pfront { font-size: 9.5px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--gold); margin-bottom: 4px; }
+  #plist { display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 318px; }
   /* A container, not a control. Everything tappable is a child of it, so no
      button is ever nested inside another one. */
   .pick {
@@ -150,20 +224,20 @@
   /* The player: who he is, and a tap for his card. */
   .pick .pwho {
     flex: 1; min-width: 0; display: flex; align-items: center;
-    justify-content: space-between; gap: 10px; padding: 9px 11px;
+    justify-content: space-between; gap: 10px; padding: 11px 12px;
   }
   .pick .pwho:hover:not(:disabled), .pick .pwho:active:not(:disabled) { background: rgba(255,255,255,0.05); }
-  .pick .pn { display: block; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #ececed; }
+  .pick .pn { display: block; font-size: 13.5px; font-weight: 600; letter-spacing: 0.04em; color: #ececed; }
   .pick .ptrend {
-    margin-left: 7px; font-size: 7px; font-weight: 400; letter-spacing: 0;
+    margin-left: 7px; font-size: 8px; font-weight: 400; letter-spacing: 0;
   }
   .pick .ptrend.up { color: #c9c9cf; }
   .pick .ptrend.down { color: #55575d; }
   .pick .pchip {
-    display: inline-block; width: 5px; height: 5px; border-radius: 1px;
-    margin-right: 6px; vertical-align: middle;
+    display: inline-block; width: 7px; height: 7px; border-radius: 1px;
+    margin-right: 7px; vertical-align: middle;
   }
-  .pick .pt { display: block; font-size: 8px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 4px; }
+  .pick .pt { display: block; font-size: 9.5px; letter-spacing: 0.18em; color: #6d6f76; text-transform: uppercase; margin-top: 5px; }
   .pick.chem { border-color: rgba(232,197,97,0.44); }
   /* Still listed, so you can see who you have not got this week. */
   .pick.off { opacity: 0.34; border-style: dashed; }
@@ -185,48 +259,65 @@
   /* The position is the control that changes who fills it — the same move as
      tapping a slot on a real roster page. It was dead label text before. */
   .pick .pslot {
-    flex: none; width: 62px; display: flex; align-items: center; gap: 3px;
-    padding: 9px 0 9px 11px; border-right: 1px solid rgba(255,255,255,0.09);
-    font-size: 7.5px; letter-spacing: 0.18em; text-transform: uppercase; color: #8f9199;
+    flex: none; width: 70px; display: flex; align-items: center; gap: 3px;
+    padding: 11px 0 11px 12px; border-right: 1px solid rgba(255,255,255,0.09);
+    font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: #8f9199;
   }
-  .pick .pslot i { font-style: normal; font-size: 11px; line-height: 1; color: #55575d; }
+  .pick .pslot i { font-style: normal; font-size: 12px; line-height: 1; color: #55575d; }
   .pick .pslot:hover, .pick .pslot:active { background: rgba(255,255,255,0.06); color: #ececed; }
   .pick .pslot:hover i, .pick .pslot:active i { color: #b6b8be; }
   /* Beside the row, never inside it. */
   .pick .pinfo {
-    flex: none; width: 40px; display: flex; align-items: center; justify-content: center;
+    flex: none; width: 38px; display: flex; align-items: center; justify-content: center;
     border-left: 1px solid rgba(255,255,255,0.09);
-    font-size: 9px; font-style: italic; font-weight: 600; color: #8f9199;
+    font-size: 11px; font-style: italic; font-weight: 600; color: #8f9199;
   }
   .pick .pinfo:hover, .pick .pinfo:active { background: rgba(255,255,255,0.06); color: #ececed; }
   .phint {
-    font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase;
-    color: #4a4c52;
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #55575d;
   }
-  /* Nothing at all on a quiet week — an empty headline is worse than none. */
-  .pmoved {
-    display: flex; flex-wrap: wrap; justify-content: center; gap: 3px 12px;
-    max-width: 320px; font-size: 8px; letter-spacing: 0.16em;
-    text-transform: uppercase; color: #6d6f76;
+  /* Nothing at all on a quiet week — an empty headline is worse than none, and
+     an empty box worse still, so the border belongs to the text and not to a
+     slot reserved for it. */
+  .pmoved { display: flex; justify-content: center; }
+  .pmovedcard {
+    padding: 8px 16px; border: 1px solid rgba(255,255,255,0.13); border-radius: 999px;
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: #8f9199; white-space: nowrap;
   }
-  .pmoved b { font-weight: 600; color: #c9c9cf; }
-  .pmoved i { font-style: normal; }
+  .pmoved b { font-weight: 600; color: #ececed; }
+  .pmoved i { font-style: normal; font-size: 9px; }
   .pmoved i.up { color: var(--gold); }
   .pmoved i.down { color: #b0555f; }
   .pchemline {
-    min-height: 11px; font-size: 8px; letter-spacing: 0.2em;
+    min-height: 12px; font-size: 9px; letter-spacing: 0.2em;
     text-transform: uppercase; color: var(--gold);
   }
   .pstart {
     /* Real buttons now, so the agent stylesheet has to be turned off first. */
     appearance: none; -webkit-appearance: none; background: none; font: inherit;
-    margin-top: 3px; padding: 9px 32px; border: 1px solid rgba(255,255,255,0.32);
-    border-radius: 8px; font-size: 10px; font-weight: 600; letter-spacing: 0.24em;
+    padding: 13px 20px; border: 1px solid rgba(255,255,255,0.32);
+    border-radius: 9px; font-size: 12px; font-weight: 600; letter-spacing: 0.2em;
     text-transform: uppercase; color: #ececed; cursor: pointer; touch-action: manipulation;
   }
   .pstart:hover, .pstart:active { border-color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); }
-  .pmodes { display: flex; gap: 9px; align-items: stretch; }
-  .pmodes .pstart { padding: 9px 20px; }
+  /* Stacked, not side by side: two half-width buttons could not hold "matchup
+     vs the zooks" and were the smallest targets on a screen whose whole job is
+     to be tapped. */
+  .pmodes { display: flex; flex-direction: column; gap: 8px; width: 100%; max-width: 318px; }
+  /* The one that spends the week. Gold is the app's live-and-scoring colour and
+     this is the only scoring run there is. */
+  .pstart.live {
+    border-color: rgba(232,197,97,0.55); color: var(--gold);
+    background: rgba(232,197,97,0.07);
+  }
+  .pstart.live:hover, .pstart.live:active {
+    border-color: var(--gold); background: rgba(232,197,97,0.14);
+  }
+  .pstart.live i {
+    font-style: normal; font-weight: 400; letter-spacing: 0.14em; color: #b09a55;
+  }
   /* Practice is the safe one, so it reads as the quieter of the two. */
   .pstart.ghost { border-color: rgba(255,255,255,0.16); color: #8f9199; }
   .pstart.ghost:hover, .pstart.ghost:active { color: #ececed; }
@@ -236,27 +327,33 @@
   }
   .pstart:disabled:hover { background: none; border-color: rgba(255,255,255,0.10); }
   .pmnote {
-    min-height: 10px; font-size: 8px; letter-spacing: 0.18em;
-    text-transform: uppercase; color: #4a4c52;
+    min-height: 11px; font-size: 9px; letter-spacing: 0.18em;
+    text-transform: uppercase; color: #55575d;
   }
   #picker.swapping .pmodes, #picker.swapping .pmnote { display: none; }
   .phow, .pback {
-    margin-top: 9px; font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase;
-    color: #4a4c52; cursor: pointer; touch-action: manipulation;
+    margin-top: 7px; font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase;
+    color: #6d6f76; cursor: pointer; touch-action: manipulation;
   }
-  .pback { color: #6d6f76; }
+  /* A chevron is the cheapest way to say the line is a door. */
+  .phow i { font-style: normal; font-size: 12px; line-height: 1; color: #4a4c52; }
+  .phow:hover, .phow:active { color: #ececed; }
+  .phow:hover i, .phow:active i { color: #8f9199; }
   /* Swapping one spot: the lineup chrome steps aside for the position's list. */
   #picker.swapping .pchemline, #picker.swapping .phow { display: none; }
   #picker:not(.swapping) .pback { display: none; }
-  .pick .pbars { display: flex; flex-direction: column; gap: 2px; align-items: flex-end; }
-  .pick .pbar { display: flex; gap: 1px; }
-  .pick .pseg { width: 5px; height: 4px; background: rgba(255,255,255,0.10); }
+  .pick .pbars { display: flex; flex-direction: column; gap: 3px; align-items: flex-end; }
+  .pick .pbar { display: flex; gap: 2px; }
+  .pick .pseg { width: 8px; height: 7px; background: rgba(255,255,255,0.10); }
   .pick .pseg.on { background: #c9c9cf; }
   /* What last weekend did. Gold for ground gained, red for ground given back. */
   .pick .pseg.up { background: var(--gold); }
   .pick .pseg.down { background: rgba(176,85,95,0.55); }
 
   #status {
+    /* Reserved whether or not it has anything to say, so the field does not
+       jump when the call screen takes the readout over. */
+    min-height: 12px;
     display: flex; gap: 15px; align-items: baseline;
     font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76;
   }
@@ -290,11 +387,11 @@
       <div id="plist"></div>
       <div class="pchemline" id="pchem"></div>
       <div class="pmodes">
-        <button class="pstart ghost" id="ppract">Practice</button>
         <button class="pstart" id="pmatch">Matchup</button>
+        <button class="pstart ghost" id="ppract">Practice</button>
       </div>
       <div class="pmnote" id="pmnote"></div>
-      <div class="phow" id="phow" role="button">how to play</div>
+      <div class="phow" id="phow" role="button">how to play <i>›</i></div>
       <div class="pback" id="pback" role="button">← lineup</div>
     </div>
     <div id="brief">
@@ -303,8 +400,15 @@
       <div class="bstart">tap to begin</div>
     </div>
     <div id="prompt">
-      <div class="prtitle" id="prtitle"></div>
+      <div class="prdef"><i>Defense</i> <span id="prdef"></span></div>
+      <div class="prsit">
+        <b class="prdd" id="prdd"></b>
+        <span class="prcell"><i>Ball on</i><b id="pron"></b></span>
+        <span class="prcell"><i>Drive</i><b id="prdrive"></b></span>
+        <span class="prcell"><i>Pts</i><b id="prpts"></b></span>
+      </div>
       <div class="prsub" id="prsub"></div>
+      <div id="prtabs"></div>
       <div id="propts"></div>
     </div>
     <div id="overlay">
@@ -320,7 +424,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade54-moved';
+const BUILD = 'arcade55-callcard';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -693,6 +797,7 @@ function drawField(camY, los, marker) {
 
 // ---- canvas --------------------------------------------------------------
 const canvas = document.getElementById('c');
+const stage = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
 const CHROME = 96;
 function fit() {
@@ -703,6 +808,7 @@ function fit() {
   canvas.width = VW; canvas.height = VH;
   canvas.style.width = VW * scale + 'px';
   canvas.style.height = VH * scale + 'px';
+  stage.style.width = Math.max(VW * scale, availW) + 'px';
   ctx.imageSmoothingEnabled = false;
 }
 window.addEventListener('resize', fit);
@@ -861,10 +967,10 @@ const RUN_GAME = (() => {
    */
   const LANE_W = VW / 4;
   const LANES = [
-    { key: 'el', label: 'Edge L', cx: Math.round(VW * 0.17), edge: true },
-    { key: 'il', label: 'Mid L', cx: Math.round(VW * 0.40), edge: false },
-    { key: 'ir', label: 'Mid R', cx: Math.round(VW * 0.60), edge: false },
-    { key: 'er', label: 'Edge R', cx: Math.round(VW * 0.83), edge: true },
+    { key: 'el', label: 'Edge left', cx: Math.round(VW * 0.17), edge: true },
+    { key: 'il', label: 'Mid left', cx: Math.round(VW * 0.40), edge: false },
+    { key: 'ir', label: 'Mid right', cx: Math.round(VW * 0.60), edge: false },
+    { key: 'er', label: 'Edge right', cx: Math.round(VW * 0.83), edge: true },
   ];
 
   let A = {}, g = null;
@@ -937,7 +1043,12 @@ const RUN_GAME = (() => {
       return {
         title: FRONT.label,
         sub: 'pick your gap',
-        options: LANES.map((l) => ({ key: l.key, label: l.label, cx: l.cx })),
+        // `best` is not a hint bolted on: it is the same fork pickOption takes,
+        // where the edge scales off SPD and the interior off PWR.
+        options: LANES.map((l) => ({
+          key: l.key, label: l.label, cx: l.cx, edge: l.edge,
+          best: l.edge ? 'Speed' : 'Power',
+        })),
       };
     },
     pickOption(key) {
@@ -1233,6 +1344,25 @@ const PASS_GAME = (() => {
     slant: 'Slant', out: 'Out', go: 'Go', post: 'Post',
     quick: 'Quick', drag: 'Drag', fade: 'Fade', flat: 'Flat',
   };
+  /** Which of your two men the route asks the most of. A ball that has to
+   *  travel is on the passer's arm; one won at the break is on the target's
+   *  route running; one caught at the line is on his hands. */
+  const BEST = {
+    slant: 'Route', out: 'Route', go: 'Arm', post: 'Arm',
+    quick: 'Hands', drag: 'Route', fade: 'Arm', flat: 'Hands',
+  };
+  /** The route drawn small, as offsets from the receiver on the line. Negative
+   *  y is downfield; x is multiplied by the direction he actually breaks. */
+  const SHAPE = {
+    slant: [[0, 0], [0, -4], [7, -13]],
+    out: [[0, 0], [0, -9], [8, -11]],
+    go: [[0, 0], [0, -20]],
+    post: [[0, 0], [0, -11], [8, -20]],
+    quick: [[0, 0], [0, -3], [5, -8]],
+    drag: [[0, 0], [0, -3], [12, -6]],
+    fade: [[0, 0], [3, -10], [5, -19]],
+    flat: [[0, 0], [4, -2], [11, -4]],
+  };
   const BOOK = (r) => (r.red ? RED : ROUTES);
 
   let A = {}, W = {}, g = null;
@@ -1334,7 +1464,12 @@ const PASS_GAME = (() => {
       return {
         title: SHELL.label,
         sub: 'pick the route',
-        options: (g.red ? RED_MENU : MENU).map((k) => ({ key: k, label: LABEL[k] })),
+        options: (g.red ? RED_MENU : MENU).map((k) => ({
+          key: k, label: LABEL[k], best: BEST[k],
+          // Drawn the way it will actually be run: which side he breaks to
+          // depends on which hash he lined up on.
+          shape: SHAPE[k].map(([x, y]) => [x * this.routeDir(k), y]),
+        })),
       };
     },
     pickOption(route) {
@@ -1805,12 +1940,15 @@ const KICK_GAME = (() => {
 const yds = (n) => (n < 0 ? `${-n} yd loss` : `${n} yd`);
 const SIDELINED = ['BYE', 'OUT', 'IR', 'PUP', 'SUS'];
 
-/** `name:label:dir` per rung crossed since last week. */
-const MOVES = (new URLSearchParams(location.search).get('moves') || '')
-  .split('|').filter(Boolean).map((r) => {
-    const [name, label, dir] = r.split(':');
-    return { name, label, dir: parseInt(dir, 10) || 0 };
-  });
+/** `up:down` — how many players climbed and how many slipped since last week.
+ *  Which rungs moved is on each player's own row. */
+const MOVES = (() => {
+  const [u, d] = (new URLSearchParams(location.search).get('moves') || '').split(':');
+  return { up: parseInt(u, 10) || 0, down: parseInt(d, 10) || 0 };
+})();
+
+/** Who the matchup is against. Empty when the game is not embedded. */
+const OPPONENT = new URLSearchParams(location.search).get('opp') || '';
 const ORD = ['', '1ST', '2ND', '3RD', '4TH'];
 // ===========================================================================
 // GAME 4 — DRIVE
@@ -1862,7 +2000,7 @@ const DRIVE_GAME = (() => {
     attrLabels3: PASS_GAME.attrLabels2,
     attrLabels4: KICK_GAME.attrLabels,
     hint: '',
-    controls: [['Pick a play', 'top row to run, bottom to pass'],
+    controls: [['Pick a play', 'run or pass, then a card'],
                ['Run cut', 'swipe left / right'],
                ['Run spin', 'tap to spin'],
                ['Run truck', 'swipe up'],
@@ -1871,7 +2009,7 @@ const DRIVE_GAME = (() => {
                ['Points', 'TD is 6, XP is 1, FG is 3']],
     /** Shown instead when there is a real pointer, which is as close as the
      *  page gets to knowing there is a keyboard under it. */
-    controlsKeys: [['Pick a play', 'number keys, or click one'],
+    controlsKeys: [['Pick a play', '← → for run or pass, then a number'],
                    ['Run cut', '← and →'],
                    ['Run spin', 'space'],
                    ['Run truck', '↑'],
@@ -1936,21 +2074,34 @@ const DRIVE_GAME = (() => {
       // The rows come from the engines themselves, so the red-zone route swap
       // still happens without this knowing about it.
       PASS_GAME.startAt(g.losYards, g.set);
-      const passes = PASS_GAME.prompt().options.map((o) => ({ ...o, key: `p:${o.key}`, row: 1 }));
+      const passes = PASS_GAME.prompt().options.map((o) => ({ ...o, key: `p:${o.key}`, tab: 'pass' }));
       cur = RUN_GAME;
       RUN_GAME.startAt(g.losYards, g.driveNo, g.set);
-      const runs = RUN_GAME.prompt().options.map((o) => ({ ...o, key: `r:${o.key}` }));
-      // Fourth down buys a third row: take the three, or go for seven.
+      const runs = RUN_GAME.prompt().options.map((o) => ({ ...o, key: `r:${o.key}`, tab: 'run' }));
+      // Fourth down buys a third tab: take the three, or go for seven.
       const fg = fgYards(g.losYards);
-      const kick = g.down === 4 && fg <= KICK_GAME.maxRange()
-        ? [{ key: 'k:fg', label: `Field goal ${fg}`, row: 2 }]
+      const canKick = g.down === 4 && fg <= KICK_GAME.maxRange();
+      // The diagrams measure depth off the line, so the cards need to know
+      // where it is as well as who is standing behind it.
+      g.set.los = los;
+      const kick = canKick
+        ? [{ key: 'k:fg', label: `${fg} yards`, tab: 'kick', best: 'Leg' }]
         : [];
       g.menu = {
-        rowLabels: ['Run', 'Pass', '4th'],
         title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
-        // The buttons and the down say it; the only thing worth a line is
+        // The situation, once, at the size it deserves — the menu covers the
+        // field while it is open, so this is the only readout there is.
+        def: `${RUN_GAME.shell} · ${PASS_GAME.shell}`,
+        on: g.losYards, drive: `${g.poss}/${POSSESSIONS}`, pts: g.points,
+        // The tabs and the cards say the rest; the only thing worth a line is
         // why the kick is missing when it is.
-        sub: g.down === 4 && !kick.length ? `out of range — ${fg} yards` : '',
+        sub: g.down === 4 && !canKick ? `out of range — ${fg} yards` : 'choose a play',
+        set: g.set,
+        tabs: [
+          { key: 'run', label: 'Run', who: lineup[0] },
+          { key: 'pass', label: 'Pass', who: lineup[1] },
+          ...(canKick ? [{ key: 'kick', label: 'Kick', who: lineup[3] }] : []),
+        ],
         options: [...runs, ...passes, ...kick],
       };
       g.state = 'call';
@@ -2101,7 +2252,7 @@ let pick = null;
 
 const el = (id) => document.getElementById(id);
 const picker = el('picker'), plist = el('plist');
-const promptEl = el('prompt'), propts = el('propts');
+const promptEl = el('prompt'), propts = el('propts'), prtabs = el('prtabs');
 // The lineup being built, and which spot is open for a swap (null = none).
 let pick2 = null, picks = [], lineup = [], swapAt = null;
 // Set once a lineup is complete and the run has begun. The game drops itself
@@ -2237,6 +2388,26 @@ function who(p, chem) {
 }
 
 /**
+ * One line for the whole week's movement.
+ *
+ * It used to name up to four rungs that had moved, which was the right idea at
+ * the wrong size: four names in a wrapping strip is a paragraph above a list
+ * that already shows the same thing per row, in the segments that light up. A
+ * count says "something happened, go look" and gets out of the way.
+ */
+function movedSummary() {
+  const { up, down } = MOVES;
+  if (!up && !down) return '';
+  const plural = (v, word) => `player ${word}${v === 1 ? '' : 's'}`;
+  const body = up && down
+    ? `<i class="up">▲</i> <b>${up}</b> up · <i class="down">▼</i> <b>${down}</b> down this week`
+    : up
+      ? `<i class="up">▲</i> <b>${up}</b> ${plural(up, 'upgrade')} this week`
+      : `<i class="down">▼</i> <b>${down}</b> ${plural(down, 'downgrade')} this week`;
+  return `<span class="pmovedcard">${body}</span>`;
+}
+
+/**
  * One screen, pre-filled with the best available at each spot.
  *
  * It used to be four screens in sequence and two of them routinely held a
@@ -2260,9 +2431,7 @@ function buildPicker() {
   el('ptitle').textContent = 'Your lineup';
   el('pfront').textContent = `${active.shell} this week`;
   el('phint').textContent = 'tap position to change';
-  el('pmoved').innerHTML = MOVES.map((m) =>
-    `<span><i class="${m.dir > 0 ? 'up' : 'down'}">${m.dir > 0 ? '▲' : '▼'}</i> `
-    + `<b>${m.name}</b> ${m.label}</span>`).join('');
+  el('pmoved').innerHTML = movedSummary();
   plist.innerHTML = '';
   stages.forEach((st, i) => {
     const p = lineup[i];
@@ -2288,10 +2457,17 @@ function buildPicker() {
   el('pchem').textContent = team ? `${team} battery · truer ball` : '';
   const mb = el('pmatch');
   mb.disabled = matchupDone;
-  mb.textContent = matchupDone ? `Matchup · ${matchupValue} pts` : 'Matchup';
-  el('pmnote').textContent = !EMBEDDED ? ''
-    : matchupDone ? 'this week is banked · practice is free'
-    : 'matchup counts once · ten drives';
+  // Gold while it is still there to be spent — this is the run that counts,
+  // and the one week's worth of it. Once banked it is a receipt, and a receipt
+  // is not a call to action.
+  mb.classList.toggle('live', !matchupDone && EMBEDDED);
+  mb.innerHTML = matchupDone
+    ? `Matchup · ${matchupValue} pts`
+    : OPPONENT ? `Matchup <i>vs ${OPPONENT}</i>` : 'Matchup';
+  // Nothing to say once it is banked: a disabled button showing what it scored
+  // already says the week is spent, and Practice sitting live above it says
+  // the other one is still free.
+  el('pmnote').textContent = !EMBEDDED || matchupDone ? '' : 'matchup counts once · ten drives';
 }
 
 /** One position's list, opened from the lineup. */
@@ -2415,6 +2591,107 @@ function select(game) {
   paintUI();
 }
 
+// ---- the play call -------------------------------------------------------
+/** Which half of the playbook is open. Sticky across calls: a pass costs one
+ *  extra tap the first time and none after it. */
+let playTab = 'run';
+
+/** One 20px sprite in a club's kit, drawn into its own canvas so the DOM can
+ *  hold it. Its own palette, so the field's is never touched. */
+function spriteChip(team) {
+  const base = jerseyOf(team);
+  const kit = base
+    ? { W: mix(base, '#ffffff', 0.38), L: base, M: mix(base, '#191b1f', 0.42), D: PAL.D }
+    : { W: DEFAULT_KIT.W, L: DEFAULT_KIT.L, M: DEFAULT_KIT.M, D: PAL.D };
+  const rows = RUN20[0];
+  const c = document.createElement('canvas');
+  c.width = 20; c.height = 20;
+  c.style.width = c.style.height = '22px';
+  const x = c.getContext('2d');
+  for (let y = 0; y < rows.length; y++) {
+    for (let i = 0; i < rows[y].length; i++) {
+      const col = kit[rows[y][i]];
+      if (!col) continue;
+      x.fillStyle = col; x.fillRect(i, y, 1, 1);
+    }
+  }
+  return c;
+}
+
+/**
+ * The play, drawn small.
+ *
+ * The front in every card is the real one — the same `alignDefense` roll the
+ * snap will be run against — because the menu now covers the field and this is
+ * where the pre-snap read went. The path over it is schematic: where the ball
+ * is going, not a simulation of it.
+ */
+const DW = 62, DH = 52, LOS_Y = 36;
+const dgx = (x) => 4 + (x / VW) * (DW - 8);
+/** Depth downfield of the line, in world units, to a y inside the box. */
+const dgy = (d) => LOS_Y - 5 - (Math.min(Math.max(d, 0), 84) / 84) * (LOS_Y - 13);
+const clampx = (x) => Math.max(3, Math.min(DW - 3, x));
+const box = (x, y, w, cls) =>
+  `<rect class="${cls}" x="${(clampx(x) - w / 2).toFixed(1)}" y="${(y - w / 2).toFixed(1)}" `
+  + `width="${w}" height="${w}" />`;
+/** A small triangle at the end of the path, pointing the way it was heading. */
+function tip(x0, y0, x1, y1) {
+  const a = Math.atan2(y1 - y0, x1 - x0), s = 3.2;
+  const p = [0, 2.5, -2.5].map((o) => {
+    const t = a + (o * Math.PI) / 3;
+    return `${clampx(x1 + Math.cos(t) * (o ? s : s * 0.2)).toFixed(1)},`
+      + `${(y1 + Math.sin(t) * (o ? s : s * 0.2)).toFixed(1)}`;
+  });
+  return `<polygon class="tip" points="${p.join(' ')}" />`;
+}
+
+function diagram(tab, o, set) {
+  if (!set) return `<svg class="prdiag" viewBox="0 0 ${DW} ${DH}" aria-hidden="true"></svg>`;
+  const line = `<line class="los" x1="3" y1="${LOS_Y}" x2="${DW - 3}" y2="${LOS_Y}" />`;
+
+  if (tab === 'kick') {
+    // No defense on this one. Nobody in the box is between a kick and the
+    // posts, and drawing them there would be a picture of the wrong play.
+    const M = DW / 2;
+    const s = `<line class="post" x1="${M - 10}" y1="5" x2="${M - 10}" y2="15" />`
+      + `<line class="post" x1="${M + 10}" y1="5" x2="${M + 10}" y2="15" />`
+      + `<line class="post" x1="${M - 10}" y1="15" x2="${M + 10}" y2="15" />`
+      + line
+      + box(M, 46, 5.5, 'mine')
+      + `<polyline class="path" points="${M},42 ${M},13" />`
+      + tip(M, 18, M, 11);
+    return `<svg class="prdiag" viewBox="0 0 ${DW} ${DH}">${s}</svg>`;
+  }
+
+  // The box, then the corner. The safety plays 160 units deep — off the top of
+  // a 52-unit card — so he is left out rather than drawn somewhere he is not.
+  let s = line;
+  for (const d of set.def.front) s += box(dgx(d.x), dgy(set.los - d.y), 5, 'front');
+  s += box(dgx(set.def.cb.x), dgy(set.los - set.def.cb.y), 4.4, 'corner');
+
+  if (tab === 'pass') {
+    const wx = dgx(set.off.wrX);
+    s += box(wx, LOS_Y, 5.5, 'mine') + box(dgx(set.off.qb.x), 46, 4.4, 'mine');
+    // Stretched to fill the card: at true scale a twenty-yard route is a
+    // third of an inch and every concept looks like the same short tick.
+    const pts = (o.shape || [[0, 0], [0, -18]])
+      .map(([x, y]) => [clampx(wx + x * 1.3), Math.max(5, LOS_Y + y * 1.5)]);
+    s += `<polyline class="path" points="${pts.map(([x, y]) =>
+      `${x.toFixed(1)},${y.toFixed(1)}`).join(' ')}" />`;
+    const [ax, ay] = pts[pts.length - 2] || pts[0];
+    const [bx, by] = pts[pts.length - 1];
+    return `<svg class="prdiag pass" viewBox="0 0 ${DW} ${DH}">${s + tip(ax, ay, bx, by)}</svg>`;
+  }
+
+  // The run. Start behind the passer, aim at the gap that was called.
+  const bx = dgx(set.off.qb.x), lx = clampx(dgx(o.cx));
+  s += box(bx, 46, 5.5, 'mine')
+    + `<polyline class="path" points="${bx.toFixed(1)},42 ${bx.toFixed(1)},37 `
+    + `${lx.toFixed(1)},28 ${lx.toFixed(1)},13" />`
+    + tip(lx, 20, lx, 12);
+  return `<svg class="prdiag" viewBox="0 0 ${DW} ${DH}">${s}</svg>`;
+}
+
 function paintUI() {
   const g = active;
   const inSelect = g.state === 'select';
@@ -2435,41 +2712,48 @@ function paintUI() {
   }
   const pr = !inSelect && !briefing && g.prompt ? g.prompt() : null;
   if (pr) {
-    el('prtitle').textContent = pr.title;
+    el('prdef').textContent = pr.def || '';
+    el('prdd').textContent = pr.title;
+    el('pron').textContent = pr.on;
+    el('prdrive').textContent = pr.drive;
+    el('prpts').textContent = pr.pts;
     el('prsub').textContent = pr.sub || '';
+
+    const tabs = pr.tabs || [];
+    if (!tabs.some((t) => t.key === playTab)) playTab = tabs.length ? tabs[0].key : '';
+    prtabs.innerHTML = '';
+    for (const t of tabs) {
+      const b = document.createElement('div');
+      b.className = `prtab${t.key === playTab ? ' on' : ''}`;
+      b.setAttribute('role', 'button');
+      b.setAttribute('aria-pressed', String(t.key === playTab));
+      // The man who runs it, in his own kit — the tab says whose play this is
+      // before you have read a word of it.
+      b.appendChild(spriteChip(t.who && t.who.team));
+      b.appendChild(document.createTextNode(t.label));
+      b.onclick = () => { playTab = t.key; paintUI(); };
+      prtabs.appendChild(b);
+    }
+
+    const shown = pr.options.filter((o) => !o.tab || o.tab === playTab);
     propts.innerHTML = '';
-    const rows = new Map();
-    for (const o of pr.options) {
-      const n = o.row || 0;
-      if (!rows.has(n)) rows.set(n, []);
-      rows.get(n).push(o);
-    }
-    // The key that picks each play, in the order the menu is built.
-    const keyOf = new Map(pr.options.map((o, i) => [o.key, i + 1]));
-    for (const [n, opts] of rows) {
-      const wrap = document.createElement('div');
-      wrap.className = 'prow';
-      const lab = (pr.rowLabels || [])[n];
-      if (lab) {
-        const l = document.createElement('span');
-        l.className = 'prlab'; l.textContent = lab;
-        wrap.appendChild(l);
-      }
-      for (const o of opts) {
-        const b = document.createElement('div');
-        b.className = 'propt';
-        if (FINE) b.innerHTML = `<i class="prkey">${keyOf.get(o.key)}</i>`;
-        b.appendChild(document.createTextNode(o.label));
-        b.setAttribute('role', 'button');
-        b.onclick = () => { g.pickOption(o.key); paintUI(); };
-        wrap.appendChild(b);
-      }
-      propts.appendChild(wrap);
-    }
+    shown.forEach((o, i) => {
+      const b = document.createElement('div');
+      b.className = 'prcard';
+      b.setAttribute('role', 'button');
+      b.innerHTML = `<span class="prname">${o.label}</span>`
+        + diagram(playTab, o, pr.set)
+        + `<span class="prbest"><i>Best for</i><b>${o.best || ''}</b>`
+        + (FINE ? `<i class="prkey">key ${i + 1}</i>` : '') + `</span>`;
+      b.onclick = () => { g.pickOption(o.key); paintUI(); };
+      propts.appendChild(b);
+    });
   }
   promptEl.classList.toggle('show', !!pr);
 
-  el('status').innerHTML = inSelect ? '' : g.status();
+  // The call screen carries the whole situation in its own card, at four times
+  // this size. Printing it twice is the kind of duplication you stop reading.
+  el('status').innerHTML = inSelect || pr ? '' : g.status();
   if (inSelect) { overlay.classList.remove('show'); attrs.classList.remove('show'); return; }
 
   const o = g.overlay(pick || g.roster[0]);
@@ -2522,13 +2806,25 @@ window.addEventListener('keydown', (e) => {
     return;
   }
 
-  // Calling a play: number the menu and let a key take one straight off it.
+  // Calling a play: the arrows walk the tabs, the numbers take a card off the
+  // one that is open. Numbering the whole playbook again would mean 3 meaning
+  // a different play depending on a tab you cannot see from the keyboard.
   const pr = active.prompt ? active.prompt() : null;
   if (pr) {
-    const n = parseInt(e.key, 10);
-    if (n >= 1 && n <= pr.options.length) {
+    const tabs = pr.tabs || [];
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (step && tabs.length) {
       e.preventDefault();
-      active.pickOption(pr.options[n - 1].key);
+      const at = Math.max(0, tabs.findIndex((t) => t.key === playTab));
+      playTab = tabs[(at + step + tabs.length) % tabs.length].key;
+      paintUI();
+      return;
+    }
+    const shown = pr.options.filter((o) => !o.tab || o.tab === playTab);
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= shown.length) {
+      e.preventDefault();
+      active.pickOption(shown[n - 1].key);
       paintUI();
     }
     return;

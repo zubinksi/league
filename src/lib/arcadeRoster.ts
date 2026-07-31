@@ -477,20 +477,22 @@ const encode = (list: ArcadePlayer[], limit = 6): string =>
  */
 export function movers(
   rosters: { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] },
-): { name: string; label: string; dir: number }[] {
-  const out: { name: string; label: string; dir: number }[] = [];
+): { up: number; down: number } {
+  // Players, not rungs: a back who levelled two ladders is one man who got
+  // better, and "4 player upgrades" is a promise about the roster. Which rungs
+  // moved is on his own row, in the segments that light up.
+  const up = new Set<string>();
+  const down = new Set<string>();
   for (const list of [rosters.pass, rosters.run, rosters.recv, rosters.kick]) {
     for (const p of list) {
       if (sidelined(p.status)) continue;
       for (const a of p.attrs) {
-        if (a.levelled) out.push({ name: p.name, label: a.label, dir: 1 });
-        else if (a.dropped) out.push({ name: p.name, label: a.label, dir: -1 });
+        if (a.levelled) up.add(p.name);
+        else if (a.dropped) down.add(p.name);
       }
     }
   }
-  // Gains first: a roster that got better is the more useful headline, and a
-  // long list gets cut from the bottom.
-  return out.sort((x, y) => y.dir - x.dir).slice(0, 4);
+  return { up: up.size, down: down.size };
 }
 
 /** Query string the arcade page reads. Omits a game with no eligible players
@@ -498,6 +500,8 @@ export function movers(
 export function arcadeQuery(
   rosters: { run: ArcadePlayer[]; pass: ArcadePlayer[]; recv: ArcadePlayer[]; kick: ArcadePlayer[] },
   seed: string,
+  /** Who the matchup run is played against, for the button that starts it. */
+  opponent?: string,
 ): string {
   const q = new URLSearchParams({ seed });
   if (rosters.run.length) q.set('run', encode(rosters.run));
@@ -506,6 +510,7 @@ export function arcadeQuery(
   if (rosters.recv.length) q.set('recv', encode(rosters.recv, 8));
   if (rosters.kick.length) q.set('kick', encode(rosters.kick));
   const moved = movers(rosters);
-  if (moved.length) q.set('moves', moved.map((m) => [m.name, m.label, m.dir].join(':')).join('|'));
+  if (moved.up || moved.down) q.set('moves', `${moved.up}:${moved.down}`);
+  if (opponent) q.set('opp', opponent);
   return q.toString();
 }
