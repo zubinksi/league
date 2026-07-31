@@ -17,18 +17,24 @@
     -webkit-user-select: none; user-select: none; overscroll-behavior: none;
     -webkit-text-size-adjust: 100%;
   }
+  /* Three rows: the readout, the stage, the footer. The stage takes whatever
+     is left, which is what lets the call panel sit over the top of the field
+     without eating it — on a short screen the field is centred in a taller
+     stage rather than being the whole of one. */
   #wrap {
     height: 100dvh; display: grid;
-    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-rows: auto minmax(0, 1fr) auto;
     align-items: center; justify-items: center; gap: 7px; padding: 8px 0;
   }
-  #stage { align-self: center; }
   /* The field can only take a whole multiple of 180 logical pixels, but the
      lineup and the play call are DOM and have no such rule — so the stage is
      as wide as the screen allows and the canvas sits centred inside it. Below
      390px that is the difference between four readable play cards and four
      36px ones. */
-  #stage { position: relative; display: flex; justify-content: center; }
+  #stage {
+    position: relative; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
   canvas {
     image-rendering: pixelated; image-rendering: crisp-edges;
     touch-action: none;                   /* the field owns every gesture */
@@ -77,16 +83,20 @@
    * actually facing, with that play's path over it, so choosing a gap is still
    * choosing the empty one.
    */
+  /* A panel over the top of the field, not a screen instead of it. The plays
+     and the alignment they are called against belong to the same glance: the
+     camera puts the line of scrimmage two thirds of the way down, so what the
+     panel covers is empty grass and what it leaves is the box, the line and
+     your backfield. */
   #prompt {
-    position: absolute; inset: 0; display: none; flex-direction: column;
+    position: absolute; left: 0; right: 0; top: 0; bottom: auto;
+    max-height: 74%; display: none; flex-direction: column;
     align-items: center; gap: 9px;
-    padding: 12px 10px; text-align: center; background: #08090b;
+    padding: 12px 10px 13px; text-align: center; background: #08090b;
+    border-bottom: 1px solid rgba(255,255,255,0.12);
     touch-action: pan-y; overflow-y: auto;
   }
   #prompt.show { display: flex; }
-  /* Same struts as the picker: centred where it fits, scrolled from the top
-     on a screen too short to hold the whole call. */
-  #prompt::before, #prompt::after { content: ''; margin: auto; }
   .prdef {
     font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: #c9c9cf;
   }
@@ -138,7 +148,7 @@
        narrowest track that still holds them — and two rows of two below that. */
     flex: 1 1 62px; min-width: 62px; max-width: 92px;
     display: flex; flex-direction: column; align-items: center;
-    gap: 6px; padding: 8px 3px 7px;
+    gap: 5px; padding: 8px 3px 6px;
     border: 1px solid rgba(255,255,255,0.14); border-radius: 9px;
     cursor: pointer; touch-action: manipulation;
   }
@@ -149,16 +159,10 @@
   }
   .prdiag { width: 100%; height: auto; display: block; }
   /* The line under the diagram, and what the play asks of your man. */
-  .prbest {
-    display: flex; flex-direction: column; gap: 3px; width: 100%;
-    padding-top: 6px; border-top: 1px solid rgba(255,255,255,0.10);
-    font-size: 7px; letter-spacing: 0.14em; text-transform: uppercase; color: #6d6f76;
-  }
-  .prbest i { font-style: normal; }
-  .prbest b { font-size: 9px; font-weight: 600; letter-spacing: 0.1em; color: #c9c9cf; }
   /* The key that picks this play. Only drawn where there is a keyboard. */
   .prkey {
-    font-style: normal; font-size: 7px; letter-spacing: 0.1em; color: #55575d;
+    font-style: normal; font-size: 7px; letter-spacing: 0.1em;
+    color: #55575d; margin-right: 4px;
   }
   .prdiag .front { fill: #9a9ca3; }
   .prdiag .corner { fill: #6d6f76; }
@@ -424,7 +428,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade55-callcard';
+const BUILD = 'arcade56-onescreen';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2741,10 +2745,9 @@ function paintUI() {
       const b = document.createElement('div');
       b.className = 'prcard';
       b.setAttribute('role', 'button');
-      b.innerHTML = `<span class="prname">${o.label}</span>`
-        + diagram(playTab, o, pr.set)
-        + `<span class="prbest"><i>Best for</i><b>${o.best || ''}</b>`
-        + (FINE ? `<i class="prkey">key ${i + 1}</i>` : '') + `</span>`;
+      b.innerHTML = `<span class="prname">`
+        + (FINE ? `<i class="prkey">${i + 1}</i>` : '') + `${o.label}</span>`
+        + diagram(playTab, o, pr.set);
       b.onclick = () => { g.pickOption(o.key); paintUI(); };
       propts.appendChild(b);
     });
