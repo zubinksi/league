@@ -102,7 +102,7 @@
   }
   .prdef i { font-style: normal; color: var(--gold); }
   /* Down, distance, field position, drives left, points — the whole situation
-     in one card, because during a call it is the only thing on screen. */
+     in one card, whether you are choosing a play or watching one. */
   .prsit {
     display: flex; align-items: center; width: 100%; max-width: 330px;
     border: 1px solid rgba(255,255,255,0.13); border-radius: 9px;
@@ -354,20 +354,15 @@
   .pick .pseg.up { background: var(--gold); }
   .pick .pseg.down { background: rgba(176,85,95,0.55); }
 
-  #status {
-    /* Reserved whether or not it has anything to say, so the field does not
-       jump when the call screen takes the readout over. */
-    min-height: 12px;
-    display: flex; gap: 15px; align-items: baseline;
-    font-size: 9.5px; letter-spacing: 0.2em; text-transform: uppercase; color: #6d6f76;
+  /* The readout. It used to be a line of mono text above the field that the
+     call screen replaced with a card saying the same numbers — two designs for
+     one fact, swapping as you played. The card won and moved out here, where it
+     belongs to the frame and never changes. */
+  #hud {
+    display: none; flex-direction: column; align-items: center; gap: 8px;
+    width: 100%; padding: 0 10px;
   }
-  #status b { color: #c9c9cf; font-weight: 600; }
-  #status .sc { color: var(--gold); font-weight: 600; }
-  /* The battery is live — shown as the club the two of them share. */
-  #status .chem {
-    color: var(--gold); font-weight: 600; letter-spacing: 0.14em;
-    border: 1px solid rgba(232,197,97,0.42); border-radius: 3px; padding: 1px 4px;
-  }
+  #hud.show { display: flex; }
   #foot {
     display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap; justify-content: center;
     font-size: 8.5px; letter-spacing: 0.16em; text-transform: uppercase;
@@ -380,7 +375,15 @@
 </head>
 <body>
 <div id="wrap">
-  <div id="status"></div>
+  <div id="hud">
+    <div class="prdef"><i>Defense</i> <span id="prdef"></span></div>
+    <div class="prsit">
+      <b class="prdd" id="prdd"></b>
+      <span class="prcell"><i>Ball on</i><b id="pron"></b></span>
+      <span class="prcell"><i>Drive</i><b id="prdrive"></b></span>
+      <span class="prcell"><i>Pts</i><b id="prpts"></b></span>
+    </div>
+  </div>
   <div id="stage">
     <canvas id="c"></canvas>
     <div id="picker">
@@ -404,13 +407,6 @@
       <div class="bstart">tap to begin</div>
     </div>
     <div id="prompt">
-      <div class="prdef"><i>Defense</i> <span id="prdef"></span></div>
-      <div class="prsit">
-        <b class="prdd" id="prdd"></b>
-        <span class="prcell"><i>Ball on</i><b id="pron"></b></span>
-        <span class="prcell"><i>Drive</i><b id="prdrive"></b></span>
-        <span class="prcell"><i>Pts</i><b id="prpts"></b></span>
-      </div>
       <div class="prsub" id="prsub"></div>
       <div id="prtabs"></div>
       <div id="propts"></div>
@@ -428,7 +424,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade56-onescreen';
+const BUILD = 'arcade57-readout';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -803,7 +799,9 @@ function drawField(camY, los, marker) {
 const canvas = document.getElementById('c');
 const stage = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
-const CHROME = 96;
+// Nav, readout, footer and the gaps between them. The readout is a card now
+// rather than a line of text, which is most of this number.
+const CHROME = 152;
 function fit() {
   const availW = Math.min(window.innerWidth - 12, 520);
   const availH = Math.max(220, window.innerHeight - CHROME);
@@ -926,6 +924,25 @@ function defenders(rnd, drive, los) {
 }
 
 /** The whole picture: box, corner over the receiver, safety over the top. */
+/**
+ * Where the camera sits.
+ *
+ * Two framings, because the screen is two different sizes. Playing, the whole
+ * canvas is yours and the carrier rides at PLAY_EYE. Choosing, the call panel
+ * owns the top of it, so the line drops to PRESNAP_EYE — far enough down that
+ * the free safety, ten yards off the ball, still lands under the panel instead
+ * of behind it. He is in the run game's pursuit and shades across to the
+ * receiver on every deep route, so reading him is not optional.
+ *
+ * Out past the 21 the clamp already puts the line at 81% and neither number
+ * changes anything; this only bites inside it, which is where the problem was.
+ */
+const PLAY_EYE = 0.66, PRESNAP_EYE = 0.80;
+const eyeAt = (y, eye) => Math.max(0, Math.min(WORLD_H - VH, y - VH * eye));
+/** Frames spent gliding from the pre-snap frame to the playing one. Cutting
+ *  between them at the snap is a jump at the worst possible moment. */
+const CAM_EASE = 16;
+
 function alignDefense(rnd, drive, los, wrX) {
   const ramp = rampAt(drive);
   return {
@@ -1037,7 +1054,7 @@ const RUN_GAME = (() => {
       // getting caught in the backfield is a loss.
       g.startY = g.los;
       g.lane = null; g.flow = 1; g.truckLane = 1;
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.66));
+      g.camY = eyeAt(g.los, PRESNAP_EYE); g.camEase = CAM_EASE;
       // The front is set but frozen: this is where you get to look at it.
       g.state = 'presnap';
     },
@@ -1191,7 +1208,9 @@ const RUN_GAME = (() => {
         }
       }
       if (rb.y <= EZ) { this.end('td'); return; }
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, rb.y - VH * 0.66));
+      const want = eyeAt(rb.y, PLAY_EYE);
+      if (g.camEase > 0) { g.camEase--; g.camY += (want - g.camY) * 0.22; }
+      else g.camY = want;
     },
     render() {
       const ly = drawField(g.camY, g.los, g.marker);
@@ -1451,7 +1470,7 @@ const PASS_GAME = (() => {
       g.qb = off.qb;
       g.rb = { x: VW / 2 - 16, y: g.los + BACKFIELD, frame: 0 };
       g.ball = null; g.t = 0; g.edge = 0;
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, g.los - VH * 0.66));
+      g.camY = eyeAt(g.los, PRESNAP_EYE); g.camEase = CAM_EASE;
       g.state = 'ready';
     },
     /** Which way a route breaks, given where the receiver lined up. Inside
@@ -1619,7 +1638,9 @@ const PASS_GAME = (() => {
       }
       if (r.y <= EZ) { this.end('td', g.los - r.y); return; }
       if (g.yacFrames > 150) { this.end('complete', g.los - r.y); return; }
-      g.camY = Math.max(0, Math.min(WORLD_H - VH, r.y - VH * 0.66));
+      const want = eyeAt(r.y, PLAY_EYE);
+      if (g.camEase > 0) { g.camEase--; g.camY += (want - g.camY) * 0.22; }
+      else g.camY = want;
     },
     resolve() {
       const b = g.ball, rec = g.wr;
@@ -2077,10 +2098,15 @@ const DRIVE_GAME = (() => {
       // and staging an engine inside it would re-roll the defense each frame.
       // The rows come from the engines themselves, so the red-zone route swap
       // still happens without this knowing about it.
-      PASS_GAME.startAt(g.losYards, g.set);
+      // Where the chains actually are. Worked out here, not at the snap: the
+      // menu no longer covers the field, so the line you have to reach is part
+      // of the picture you are choosing against. Clamped at the goal line,
+      // which is its own marker already.
+      g.mark = Math.max(EZ, EZ + (g.losYards - g.toGo) * YARD);
+      PASS_GAME.startAt(g.losYards, g.set, g.mark);
       const passes = PASS_GAME.prompt().options.map((o) => ({ ...o, key: `p:${o.key}`, tab: 'pass' }));
       cur = RUN_GAME;
-      RUN_GAME.startAt(g.losYards, g.driveNo, g.set);
+      RUN_GAME.startAt(g.losYards, g.driveNo, g.set, g.mark);
       const runs = RUN_GAME.prompt().options.map((o) => ({ ...o, key: `r:${o.key}`, tab: 'run' }));
       // Fourth down buys a third tab: take the three, or go for seven.
       const fg = fgYards(g.losYards);
@@ -2092,13 +2118,9 @@ const DRIVE_GAME = (() => {
         ? [{ key: 'k:fg', label: `${fg} yards`, tab: 'kick', best: 'Leg' }]
         : [];
       g.menu = {
-        title: `${ORD[g.down]} & ${g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo}`,
-        // The situation, once, at the size it deserves — the menu covers the
-        // field while it is open, so this is the only readout there is.
-        def: `${RUN_GAME.shell} · ${PASS_GAME.shell}`,
-        on: g.losYards, drive: `${g.poss}/${POSSESSIONS}`, pts: g.points,
-        // The tabs and the cards say the rest; the only thing worth a line is
-        // why the kick is missing when it is.
+        // The situation is on the card above the field and stays there; all the
+        // menu owns is the choice. The only line worth spending is why the kick
+        // is missing when it is.
         sub: g.down === 4 && !canKick ? `out of range — ${fg} yards` : 'choose a play',
         set: g.set,
         tabs: [
@@ -2117,11 +2139,9 @@ const DRIVE_GAME = (() => {
       const pass = key.startsWith('p:');
       const inner = key.slice(2);
       cur = pass ? PASS_GAME : RUN_GAME;
-      // Where the chains actually are. Clamped at the goal line, which is its
-      // own marker already, so goal-to-go draws nothing extra.
-      const mark = Math.max(EZ, EZ + (g.losYards - g.toGo) * YARD);
-      if (pass) PASS_GAME.startAt(g.losYards, g.set, mark);
-      else RUN_GAME.startAt(g.losYards, g.driveNo, g.set, mark);
+      // Restaged with the same chains it has been drawing since the call.
+      if (pass) PASS_GAME.startAt(g.losYards, g.set, g.mark);
+      else RUN_GAME.startAt(g.losYards, g.driveNo, g.set, g.mark);
       g.calls[pass ? 'pass' : 'run']++;
       g.play = pass ? 'pass' : 'run';
       g.state = 'play';
@@ -2206,12 +2226,18 @@ const DRIVE_GAME = (() => {
       return { value: g.points, tie: g.yards,
                detail: `${g.tds} TD · ${g.fgs} FG · ${g.yards} yd` };
     },
-    status() {
-      const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
-      // How many you have left is the shape of the whole run now, so it leads.
-      return `<span>DRIVE <b>${g.poss}/${POSSESSIONS}</b></span>`
-        + `<span>DOWN <b>${g.down}</b></span><span>TO GO <b>${t}</b></span>`
-        + `<span>ON <b>${g.losYards}</b></span><span class="sc">${g.points} PTS</span>`;
+    /** The permanent readout. Every state that has a drive behind it fills the
+     *  same card from here, so the numbers never move or change clothes. */
+    readout() {
+      const t = g.toGo <= 0 || g.toGo >= g.losYards ? 'GOAL' : g.toGo;
+      return {
+        dd: `${ORD[g.down]} & ${t}`,
+        on: g.losYards,
+        drive: `${g.poss}/${POSSESSIONS}`,
+        pts: g.points,
+        // Rolled once for the week, so it is as true mid-play as pre-snap.
+        def: `${RUN_GAME.shell} · ${PASS_GAME.shell}`,
+      };
     },
     overlay() {
       if (g.state === 'call' || g.state === 'play') return null;
@@ -2256,7 +2282,7 @@ let pick = null;
 
 const el = (id) => document.getElementById(id);
 const picker = el('picker'), plist = el('plist');
-const promptEl = el('prompt'), propts = el('propts'), prtabs = el('prtabs');
+const promptEl = el('prompt'), propts = el('propts'), prtabs = el('prtabs'), hud = el('hud');
 // The lineup being built, and which spot is open for a swap (null = none).
 let pick2 = null, picks = [], lineup = [], swapAt = null;
 // Set once a lineup is complete and the run has begun. The game drops itself
@@ -2709,18 +2735,26 @@ function paintUI() {
   // so it takes precedence over the picker rather than sitting behind it.
   picker.classList.toggle('show', inSelect && !briefing);
   brief.classList.toggle('show', briefing);
+
+  // The readout, filled the same way from the same place whatever is happening
+  // on the field. There is no drive behind the lineup screen, so that is the
+  // one state it has nothing to say in.
+  const rd = !inSelect && g.readout ? g.readout() : null;
+  hud.classList.toggle('show', !!rd);
+  if (rd) {
+    el('prdef').textContent = rd.def;
+    el('prdd').textContent = rd.dd;
+    el('pron').textContent = rd.on;
+    el('prdrive').textContent = rd.drive;
+    el('prpts').textContent = rd.pts;
+  }
+
   if (briefing) {
     overlay.classList.remove('show'); attrs.classList.remove('show');
-    el('status').innerHTML = inSelect ? '' : g.status();
     return;
   }
   const pr = !inSelect && !briefing && g.prompt ? g.prompt() : null;
   if (pr) {
-    el('prdef').textContent = pr.def || '';
-    el('prdd').textContent = pr.title;
-    el('pron').textContent = pr.on;
-    el('prdrive').textContent = pr.drive;
-    el('prpts').textContent = pr.pts;
     el('prsub').textContent = pr.sub || '';
 
     const tabs = pr.tabs || [];
@@ -2754,9 +2788,6 @@ function paintUI() {
   }
   promptEl.classList.toggle('show', !!pr);
 
-  // The call screen carries the whole situation in its own card, at four times
-  // this size. Printing it twice is the kind of duplication you stop reading.
-  el('status').innerHTML = inSelect || pr ? '' : g.status();
   if (inSelect) { overlay.classList.remove('show'); attrs.classList.remove('show'); return; }
 
   const o = g.overlay(pick || g.roster[0]);
