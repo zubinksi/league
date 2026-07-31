@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade64-plain';
+const BUILD = 'arcade65-aim';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1452,7 +1452,21 @@ const PASS_GAME = (() => {
    * average accuracy. About a fifth of the field's width — forgiving enough for
    * a thumb, tight enough that where you point is a real input.
    */
-  const ASSIST = 44;
+  /**
+   * How far a tap can land from the solved lead and still be pulled onto it.
+   *
+   * Widened from 44 after friends reported the throw felt punishing. Measured
+   * rather than guessed, by tapping thousands of throws at a fixed miss: at 44
+   * a 12px miss completed 68% of the time and an 18px miss 49%, and the cliff
+   * where the assist stops helping entirely sat at about 40px. At 52 those are
+   * 73% and 53%, and the cliff moves out with them. A perfectly aimed throw is
+   * unchanged either way — 93% against 94% — which is the shape this wanted:
+   * it does not make a good read better, it makes a near miss cost less.
+   *
+   * 56 was tried and gave barely a point more than 52 in most of the table, so
+   * this is where the return stops.
+   */
+  const ASSIST = 52;
   const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
     + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
   // One of these shares a club with one of the passers, so the standalone
