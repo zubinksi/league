@@ -102,3 +102,26 @@ Vite · React 18 · TypeScript · TanStack Query · React Router. Geist and
 Geist Mono are self-hosted via Fontsource. No component library — the design
 tokens in `src/theme.css` and component styles in `src/app.css` carry the
 exact values from the design spec.
+
+## Deploying
+
+`vercel.json` carries two things, and it has no comments because Vercel
+validates the file against a strict schema and rejects unknown properties —
+including a `comment` key. The reasoning lives here instead.
+
+**The rewrite** is the SPA fallback. Every path is a real URL to React Router
+but only `/` is a real file, so a direct hit or a reload on `/arcade` or
+`/roster` asks the host for something that does not exist and gets a 404.
+Rewrites are consulted after the filesystem, so `og.png`, `arcade-game.html`,
+the manifest and the hashed assets are still served as themselves.
+
+**The headers** split on whether a filename changes when its contents do.
+Everything under `/assets` is content-hashed by Vite, so an old one can be
+cached forever. `index.html`, `arcade-game.html` and the manifest are not, so
+they must revalidate — otherwise a deploy can strand people on the previous
+build, which for the game means playing last week's physics.
+
+Scores are per-device until `VITE_ARCADE_API` points at a deployment of
+`worker/arcade-scores.js`. The `og:image` tags are relative; most scrapers
+resolve them against the page, but not all, so they are worth making absolute
+once the domain is settled.
