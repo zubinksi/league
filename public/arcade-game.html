@@ -408,7 +408,7 @@
       <div id="plist"></div>
       <div class="pchemline" id="pchem"></div>
       <div class="pmodes">
-        <button class="pstart" id="pmatch">Matchup</button>
+        <button class="pstart" id="pmatch">Sunday Run</button>
         <button class="pstart ghost" id="ppract">Practice</button>
       </div>
       <div class="phow" id="phow" role="button">how to play <i>›</i></div>
@@ -451,6 +451,7 @@ const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
 let SALT = '';
 /** 'matchup' once, then practice. Set when the run starts. */
 let MODE = 'practice';
+let sundayOpen = false;
 /** What the host says about this week's matchup slot. */
 let matchupDone = false, matchupValue = 0;
 
@@ -2732,14 +2733,15 @@ function buildPicker() {
   });
   el('pchem').textContent = team ? `${team} battery · truer ball` : '';
   const mb = el('pmatch');
-  mb.disabled = matchupDone;
+  mb.disabled = matchupDone || !sundayOpen;
   // Gold while it is still there to be spent — this is the run that counts,
   // and the one week's worth of it. Once banked it is a receipt, and a receipt
   // is not a call to action.
-  mb.classList.toggle('live', !matchupDone && EMBEDDED);
+  mb.classList.toggle('live', !matchupDone && sundayOpen && EMBEDDED);
   mb.innerHTML = matchupDone
-    ? `Matchup · ${matchupValue} pts`
-    : OPPONENT ? `Matchup <i>vs ${OPPONENT}</i>` : 'Matchup';
+    ? `Sunday Run · ${matchupValue} pts`
+    : !sundayOpen ? 'Sunday Run · locked'
+    : OPPONENT ? `Sunday Run <i>vs ${OPPONENT}</i>` : 'Sunday Run';
 }
 
 /** One position's list, opened from the lineup. */
@@ -2813,16 +2815,17 @@ function startRun(mode) {
 }
 
 /** What the host knows about this week's one counted run. */
-function setMatchup(done, value) {
+function setMatchup(done, value, open) {
   matchupDone = !!done;
   matchupValue = Number(value) || 0;
+  sundayOpen = !!open;
   if (active.state === 'select') buildPicker();
 }
 
 el('ppract').addEventListener('pointerup', (e) => { e.stopPropagation(); startRun('practice'); });
 el('pmatch').addEventListener('pointerup', (e) => {
   e.stopPropagation();
-  if (!matchupDone) startRun('matchup');
+  if (!matchupDone && sundayOpen) startRun('matchup');
 });
 
 // The host owns the score store, so it is the one that knows whether this
@@ -2830,7 +2833,7 @@ el('pmatch').addEventListener('pointerup', (e) => {
 window.addEventListener('message', (e) => {
   const d = e.data;
   if (!d || d.source !== 'host' || d.type !== 'status') return;
-  setMatchup(d.done, d.value);
+  setMatchup(d.done, d.value, d.open);
 });
 try { parent.postMessage({ source: 'arcade', type: 'ready', game: 'drive' }, '*'); } catch (e) { /* standalone */ }
 el('phow').addEventListener('pointerup', (e) => { e.stopPropagation(); showBrief(); });
