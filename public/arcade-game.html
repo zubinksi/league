@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade68-place';
+const BUILD = 'arcade66-howto';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1453,47 +1453,29 @@ const PASS_GAME = (() => {
    * a thumb, tight enough that where you point is a real input.
    */
   /**
-   * Ball placement, the way a passer actually thinks about it.
+   * How far a tap can land from the solved lead and still be pulled onto it.
    *
-   * The tap used to be a coordinate: the ball flew at the point you touched,
-   * pulled toward the solved lead by an assist that fell off with distance.
-   * That made the drawn route a line you had to trace, and tracing a line with
-   * a thumb is not a football decision — widening the assist twice only moved
-   * where the tracing had to be accurate.
+   * Widened from 44 after friends reported the throw felt punishing. Measured
+   * rather than guessed, by tapping thousands of throws at a fixed miss: at 44
+   * a 12px miss completed 68% of the time and an 18px miss 49%, and the cliff
+   * where the assist stops helping entirely sat at about 40px. At 52 those are
+   * 73% and 53%, and the cliff moves out with them. A perfectly aimed throw is
+   * unchanged either way — 93% against 94% — which is the shape this wanted:
+   * it does not make a good read better, it makes a near miss cost less.
    *
-   * So the tap is a direction now, and only a direction. The lead is always
-   * solved for you; what you choose is where the ball sits relative to him —
-   * on him, out in front, back shoulder, or to either side. Nothing finer than
-   * that, because nothing finer than that is a decision.
-   *
-   * It is a real one because resolve() already scores the ball against the
-   * corner and the safety, not just the receiver: `sep` is the corner's
-   * distance to the ball minus the receiver's, and it drives the contested
-   * drop. Putting it on his outside shoulder away from the corner has always
-   * been worth something. Until now there was no way to ask for it.
+   * 56 was tried and gave barely a point more than 52 in most of the table, so
+   * this is where the return stops.
    */
-  const PLACE = 6;
-  /** Tap this close to him and you are throwing at him, not beside him. */
-  const DEADZONE = 16;
+  const ASSIST = 52;
   const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
     + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
   // One of these shares a club with one of the passers, so the standalone
   // demo shows the chemistry bonus without a league behind it.
   const SAMPLE_WR = 'J. Chase:CIN:0.88:0.74:0.96:0|A. St. Brown:DET:0.60:0.90:0.88:0|'
     + 'N. Collins:HOU:0.72:0.82:0.84:0|B. Bowers:LV:0.54:0.84:0.78:0';
-/**
- * How close the corner stays. Tightened by about four fifths when the tap
- * became a direction rather than a coordinate.
- *
- * That change took the last of the difficulty out of passing: thumb precision
- * had been carrying all of it, and with it gone a careless throw completed
- * 90% of the time. The difficulty had to come back from somewhere that is not
- * dexterity, and the only honest place is the man covering the route — with
- * him this far off, every ball was open regardless of where you put it.
- */
   const SHELL = mulberry32(hashSeed(SEED + '|shell'))() < 0.5
-    ? { key: 'man', label: 'Man coverage', lag: 4, tight: 0.468 }
-    : { key: 'zone', label: 'Zone coverage', lag: 8, tight: 0.306 };
+    ? { key: 'man', label: 'Man coverage', lag: 7, tight: 0.26 }
+    : { key: 'zone', label: 'Zone coverage', lag: 15, tight: 0.17 };
   const ROUTES = {
     go: (t) => ({ x: 0, y: -t * 0.92 }),
     slant: (t, d) => (t < 34 ? { x: 0, y: -t * 0.86 } : { x: d * (t - 34) * 0.72, y: -(29 + (t - 34) * 0.58) }),
@@ -1723,26 +1705,10 @@ const PASS_GAME = (() => {
       for (let i = 0; i < 3; i++) { const p = at(rec, g.t + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
       const aim = at(rec, g.t + f);
       if (pt) {
-        // Which way he is running, so "in front" means in front down his own
-        // route rather than up the screen.
-        const nxt = at(rec, g.t + f + 6);
-        let vx = nxt.x - aim.x, vy = nxt.y - aim.y;
-        const m = Math.hypot(vx, vy) || 1; vx /= m; vy /= m;
-        // Read against where he is now, which is what is under the thumb —
-        // not against the solved catch point, which is somewhere he has not
-        // got to yet and which nobody can see.
-        const dx = pt.x - rec.x, dy = pt.y - rec.y;
-        const ahead = dx * vx + dy * vy;
-        const wide = -dx * vy + dy * vx;
-        const sa = Math.abs(ahead) < DEADZONE ? 0 : Math.sign(ahead);
-        const sw = Math.abs(wide) < DEADZONE ? 0 : Math.sign(wide);
-        // A corner placement is one choice, not two, so the diagonal is the
-        // same distance off him as a straight one.
-        const n = Math.hypot(sa, sw);
-        if (n) {
-          aim.x += (PLACE / n) * (sa * vx - sw * vy);
-          aim.y += (PLACE / n) * (sa * vy + sw * vx);
-        }
+        const help = ASSIST * (0.55 + 0.75 * A.ACC);
+        const k = Math.max(0, 1 - Math.hypot(pt.x - aim.x, pt.y - aim.y) / help);
+        aim.x = pt.x + (aim.x - pt.x) * k;
+        aim.y = pt.y + (aim.y - pt.y) * k;
       }
       // The miss grows with how far the ball has to travel, so a checkdown is
       // nearly automatic and a deep shot is a genuine risk.
@@ -2240,14 +2206,14 @@ const DRIVE_GAME = (() => {
     controls: [['Run cut', 'swipe left / right'],
                ['Run spin', 'tap'],
                ['Run truck', 'swipe up'],
-               ['Pass', 'tap ahead, behind or beside him']],
+               ['Pass', 'tap where you want to throw']],
     /** Shown instead when there is a real pointer, which is as close as the
      *  page gets to knowing there is a keyboard under it. */
     controlsKeys: [['Pick a play', '← → then a number'],
                    ['Run cut', '← and →'],
                    ['Run spin', 'space, as a defender closes'],
                    ['Run truck', '↑'],
-                   ['Pass', 'click ahead, behind or beside him']],
+                   ['Pass', 'click where you want to throw']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
     roster3: PASS_GAME.roster2,
