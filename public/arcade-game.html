@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade65-aim';
+const BUILD = 'arcade66-howto';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2193,22 +2193,27 @@ const DRIVE_GAME = (() => {
     attrLabels3: PASS_GAME.attrLabels2,
     attrLabels4: KICK_GAME.attrLabels,
     hint: '',
-    controls: [['Pick a play', 'run or pass, then a card'],
-               ['Run cut', 'swipe left / right'],
-               ['Run spin', 'tap to spin'],
+    /**
+     * Swipe up was called a truck here and nowhere else, which was the one
+     * line that had to change: it is a power move that commits you into the
+     * contact and can be stood up for a loss, so calling it a juke would have
+     * taught people to reach for it as an escape.
+     *
+     * Picking a play is off the mobile list because the tabs and the four
+     * cards say it themselves. It stays on the desktop one, where the tabs are
+     * switched with the arrow keys and nothing on screen advertises that.
+     */
+    controls: [['Run cut', 'swipe left / right'],
+               ['Run spin', 'tap'],
                ['Run truck', 'swipe up'],
-               ['Pass', 'tap where you want it thrown'],
-               ['4th down', 'take the field goal or go for it'],
-               ['Points', 'TD is 6, XP is 1, FG is 3']],
+               ['Pass', 'tap where you want to throw']],
     /** Shown instead when there is a real pointer, which is as close as the
      *  page gets to knowing there is a keyboard under it. */
-    controlsKeys: [['Pick a play', '← → for run or pass, then a number'],
+    controlsKeys: [['Pick a play', '← → then a number'],
                    ['Run cut', '← and →'],
-                   ['Run spin', 'space'],
+                   ['Run spin', 'space, as a defender closes'],
                    ['Run truck', '↑'],
-                   ['Pass', 'click where you want it thrown'],
-                   ['4th down', 'take the field goal or go for it'],
-                   ['Points', 'TD is 6, XP is 1, FG is 3']],
+                   ['Pass', 'click where you want to throw']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
     roster3: PASS_GAME.roster2,
