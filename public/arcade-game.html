@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade71-wide';
+const BUILD = 'arcade73-timing';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1471,7 +1471,22 @@ const PASS_GAME = (() => {
    * 150 was tried. It takes a 24px miss to 70% and a 32px miss past a coin
    * flip, which is far enough that aiming stops meaning anything.
    */
-  const ASSIST = 110;
+  /**
+   * How far a tap can land from the solved lead and still be pulled onto it.
+   *
+   * A thousand, which is larger than the field, and that is the honest shape
+   * of the decision rather than a tuning accident: the throw now goes very
+   * nearly where it should regardless of the thumb, and what is left of the
+   * tap is a nudge. Five rounds of widening this from 44 never moved the
+   * complaint, because the complaint was never about the width — it was that
+   * aim was carrying the whole outcome and timing carried none of it.
+   *
+   * Measured as the spread each axis produces: at 110 it was 21% timing to
+   * 79% aim, at 320 38/62, here 71/29. The rest of the way to pure timing is
+   * available by raising it again — 2000 measures 90/10 — but a nudge that
+   * still means something is the point.
+   */
+  const ASSIST = 1000;
   /**
    * How much more forgiving the sideways miss is than the one along the route.
    *
@@ -1506,6 +1521,29 @@ const PASS_GAME = (() => {
     drag: (t, d) => (t < 12 ? { x: 0, y: -t * 0.8 } : { x: d * (t - 12) * 1.06, y: -(10 + (t - 12) * 0.14) }),
     flat: (t, d) => (t < 8 ? { x: 0, y: -t * 0.66 } : { x: d * (t - 8) * 1.18, y: -(5 + (t - 8) * 0.08) }),
   };
+  /**
+   * The frame each route comes open, and how long it stays that way.
+   *
+   * The corner chases a lagged copy of the receiver, which gave him the same
+   * grip from the snap to the whistle — so separation never changed and the
+   * throw window was the whole play. Completion across the entire window
+   * measured 86 to 100%, which is another way of saying timing did nothing.
+   *
+   * He is sticky until the break, beaten for a beat at it, and back on the
+   * route after. The skill is throwing early enough that the ball ARRIVES in
+   * that beat, which is anticipation rather than reaction — and it is legible,
+   * because you can watch him fall off and climb back on.
+   *
+   * The two routes with no cut come open when the receiver has stacked him
+   * rather than when he turns.
+   */
+  const BREAK = { go: 44, slant: 34, out: 52, post: 66, quick: 16, drag: 12, flat: 8, fade: 38 };
+  /** Frames of daylight after he breaks, before the corner is back on him. */
+  const OPEN = 30;
+  /** How many times his usual cushion the corner is giving up: a tenth of it
+   *  while he is still in phase, four times it the instant he is beaten. That
+   *  ratio is the throw window, and it is the whole of the timing skill. */
+  const GRIP_EARLY = 0.1, GRIP_OPEN = 4;
   /**
    * The pre-snap read. Man coverage trails the route, so a break wins; zone
    * sits in an area, so you go over the top of it. Positive means the route
@@ -1766,7 +1804,17 @@ const PASS_GAME = (() => {
       r.db.frame += 0.2;
       // The route's edge on this shell is spent here: a concept that beats the
       // coverage leaves the defender a step further behind all play.
-      const lag = Math.round(SHELL.lag * (1 + g.edge * 0.6));
+      // How far behind him the corner is, right now. This is where the throw
+      // window comes from, and it has to be the lag rather than the closing
+      // rate: the corner tracks a lagged copy of the route, so the gap between
+      // them is set by how many frames back he is reading. Tightening the
+      // closing rate instead moved completion by six points across the whole
+      // window, which is another way of saying it did nothing.
+      const since = g.t - (BREAK[r.route] || 0);
+      const slip = since < 0 ? GRIP_EARLY
+        : since < OPEN ? GRIP_OPEN - (GRIP_OPEN - 1) * (since / OPEN)
+        : 1;
+      const lag = Math.min(58, Math.round(SHELL.lag * (1 + g.edge * 0.6) * slip));
       const tight = SHELL.tight * (1 - g.edge);
       const back = r.hist[Math.max(0, r.hist.length - 1 - lag)] || p;
       r.db.x += (back.x - r.db.x) * tight;
@@ -2241,14 +2289,14 @@ const DRIVE_GAME = (() => {
     controls: [['Run cut', 'swipe left / right'],
                ['Run spin', 'tap'],
                ['Run truck', 'swipe up'],
-               ['Pass', 'tap where you want to throw']],
+               ['Pass', 'tap when he breaks open']],
     /** Shown instead when there is a real pointer, which is as close as the
      *  page gets to knowing there is a keyboard under it. */
     controlsKeys: [['Pick a play', '← → then a number'],
                    ['Run cut', '← and →'],
                    ['Run spin', 'space, as a defender closes'],
                    ['Run truck', '↑'],
-                   ['Pass', 'click where you want to throw']],
+                   ['Pass', 'click when he breaks open']],
     roster: RUN_GAME.roster,
     roster2: PASS_GAME.roster,
     roster3: PASS_GAME.roster2,
