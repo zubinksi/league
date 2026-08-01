@@ -13,7 +13,8 @@ import {
 } from '../hooks/useLeagueData';
 import { useWeeklyStatsAll } from '../hooks/useWeeklyStats';
 import { arcadeQuery, buildArcadeRosters } from '../lib/arcadeRoster';
-import type { ArcadePlayer } from '../lib/arcadeRoster';
+import { Sprite } from '../components/Sprite';
+import { drawSprite, SPRITE } from '../lib/sprites';
 import {
   GAMES,
   GAME_LABEL,
@@ -41,7 +42,6 @@ export function ArcadePage() {
   const [board, setBoard] = useState<GameKey>('run');
   const [boardOpen, setBoardOpen] = useState(false);
   const [flash, setFlash] = useState<string>('');
-  const [reportOpen, setReportOpen] = useState(false);
   const [result, setResult] = useState<ScoreEntry | null>(null);
   const openCard = usePlayerCard();
 
@@ -60,12 +60,6 @@ export function ArcadePage() {
     loadScores().then((s) => { if (live) setScores(s); });
     return () => { live = false; };
   }, []);
-
-  useEffect(() => {
-    if (picked === null) return;
-    const key = `league:minicamp-report:${week}:${picked}`;
-    if (localStorage.getItem(key) !== 'seen') setReportOpen(true);
-  }, [week, picked]);
 
   const nameOf = useCallback(
     (rosterId: number) => {
@@ -178,7 +172,6 @@ export function ArcadePage() {
     [scores, week, picked],
   );
   const rows = useMemo(() => allTimeBoard(scores, board), [scores, board]);
-  const movers = useMemo(() => progressionMoves(built), [built]);
   const resultContext = useMemo(() => {
     if (!result) return null;
     const weekScores = scores.filter((s) => s.week === week && s.game === result.game);
@@ -188,11 +181,6 @@ export function ArcadePage() {
       : result.value;
     return { average, leader: sorted[0]?.value ?? result.value, rank: Math.max(1, sorted.findIndex((s) => s.rosterId === picked) + 1) };
   }, [result, scores, week, picked]);
-
-  const dismissReport = () => {
-    if (picked !== null) localStorage.setItem(`league:minicamp-report:${week}:${picked}`, 'seen');
-    setReportOpen(false);
-  };
 
   const shareResult = async () => {
     if (!result || !resultContext) return;
@@ -224,45 +212,28 @@ export function ArcadePage() {
               <div className="state-note">Building your roster</div>
             )}
             {flash && <div className="arc-flash">{flash}</div>}
-            <button className="arc-report-pill" onClick={() => setReportOpen(true)}>W{week} REPORT</button>
-
-            {reportOpen && built && (
-              <div className="arc-ritual">
-                <div className="arc-ritual-card">
-                  <div className="arc-eyebrow">MINI CAMP · WEEK {week}</div>
-                  <h1>Your team changed.</h1>
-                  <p className="arc-deck">Real Sunday production shapes your roster for the week ahead.</p>
-                  <div className="arc-movers">
-                    {movers.length ? movers.map((m) => (
-                      <div className={`arc-move ${m.up ? 'up' : 'down'}`} key={m.key}>
-                        <span className="arrow">{m.up ? '↑' : '↓'}</span>
-                        <span><b>{m.player}</b><i>{m.label}</i></span>
-                        <strong>{m.delta > 0 ? '+' : ''}{m.delta}</strong>
-                      </div>
-                    )) : <div className="arc-steady">No tier movement this week. Progress is still building.</div>}
-                  </div>
-                  <div className="arc-sunday-state">
-                    <span>{sunday ? 'SUNDAY RUN IS OPEN' : 'SUNDAY RUN LOCKED'}</span>
-                    <i>{sunday ? 'One official attempt. Make it count.' : 'Practice is open all week.'}</i>
-                  </div>
-                  <button className="arc-primary" onClick={dismissReport}>ENTER MINI CAMP</button>
-                </div>
-              </div>
-            )}
-
             {result && resultContext && (
-              <div className="arc-ritual">
-                <div className="arc-ritual-card result">
-                  <div className="arc-eyebrow">SUNDAY RUN · FINAL</div>
-                  <h1>{result.value} <small>PTS</small></h1>
-                  <div className="arc-compare">
-                    <div><i>League average</i><b>{resultContext.average}</b></div>
-                    <div><i>League leader</i><b>{resultContext.leader}</b></div>
-                    <div className="me"><i>Your rank</i><b>#{resultContext.rank}</b></div>
+              <div className="arc-final">
+                <div className="arc-final-card">
+                  <div className="arc-final-kicker">MINI CAMP <i>·</i> WEEK {week}</div>
+                  <div className="arc-final-label">FINAL SCORE</div>
+                  <div className="arc-final-score">{result.value}</div>
+                  <div className="arc-score-glow" />
+                  <div className="arc-final-mode">FINAL <i>·</i> SUNDAY RUN</div>
+                  <div className="arc-final-detail">{result.detail || `${result.tie} YARDS`}</div>
+                  <div className="arc-final-mvp">
+                    <Sprite position="WR" team={result.team} size={72} />
+                    <span><i>YOUR MVP</i><b>{result.player || 'YOUR LINEUP'}</b></span>
                   </div>
-                  <div className="arc-mvp"><i>Your MVP</i><b>{result.player || 'Your lineup'}</b><span>{result.detail}</span></div>
-                  <button className="arc-primary" onClick={shareResult}>SHARE STAT CARD</button>
-                  <button className="arc-secondary" onClick={() => setResult(null)}>BACK TO PRACTICE</button>
+                  <div className="arc-final-compare">
+                    <span><i>AVG</i><b>{resultContext.average}</b></span>
+                    <span><i>LEADER</i><b>{resultContext.leader}</b></span>
+                    <span className="rank"><i>RANK</i><b>#{resultContext.rank}</b></span>
+                  </div>
+                  <button className="arc-share" onClick={shareResult}>
+                    <span aria-hidden>⇧</span> SHARE SCORE
+                  </button>
+                  <button className="arc-final-back" onClick={() => setResult(null)}>BACK TO PRACTICE</button>
                 </div>
               </div>
             )}
@@ -327,35 +298,40 @@ export function ArcadePage() {
   );
 }
 
-function progressionMoves(built: Record<string, ArcadePlayer[]> | null) {
-  if (!built) return [];
-  return Object.values(built).flat().flatMap((player) => player.attrs
-    .filter((attr) => attr.levelled || attr.dropped)
-    .map((attr) => ({
-      key: `${player.id}:${attr.label}`,
-      player: player.name,
-      label: attr.levelled ? `${attr.label} reached ${attr.name}` : `${attr.label} slipped to ${attr.name}`,
-      delta: Math.round((attr.value - attr.was) * 100),
-      up: attr.levelled,
-    })))
-    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)).slice(0, 5);
-}
-
 async function makeShareCard(week: number, result: ScoreEntry, rank: number, team: string): Promise<Blob> {
   const canvas = document.createElement('canvas'); canvas.width = 1080; canvas.height = 1350;
   const c = canvas.getContext('2d')!;
-  const bg = c.createLinearGradient(0, 0, 1080, 1350); bg.addColorStop(0, '#17140c'); bg.addColorStop(.55, '#090a0c'); bg.addColorStop(1, '#050506');
+  const bg = c.createRadialGradient(540, 820, 20, 540, 720, 760); bg.addColorStop(0, '#29200a'); bg.addColorStop(.38, '#0d0c08'); bg.addColorStop(1, '#030405');
   c.fillStyle = bg; c.fillRect(0, 0, 1080, 1350);
-  c.strokeStyle = '#e8c561'; c.lineWidth = 3; c.strokeRect(55, 55, 970, 1240);
-  c.fillStyle = '#e8c561'; c.font = '600 34px monospace'; c.fillText('MINI CAMP', 105, 150);
-  c.fillStyle = '#777980'; c.font = '28px monospace'; c.fillText(`WEEK ${week} · SUNDAY RUN`, 105, 205);
-  c.fillStyle = '#f3f3f4'; c.font = '700 220px sans-serif'; c.fillText(String(result.value), 90, 520);
-  c.fillStyle = '#e8c561'; c.font = '600 45px monospace'; c.fillText('POINTS', 105, 595);
-  c.strokeStyle = '#2c2d31'; c.beginPath(); c.moveTo(105, 660); c.lineTo(975, 660); c.stroke();
-  c.fillStyle = '#777980'; c.font = '25px monospace'; c.fillText('YOUR MVP', 105, 745);
-  c.fillStyle = '#f3f3f4'; c.font = '600 52px sans-serif'; c.fillText(result.player || 'YOUR LINEUP', 105, 815);
-  c.fillStyle = '#777980'; c.font = '25px monospace'; c.fillText('LEAGUE RANK', 105, 930);
-  c.fillStyle = '#e8c561'; c.font = '700 96px sans-serif'; c.fillText(`#${rank}`, 105, 1030);
-  c.fillStyle = '#a5a6aa'; c.font = '30px sans-serif'; c.fillText(team, 105, 1190);
+  c.strokeStyle = '#5d5f62'; c.lineWidth = 3; roundRect(c, 55, 55, 970, 1240, 30); c.stroke();
+  drawCorners(c, 85, 85, 910, 1180);
+  c.fillStyle = '#efc72f'; c.font = '600 34px monospace'; c.fillText('MINI CAMP', 110, 155);
+  c.textAlign = 'right'; c.fillStyle = '#68696e'; c.fillText(`WEEK ${week}`, 970, 155); c.textAlign = 'center';
+  c.fillStyle = '#ececef'; c.font = '500 38px monospace'; c.fillText('SCORE', 540, 265);
+  c.shadowColor = '#f3c72a'; c.shadowBlur = 32; c.fillStyle = '#f3c72a'; c.font = '700 250px monospace'; c.fillText(String(result.value), 540, 525); c.shadowBlur = 0;
+  const line = c.createLinearGradient(110, 0, 970, 0); line.addColorStop(0, 'transparent'); line.addColorStop(.5, '#efc72f'); line.addColorStop(1, 'transparent'); c.strokeStyle = line; c.lineWidth = 2; c.beginPath(); c.moveTo(110, 590); c.lineTo(970, 590); c.stroke();
+  c.fillStyle = '#efc72f'; c.font = '600 28px monospace'; c.fillText('★  YOUR MVP  ★', 540, 670);
+  const mvp = (result.player || 'YOUR LINEUP').toUpperCase(); c.fillStyle = '#f4f4f5'; c.font = '700 58px monospace'; wrapCentered(c, mvp, 540, 750, 760, 66);
+  const sprite = document.createElement('canvas'); sprite.width = SPRITE; sprite.height = SPRITE; drawSprite(sprite.getContext('2d')!, 'WR', result.team);
+  c.imageSmoothingEnabled = false; c.drawImage(sprite, 390, 865, 300, 300);
+  c.fillStyle = '#68696e'; c.font = '24px monospace'; c.fillText(`${result.detail || `${result.tie} YARDS`}  ·  LEAGUE RANK #${rank}`, 540, 1220);
+  c.fillStyle = '#efc72f'; c.font = '500 24px monospace'; c.fillText(team.toUpperCase(), 540, 1260);
   return new Promise((resolve, reject) => canvas.toBlob((b) => b ? resolve(b) : reject(new Error('Card render failed')), 'image/png'));
+}
+
+function roundRect(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  c.beginPath(); c.roundRect(x, y, w, h, r);
+}
+
+function drawCorners(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
+  c.strokeStyle = '#efc72f'; c.lineWidth = 5; const n = 28;
+  [[x,y,n,0,0,n],[x+w,y,-n,0,0,n],[x,y+h,n,0,0,-n],[x+w,y+h,-n,0,0,-n]].forEach(([a,b,dx,dy,ex,ey]) => {
+    c.beginPath(); c.moveTo(a + dx, b + dy); c.lineTo(a, b); c.lineTo(a + ex, b + ey); c.stroke();
+  });
+}
+
+function wrapCentered(c: CanvasRenderingContext2D, text: string, x: number, y: number, width: number, line: number) {
+  const words = text.split(' '); const lines: string[] = []; let current = '';
+  for (const word of words) { const next = current ? `${current} ${word}` : word; if (current && c.measureText(next).width > width) { lines.push(current); current = word; } else current = next; }
+  if (current) lines.push(current); lines.forEach((value, i) => c.fillText(value, x, y + i * line));
 }
