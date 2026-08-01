@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade66-howto';
+const BUILD = 'arcade71-wide';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1455,18 +1455,34 @@ const PASS_GAME = (() => {
   /**
    * How far a tap can land from the solved lead and still be pulled onto it.
    *
-   * Widened from 44 after friends reported the throw felt punishing. Measured
-   * rather than guessed, by tapping thousands of throws at a fixed miss: at 44
-   * a 12px miss completed 68% of the time and an 18px miss 49%, and the cliff
-   * where the assist stops helping entirely sat at about 40px. At 52 those are
-   * 73% and 53%, and the cliff moves out with them. A perfectly aimed throw is
-   * unchanged either way — 93% against 94% — which is the shape this wanted:
-   * it does not make a good read better, it makes a near miss cost less.
+   * 44, then 52, then 110. The middle step was too timid and the detour after
+   * it was worse: replacing the coordinate with a direction did remove the
+   * feeling of tracing the drawn route, but it capped a good throw at 85% and
+   * put a post — a receiver breaking into obvious open grass — at 78%, when
+   * the same throw under this model completes in the nineties. Precision was
+   * never the thing to remove. Being punished for missing by a thumb's width
+   * was, and the radius is the dial for that.
    *
-   * 56 was tried and gave barely a point more than 52 in most of the table, so
-   * this is where the return stops.
+   * Measured at a fixed miss, thousands of throws each. An 8px miss: 85% at
+   * 52, 95% at 110. A 16px miss: 59% and 83%. A 24px miss: 38% and 59%. So a
+   * throw that is roughly where it should be now lands, and one that is
+   * genuinely wrong still does not — 32px out fails more often than not.
+   *
+   * 150 was tried. It takes a 24px miss to 70% and a 32px miss past a coin
+   * flip, which is far enough that aiming stops meaning anything.
    */
-  const ASSIST = 52;
+  const ASSIST = 110;
+  /**
+   * How much more forgiving the sideways miss is than the one along the route.
+   *
+   * Three. Measured on the throw that exposed all of this — a post, thrown
+   * early, tapped up and inside into the grass he is about to break into.
+   * Round assist at this same radius completed it 28% of the time while the
+   * identical throw tapped straight up the field completed 100%, which is the
+   * whole complaint in two numbers. At three it is 90%, and every other throw
+   * measured is within a couple of points of where it was.
+   */
+  const WIDE = 3;
   const SAMPLE_QB = 'J. Allen:BUF:0.96:0.68:0.88:0|C. Stroud:HOU:0.82:0.88:0.62:0|'
     + 'B. Purdy:SF:0.54:0.93:0.55:0|D. Maye:NE:0.78:0.72:0.74:0';
   // One of these shares a club with one of the passers, so the standalone
@@ -1705,10 +1721,29 @@ const PASS_GAME = (() => {
       for (let i = 0; i < 3; i++) { const p = at(rec, g.t + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
       const aim = at(rec, g.t + f);
       if (pt) {
+        // Two different mistakes, and they were being treated as one.
+        //
+        // Missing ALONG the route is a timing read — you threw to the wrong
+        // point on a line he is going to run down anyway, and the ball still
+        // lands somewhere he passes through. Missing ACROSS it is a slip of
+        // the thumb, and it puts the ball where he never goes, which is why a
+        // round assist made the drawn route a line you had to trace: a throw
+        // that was sideways-wrong by a fingertip was dead however good the
+        // read was. So the sideways component is forgiven WIDE times harder,
+        // and what is left to get right is when, not whether your thumb is on
+        // the line.
+        const nxt = at(rec, g.t + f + 6);
+        let vx = nxt.x - aim.x, vy = nxt.y - aim.y;
+        const mm = Math.hypot(vx, vy) || 1; vx /= mm; vy /= mm;
+        const dx = pt.x - aim.x, dy = pt.y - aim.y;
+        const alo = dx * vx + dy * vy;
+        const acr = -dx * vy + dy * vx;
         const help = ASSIST * (0.55 + 0.75 * A.ACC);
-        const k = Math.max(0, 1 - Math.hypot(pt.x - aim.x, pt.y - aim.y) / help);
-        aim.x = pt.x + (aim.x - pt.x) * k;
-        aim.y = pt.y + (aim.y - pt.y) * k;
+        const ka = Math.max(0, 1 - Math.abs(alo) / help);
+        const kc = Math.max(0, 1 - Math.abs(acr) / (help * WIDE));
+        const ra = alo * (1 - ka), rc = acr * (1 - kc);
+        aim.x += ra * vx - rc * vy;
+        aim.y += ra * vy + rc * vx;
       }
       // The miss grows with how far the ball has to travel, so a checkdown is
       // nearly automatic and a deep shot is a genuine risk.
