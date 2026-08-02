@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade87-rb-fix-wr1';
+const BUILD = 'arcade88-wr-complete';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -907,7 +907,9 @@ const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
 const CARRIER_STATE_BASE = new Image(), CARRIER_STATE_UNIFORM = new Image();
-const RECEIVER_MOTION_BASE = new Image(), RECEIVER_MOTION_UNIFORM = new Image();
+const RECEIVER_RUN_BASE = new Image(), RECEIVER_RUN_UNIFORM = new Image();
+const RECEIVER_CUT_BASE = new Image(), RECEIVER_CUT_UNIFORM = new Image();
+const RECEIVER_STATE_BASE = new Image(), RECEIVER_STATE_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -936,8 +938,12 @@ CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v1-base.png';
 CARRIER_CUT_UNIFORM.src = '/sprites/football-carrier-cuts-v1-uniform.png';
 CARRIER_STATE_BASE.src = '/sprites/football-carrier-states-v1-base.png';
 CARRIER_STATE_UNIFORM.src = '/sprites/football-carrier-states-v1-uniform.png';
-RECEIVER_MOTION_BASE.src = '/sprites/football-receiver-motion-v1-base.png';
-RECEIVER_MOTION_UNIFORM.src = '/sprites/football-receiver-motion-v1-uniform.png';
+RECEIVER_RUN_BASE.src = '/sprites/football-receiver-run-v2-base.png';
+RECEIVER_RUN_UNIFORM.src = '/sprites/football-receiver-run-v2-uniform.png';
+RECEIVER_CUT_BASE.src = '/sprites/football-receiver-cuts-v2-base.png';
+RECEIVER_CUT_UNIFORM.src = '/sprites/football-receiver-cuts-v2-uniform.png';
+RECEIVER_STATE_BASE.src = '/sprites/football-receiver-states-v2-base.png';
+RECEIVER_STATE_UNIFORM.src = '/sprites/football-receiver-states-v2-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -977,12 +983,23 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     const stateCell = { rb_ready: 0, rb_handoff: 1, rb_contact: 4,
       rb_tackle: 5, rb_brake: 6, rb_hero: 7 };
     cell = [stateCell[pose], 0];
-  } else if (pose === 'wr_run' || pose === 'wr_cut') {
-    artBase = RECEIVER_MOTION_BASE; artUniform = RECEIVER_MOTION_UNIFORM;
-    if (pose === 'wr_cut') {
-      frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
-      cell = [4 + frame, 0];
-    } else cell = [frame % 4, 0];
+  } else if (pose === 'wr_run') {
+    artBase = RECEIVER_RUN_BASE; artUniform = RECEIVER_RUN_UNIFORM;
+    cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
+  } else if (pose === 'wr_cut') {
+    artBase = RECEIVER_CUT_BASE; artUniform = RECEIVER_CUT_UNIFORM;
+    frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
+    // Both route-break directions are authored. Never mirror the receiver at
+    // runtime: his helmet, ball-side arm, and planted foot remain trackable.
+    cell = [frame + ((meta.dir || 0) < 0 ? 4 : 0), 0];
+  } else if (pose === 'wr_ready' || pose === 'wr_release' || pose === 'wr_catch') {
+    artBase = RECEIVER_STATE_BASE; artUniform = RECEIVER_STATE_UNIFORM;
+    if (pose === 'wr_ready') cell = [0, 0];
+    else if (pose === 'wr_release') cell = [1, 0];
+    else {
+      frame = Math.max(2, Math.min(7, meta.actionFrame == null ? 2 : meta.actionFrame));
+      cell = [frame, 0];
+    }
   } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
       || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
@@ -1041,13 +1058,13 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const flip = (pose === 'run_diag' || pose === 'db_turn' || pose === 'wr_cut')
+  const flip = (pose === 'run_diag' || pose === 'db_turn')
     && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
   const integratedBall = pose === 'carry' || pose === 'spin' || pose.startsWith('cut_')
-    || pose.startsWith('rb_') || pose === 'catch' || pose === 'throw'
+    || pose.startsWith('rb_') || pose === 'catch' || pose === 'wr_catch' || pose === 'throw'
     || pose === 'tackle' || pose === 'contact' || pose === 'truck';
   if ((ballPts || meta.ball) && !integratedBall) {
     const bx = base.x + ((meta.dir || 0) < 0 ? -7 : 7) * scale, by = base.y - 12 * scale;
@@ -2221,9 +2238,14 @@ const PASS_GAME = (() => {
       }
       g.t++;
       const r = g.wr;
+      const oldX = r.x, oldY = r.y;
       const p = at(r, g.t);
       r.x = p.x; r.y = p.y;
-      r.frame += 0.16; r.hist.push({ x: r.x, y: r.y });
+      // Advance the eight-frame stride from actual ground covered. This keeps
+      // feet planted through slow lateral breaks instead of skating at the
+      // same cadence used on a vertical release.
+      r.frame += Math.max(.10, Math.min(.28, Math.hypot(r.x - oldX, r.y - oldY) * .22));
+      r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
       r.db.frame += 0.2;
       r.db.motionAge = (r.db.motionAge || 0) + 1;
@@ -2299,14 +2321,14 @@ const PASS_GAME = (() => {
       // Give the four catch/tuck drawings a readable beat before pursuit and
       // camera motion resume. Moving the world underneath the catch made the
       // ball simply disappear into a cluster of bodies.
-      if ((r.catchFrames || 0) > 4) {
+      if ((r.catchFrames || 0) > 8) {
         r.frame += 0.08;
         return;
       }
       r.y -= 0.92 + 0.56 * W.SPEED;
       r.x += Math.sign(VW / 2 - r.x) * 0.34;      // works back to the grass
       r.x = Math.max(10, Math.min(VW - 10, r.x));
-      r.frame += 0.16;
+      r.frame += 0.22;
       let near = Infinity;
       for (const d of [r.db, g.safety]) {
         const dx = r.x - d.x, dy = r.y - d.y, dist = Math.hypot(dx, dy) || 1;
@@ -2357,7 +2379,7 @@ const PASS_GAME = (() => {
         const dx = rec.db.x - rec.x, dy = rec.db.y - rec.y, m = Math.hypot(dx, dy) || 1;
         rec.db.x = rec.x + dx / m * 13; rec.db.y = rec.y + dy / m * 13;
       }
-      rec.catchFrames = 12;
+      rec.catchFrames = 16;
       g.yacFrames = 0;
       g.state = 'yac';
     },
@@ -2412,23 +2434,27 @@ const PASS_GAME = (() => {
         // drift away from the receiver's hip.
         const caught = (r.catchFrames || 0) > 0;
         if (caught) r.catchFrames--;
-        const visualPose = caught ? 'catch' : (g.visual && g.visual.frames > 0
+        const visualPose = caught ? 'wr_catch' : (g.visual && g.visual.frames > 0
           ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry');
-        const actionFrame = caught ? Math.min(3, Math.floor((12 - r.catchFrames) / 3))
+        const actionFrame = caught ? Math.min(7, 4 + Math.floor((16 - r.catchFrames) / 4))
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
           { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir,
-            ball: true, stable: visualPose === 'carry' });
+            ball: true, stable: visualPose === 'carry' || visualPose === 'wr_catch' });
       } else {
-        const nearBall = g.ball && Math.hypot(g.ball.x - r.x, g.ball.y - r.y) < 18;
+        const ballDistance = g.ball ? Math.hypot(g.ball.x - r.x, g.ball.y - r.y) : Infinity;
+        const nearBall = ballDistance < 18;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
         const movingPose = cutting ? 'wr_cut' : 'wr_run';
         const movingFrame = cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
+        const visualPose = g.state === 'ready' ? 'wr_ready'
+          : g.t < 8 ? 'wr_release' : nearBall ? 'wr_catch' : movingPose;
+        const actionFrame = nearBall ? (ballDistance < 9 ? 3 : 2) : movingFrame;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
-          { pose: nearBall ? 'catch' : movingPose, frame: g.state === 'ready' ? 0 : r.frame,
-            actionFrame: nearBall ? 1 : movingFrame, dir: r.dir, stable: !nearBall });
+          { pose: visualPose, frame: g.state === 'ready' ? 0 : r.frame,
+            actionFrame, dir: r.dir, stable: true });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
