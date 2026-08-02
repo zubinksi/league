@@ -1,103 +1,51 @@
-/**
- * The arcade player sprite, for the roster card.
- *
- * public/arcade-game.html owns the full animation set. This is the standing
- * frame only, duplicated here because that file is standalone and outside the
- * build — the same arrangement as teamKits.ts, and for the same reason. A
- * standing pose is the part of the sprite least likely to change, so the two
- * copies should not drift.
- */
+/** Detailed 40×48 Mini Camp hero sprite used by cards and share images. */
 import { teamKit } from './teamKits';
 
-/** Logical sprite size. Scale it by an integer to keep the pixels square. */
-export const SPRITE = 20;
-
-const BODY = [
-  '....................', '....................',
-  '......DDDDDDDD......', '.....DWWWWWWWWD.....', '.....DWWWWWWWWD.....',
-  '.....DWWMMMMWWD.....', '.....DDWWWWWWDD.....', '.......DLLLLD.......',
-  '...DDWWWWWWWWWWDD...', '..DWWWWWWWWWWWWWWD..', '..DWWWWWWWWWWWWWWD..',
-  '...DWWWWWWWWWWWWD...', '...DWWWWMMMMWWWWD...', '...DWWWWMMMMWWWWD...',
-  '....DWWWWWWWWWWD....', '.....DWWWWWWWWD.....',
-];
-
-const LEGS = [
-  // mid-stride
-  ['....DLLD....DLLD....', '....DLLD....DLLD....', '...DLLD......DLLD...', '...DDD........DDD...'],
-  // feet set
-  ['......DLLDDLLD......', '......DLLDDLLD......', '......DLLDDLLD......', '......DDDDDDD.......'],
-  // wide, reads as a follow-through
-  ['....DLLD....DLLD....', '...DLLD......DLLD...', '...DLLD......DLLD...', '..DDD..........DDD..'],
-];
-
-/** Tucked against the right hip, just outside the torso. At the game's own hip
- *  height it sits between the legs and reads as dropped. */
-const BALL: [number, number][] = [
-  [17, 11], [18, 11], [17, 12], [18, 12], [17, 13], [18, 13],
-];
-
-/**
- * Four silhouettes out of three leg frames and a ball, so the positions read
- * apart without drawing anything new: a passer stands set with it, a back
- * carries it mid-stride, receivers run empty, a kicker is caught wide.
- */
-const POSE: Record<string, { legs: number; ball: boolean }> = {
-  QB: { legs: 1, ball: true },
-  RB: { legs: 0, ball: true },
-  WR: { legs: 0, ball: false },
-  TE: { legs: 0, ball: false },
-  K: { legs: 2, ball: false },
-};
-const DEFAULT_POSE = POSE.WR;
+export const SPRITE = 48;
 
 const hex2rgb = (h: string) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
 const mix = (a: string, b: string, t: number) => {
-  const [ar, ag, ab] = hex2rgb(a);
-  const [br, bg, bb] = hex2rgb(b);
-  return (
-    '#' +
-    [ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t]
-      .map((v) => Math.round(v).toString(16).padStart(2, '0'))
-      .join('')
-  );
+  const [ar, ag, ab] = hex2rgb(a), [br, bg, bb] = hex2rgb(b);
+  return '#' + [ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t]
+    .map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
 };
 
-/** The same three uniform tones the game derives from a club colour. */
-function palette(team: string): Record<string, string | null> {
-  const base = teamKit(team);
-  return {
-    '.': null,
-    D: '#26282d',
-    O: '#e8c561',
-    W: base ? mix(base, '#ffffff', 0.38) : '#ffffff',
-    L: base ?? '#c9c9cf',
-    M: base ? mix(base, '#191b1f', 0.42) : '#8f9199',
-  };
-}
-
-/** The rows for one pose, as the '.DWLM' strings above. The brand assets are
- *  generated from this so the logo and the character stay the same drawing. */
-export function spriteRows(position: string): string[] {
-  const pose = POSE[position.toUpperCase()] ?? DEFAULT_POSE;
-  return [...BODY, ...LEGS[pose.legs]];
-}
-
-/** One pixel per logical unit, so the canvas is 20×20 and CSS does the scaling. */
 export function drawSprite(ctx: CanvasRenderingContext2D, position: string, team: string): void {
-  const pose = POSE[position.toUpperCase()] ?? DEFAULT_POSE;
-  const rows = [...BODY, ...LEGS[pose.legs]];
-  const pal = palette(team);
+  const base = teamKit(team) ?? '#8f9199';
+  const C = base, HI = mix(base, '#ffffff', .38), SH = mix(base, '#17191d', .42);
+  const D = '#202228', SKIN = '#b77955', GOLD = '#e8c561';
+  const x0 = 4;
+  const r = (x: number, y: number, w: number, h: number, color: string) => {
+    ctx.fillStyle = color; ctx.fillRect(x0 + x, y, w, h);
+  };
   ctx.clearRect(0, 0, SPRITE, SPRITE);
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const c = pal[row[x]];
-      if (!c) continue;
-      ctx.fillStyle = c;
-      ctx.fillRect(x, y, 1, 1);
-    }
-  });
-  if (pose.ball) {
-    ctx.fillStyle = pal.O as string;
-    for (const [x, y] of BALL) ctx.fillRect(x, y, 1, 1);
+
+  // Helmet, team stripe, face and face mask.
+  r(11, 2, 18, 2, D); r(9, 4, 22, 8, D);
+  r(11, 4, 18, 7, HI); r(19, 4, 3, 7, GOLD);
+  r(12, 10, 16, 7, D); r(14, 10, 12, 6, SKIN);
+  r(15, 11, 3, 2, D); r(23, 11, 3, 2, D);
+  r(14, 14, 12, 2, D); r(27, 11, 3, 6, HI);
+
+  // Pads, jersey and a compact number mark that survives card scaling.
+  r(8, 17, 24, 4, D); r(6, 20, 28, 13, D);
+  r(8, 19, 24, 13, C); r(10, 19, 20, 3, HI);
+  r(18, 23, 4, 7, '#ffffff'); r(15, 25, 10, 2, '#ffffff');
+
+  // Hero pose: hands on hips, matching the final-score stance.
+  r(3, 21, 9, 7, D); r(28, 21, 9, 7, D);
+  r(4, 22, 7, 5, SKIN); r(29, 22, 7, 5, SKIN);
+  r(9, 27, 5, 4, SKIN); r(26, 27, 5, 4, SKIN);
+
+  // Pants, socks and planted shoes. Position changes the small prop only;
+  // the full gameplay file owns the directional animation families.
+  r(10, 32, 20, 5, D); r(11, 32, 18, 4, HI);
+  r(11, 36, 7, 8, D); r(22, 36, 7, 8, D);
+  r(12, 37, 5, 6, SH); r(23, 37, 5, 6, SH);
+  r(10, 43, 9, 3, '#ffffff'); r(21, 43, 9, 3, '#ffffff');
+  r(9, 46, 10, 2, D); r(21, 46, 10, 2, D);
+
+  if (position.toUpperCase() === 'QB' || position.toUpperCase() === 'RB') {
+    r(29, 27, 6, 5, D); r(30, 28, 4, 3, GOLD);
   }
 }
