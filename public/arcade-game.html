@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade84-stable-carrier';
+const BUILD = 'arcade85-stride-spin';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -904,6 +904,7 @@ const UNIFIED_QB_BASE = new Image(), UNIFIED_QB_UNIFORM = new Image();
 const DIRECTIONAL_BASE = new Image(), DIRECTIONAL_UNIFORM = new Image();
 const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
 const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
+const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -924,8 +925,10 @@ DIRECTIONAL_BASE.src = '/sprites/football-directional-base.png';
 DIRECTIONAL_UNIFORM.src = '/sprites/football-directional-uniform.png';
 DEFENSE_BASE.src = '/sprites/football-defense-base.png';
 DEFENSE_UNIFORM.src = '/sprites/football-defense-uniform.png';
-CARRIER_RIG_BASE.src = '/sprites/football-carrier-rig-v1-base.png';
-CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-rig-v1-uniform.png';
+CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v2-base.png';
+CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v2-uniform.png';
+CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v1-base.png';
+CARRIER_SPIN_UNIFORM.src = '/sprites/football-carrier-spin-v1-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -946,6 +949,13 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   } else if (pose === 'carry') {
     artBase = CARRIER_RIG_BASE; artUniform = CARRIER_RIG_UNIFORM;
     cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
+  } else if (pose === 'spin') {
+    frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
+    if (frame === 0) {
+      artBase = CARRIER_RIG_BASE; artUniform = CARRIER_RIG_UNIFORM; cell = [0, 0];
+    } else {
+      artBase = CARRIER_SPIN_BASE; artUniform = CARRIER_SPIN_UNIFORM; cell = [frame, 0];
+    }
   } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
       || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
@@ -1008,7 +1018,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
-  const integratedBall = pose === 'carry' || pose === 'catch' || pose === 'throw'
+  const integratedBall = pose === 'carry' || pose === 'spin' || pose === 'catch' || pose === 'throw'
     || pose === 'tackle' || pose === 'contact' || pose === 'truck';
   if ((ballPts || meta.ball) && !integratedBall) {
     const bx = base.x + ((meta.dir || 0) < 0 ? -7 : 7) * scale, by = base.y - 12 * scale;
@@ -1386,7 +1396,7 @@ const RUN_GAME = (() => {
   // a tackle at 17px looked like the defender standing inside the runner, and
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
-  const SPIN_LEN = 30, SPIN_CD = 74, TACKLE_R = 17;
+  const SPIN_LEN = 24, SPIN_CD = 74, TACKLE_R = 17;
   /** Daylight. Two and a half tackle radii from the nearest man is the point
    *  where a carry stops being a collision waiting to happen. */
   const CLEAR = 42;
@@ -1542,6 +1552,7 @@ const RUN_GAME = (() => {
     step() {
       if (g.state !== 'live') return;
       const rb = g.rb;
+      const beforeX = rb.x, beforeY = rb.y;
       if (rb.spinCd > 0) rb.spinCd--;
       if (rb.evade > 0) rb.evade--;
       if (rb.breakCd > 0) rb.breakCd--;
@@ -1562,17 +1573,26 @@ const RUN_GAME = (() => {
         rb.truck--;
         if (rb.truck === 0) rb.stagger = 14;     // and it costs you afterwards
       } else if (rb.spin > 0) {
-        const p = rb.spin / SPIN_LEN;
-        rb.x += rb.spinDir * 2.9 * p;
+        const age = SPIN_LEN - rb.spin;
+        const t = Math.min(1, (age + 1) / SPIN_LEN);
+        const ease = t * t * (3 - 2 * t);
+        rb.x = rb.spinStartX + rb.spinDir * 13 * ease;
         rb.y -= rb.clean ? A.FWD : A.FWD * 0.45;
         rb.vx *= 0.7; rb.spin--;
+        if (rb.spin === 0) {
+          rb.vx = rb.spinDir * .65;
+          rb.frame = rb.spinDir > 0 ? 4 : 0;
+        }
       } else {
         const pace = rb.burst > 0 ? rb.pace : 1;
         rb.y -= (rb.stagger > 0 ? A.FWD * 0.42 : A.FWD) * pace;
         rb.x += rb.vx; rb.vx *= 0.86;
-        rb.frame += rb.stagger > 0 ? 0.12 : 0.22;
       }
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
+      if (rb.spin <= 0 && rb.truck <= 0) {
+        const travelled = Math.hypot(rb.x - beforeX, rb.y - beforeY);
+        rb.frame += Math.max(.11, Math.min(.28, travelled * .22));
+      }
       for (const d of g.defenders) {
         if (d.stumble > 0) {
           d.stumble--;
@@ -1707,12 +1727,10 @@ const RUN_GAME = (() => {
         rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL20, 0, 0.6,
           { pose: 'truck', frame: rb.frame, dir: Math.sign(rb.vx), ball: true });
       } else if (rb.spin > 0) {
-        const s = Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 4)) % 4;
-        ctx.globalAlpha = 0.22;
-        sprite(SPIN20[(s + 3) % 4], Math.round(rb.x - rb.spinDir * 4) - HALF, ry - HALF);
-        ctx.globalAlpha = 1;
-        rimmed(SPIN20[s], Math.round(rb.x) - HALF, ry - HALF, BALL20, SPIN_BALL_DX20[s], rim,
-          { pose: s === 2 ? 'contact' : 'run', frame: s, dir: rb.spinDir, ball: true });
+        const s = Math.min(7, Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 8)));
+        rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
+          { pose: 'spin', frame: rb.frame, actionFrame: s,
+            dir: rb.spinDir, ball: true, stable: true });
       } else {
         // The trail is the ground he has already covered, so it lies behind
         // him — downfield is up, which puts each image lower than the last.
@@ -1768,6 +1786,7 @@ const RUN_GAME = (() => {
       // contact, and how many you get is what Elusive buys.
       rb.evade = rb.clean ? Math.round(3 + 11 * A.ELU) : 0;
       rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
+      rb.spinStartX = rb.x;
       if (rb.clean) for (const d of g.defenders)
         if (Math.hypot(rb.x - d.x, rb.y - d.y) < A.CONTACT + 10) d.stumble = A.STUMBLE;
     },
