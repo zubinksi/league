@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade97-visual-parity';
+const BUILD = 'arcade98-stride-cadence';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -975,7 +975,12 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, row];
   } else if (pose === 'carry') {
     artBase = CARRIER_RIG_BASE; artUniform = CARRIER_RIG_UNIFORM;
-    cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
+    // The RB's contact frames hold for one additional animation step. This
+    // gives each foot a readable plant without freezing world movement or
+    // reintroducing the old turf slide. WR YAC keeps the continuous cycle.
+    const rbStride = [0, 0, 1, 2, 3, 4, 4, 5, 6, 7];
+    const strideCell = meta.role === 'rb' ? rbStride[frame % rbStride.length] : frame % 8;
+    cell = [meta.low ? Math.floor(strideCell / 2) * 2 : strideCell, 0];
   } else if (pose === 'spin') {
     frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
     if (frame === 0) {
@@ -1580,7 +1585,7 @@ const RUN_GAME = (() => {
       g.rb = { x: VW / 2, y: g.los + BACKFIELD, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
                clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0, evade: 0,
                burst: 0, pace: 1, motionAge: 0, cutFrames: 0, cutAge: 0,
-               cutDir: 1, cutTargetVx: 0 };
+               cutDir: 1, cutTargetVx: 0, visualSpeed: 0 };
       g.qb = off.qb; g.wrX = off.wrX;
       g.wr = { x: off.wrX, y: g.los - 2, frame: 0 };   // on the line, clear of the corner
       // Everyone pursues, including the corner — so the side the receiver is
@@ -1711,11 +1716,12 @@ const RUN_GAME = (() => {
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       if (rb.spin <= 0 && rb.truck <= 0) {
         const travelled = Math.hypot(rb.x - beforeX, rb.y - beforeY);
-        // One complete stride covers roughly thirteen field pixels. Advancing
+        rb.visualSpeed += (travelled - rb.visualSpeed) * .25;
+        // One complete stride covers roughly seventeen field pixels. Advancing
         // solely from distance keeps the planted foot attached to the turf:
         // slow/staggered backs animate slowly, and a burst cannot skate ahead
         // of a leisurely frame clock.
-        rb.frame += Math.min(.82, travelled * (8 / 13));
+        rb.frame += Math.min(.58, travelled * (10 / 17));
       }
       for (const d of g.defenders) {
         if (d.stumble > 0) {
@@ -1841,6 +1847,9 @@ const RUN_GAME = (() => {
       // Nobody within CLEAR is running away; it ramps over the next twenty so
       // the trail arrives with the daylight rather than snapping on.
       const loose = Math.max(0, Math.min(1, ((rb.alone || 0) - CLEAR) / 20));
+      const burstTrail = Math.max(0, Math.min(1,
+        (rb.visualSpeed - A.FWD * 1.05) / Math.max(.01, A.FWD * .35)));
+      const trail = loose * burstTrail;
       const rim = 0.3 + 0.45 * loose;
       if (rb.truck > 0) {
         for (let i = 2; i >= 1; i--) {
@@ -1859,9 +1868,9 @@ const RUN_GAME = (() => {
       } else {
         // The trail is the ground he has already covered, so it lies behind
         // him — downfield is up, which puts each image lower than the last.
-        if (loose > 0) {
+        if (trail > 0.02) {
           for (let i = 3; i >= 1; i--) {
-            ctx.globalAlpha = loose * 0.34 / i;
+            ctx.globalAlpha = trail * 0.27 / i;
             const f = (((Math.floor(rb.frame) - i) % 3) + 3) % 3;
             sprite(RUN20[f], Math.round(rb.x - rb.vx * i * 1.6) - HALF, ry - HALF + i * 4);
           }
@@ -1878,7 +1887,7 @@ const RUN_GAME = (() => {
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame,
-            dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true,
+            dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true, role: 'rb',
             // rb_ready fills much more of its atlas cell than the moving rig.
             // Normalize occupied pixels, not the transparent source box.
             canonicalScale: visualPose === 'rb_ready' ? .60 : .84 });
