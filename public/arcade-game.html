@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade86-rb-complete';
+const BUILD = 'arcade87-rb-fix-wr1';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -907,6 +907,7 @@ const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
 const CARRIER_STATE_BASE = new Image(), CARRIER_STATE_UNIFORM = new Image();
+const RECEIVER_MOTION_BASE = new Image(), RECEIVER_MOTION_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -935,6 +936,8 @@ CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v1-base.png';
 CARRIER_CUT_UNIFORM.src = '/sprites/football-carrier-cuts-v1-uniform.png';
 CARRIER_STATE_BASE.src = '/sprites/football-carrier-states-v1-base.png';
 CARRIER_STATE_UNIFORM.src = '/sprites/football-carrier-states-v1-uniform.png';
+RECEIVER_MOTION_BASE.src = '/sprites/football-receiver-motion-v1-base.png';
+RECEIVER_MOTION_UNIFORM.src = '/sprites/football-receiver-motion-v1-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -967,13 +970,19 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   } else if (pose === 'cut_left' || pose === 'cut_right') {
     artBase = CARRIER_CUT_BASE; artUniform = CARRIER_CUT_UNIFORM;
     frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
-    cell = [frame, pose === 'cut_left' ? 0 : 1];
+    cell = [frame + (pose === 'cut_left' ? 0 : 4), 0];
   } else if (pose === 'rb_ready' || pose === 'rb_handoff' || pose === 'rb_contact'
       || pose === 'rb_tackle' || pose === 'rb_brake' || pose === 'rb_hero') {
     artBase = CARRIER_STATE_BASE; artUniform = CARRIER_STATE_UNIFORM;
     const stateCell = { rb_ready: 0, rb_handoff: 1, rb_contact: 4,
       rb_tackle: 5, rb_brake: 6, rb_hero: 7 };
-    cell = [stateCell[pose] % 4, Math.floor(stateCell[pose] / 4)];
+    cell = [stateCell[pose], 0];
+  } else if (pose === 'wr_run' || pose === 'wr_cut') {
+    artBase = RECEIVER_MOTION_BASE; artUniform = RECEIVER_MOTION_UNIFORM;
+    if (pose === 'wr_cut') {
+      frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
+      cell = [4 + frame, 0];
+    } else cell = [frame % 4, 0];
   } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
       || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
@@ -1032,7 +1041,8 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const flip = (pose === 'run_diag' || pose === 'db_turn') && (meta.dir || 0) < 0;
+  const flip = (pose === 'run_diag' || pose === 'db_turn' || pose === 'wr_cut')
+    && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
@@ -1715,16 +1725,16 @@ const RUN_GAME = (() => {
         }
       }
       for (const d of g.defenders) {
-        const sy = Math.round(d.y - g.camY);
+        const sy = d.y - g.camY;
         if (sy > -SPR && sy < VH + SPR) {
           const prone = d.stumble > 0, recovering = d.recover > 0;
           ctx.save();
           if (prone && d.stumble < 10) ctx.globalAlpha *= d.stumble / 10;
           if (recovering) ctx.globalAlpha *= 1 - d.recover / 10;
-          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF,
+          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], d.x - HALF, sy - HALF,
             null, 0, null, { pose: prone ? 'tackle' : recovering ? 'accelerate'
               : g.state === 'presnap' ? 'db' : d.deep ? 'safety' : d.contain ? 'db_turn' : 'rusher', frame: d.frame,
-              dir: d.animDir,
+              dir: d.animDir, stable: !prone,
               actionFrame: d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
                 : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
           ctx.restore();
@@ -2370,22 +2380,22 @@ const PASS_GAME = (() => {
         }
       }
       const dbTurning = r.route && g.t >= (BREAK[r.route] || 0) - 4;
-      sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF,
+      sprite(DEF20[Math.floor(r.db.frame) % 3], r.db.x - HALF, r.db.y - g.camY - HALF,
         null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db'
-          : dbTurning ? 'db_turn' : 'db_backpedal', frame: r.db.frame, dir: r.db.animDir,
+          : dbTurning ? 'db_turn' : 'db_backpedal', frame: r.db.frame, dir: r.db.animDir, stable: true,
           actionFrame: r.db.stumble > 0 ? 7 : Math.min(3, Math.floor((r.db.motionAge || 0) / 4)) });
       if (g.safety)
-        sprite(DEF20[Math.floor(g.safety.frame) % 3], Math.round(g.safety.x) - HALF, Math.round(g.safety.y - g.camY) - HALF,
+        sprite(DEF20[Math.floor(g.safety.frame) % 3], g.safety.x - HALF, g.safety.y - g.camY - HALF,
           null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: g.safety.frame,
-            dir: g.safety.animDir,
+            dir: g.safety.animDir, stable: true,
             actionFrame: Math.min(3, Math.floor((g.safety.motionAge || 0) / 4)) });
       if (g.state !== 'yac')
-        for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame,
+        for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], d.x - HALF, d.y - g.camY - HALF,
+          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame, stable: true,
             actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
       // Each of your two players wears his own club's colours.
       setJersey(g.wrTeam);
-      const rx = Math.round(r.x) - HALF, ry0 = Math.round(r.y - g.camY) - HALF;
+      const rx = r.x - HALF, ry0 = r.y - g.camY - HALF;
       if (g.state === 'yac') {
         // He is the carrier now, so he gets what the carrier gets.
         const loose = Math.max(0, Math.min(1, ((r.alone || 0) - YAC_CLEAR) / 20));
@@ -2414,12 +2424,11 @@ const PASS_GAME = (() => {
         const nearBall = g.ball && Math.hypot(g.ball.x - r.x, g.ball.y - r.y) < 18;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
-        const movingPose = g.t < 16 ? 'accelerate' : cutting ? 'run_diag' : 'receiver';
-        const movingFrame = g.t < 16 ? Math.min(3, Math.floor(g.t / 4))
-          : cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
+        const movingPose = cutting ? 'wr_cut' : 'wr_run';
+        const movingFrame = cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
-          { pose: nearBall ? 'catch' : g.state === 'ready' ? 'wr' : movingPose, frame: r.frame,
-            actionFrame: nearBall ? 1 : movingFrame, dir: r.dir });
+          { pose: nearBall ? 'catch' : movingPose, frame: g.state === 'ready' ? 0 : r.frame,
+            actionFrame: nearBall ? 1 : movingFrame, dir: r.dir, stable: !nearBall });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
