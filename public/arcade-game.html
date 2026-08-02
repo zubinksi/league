@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade82-registered';
+const BUILD = 'arcade83-cinematic';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -835,12 +835,14 @@ const CAMERA = {
   farWidth: 0.68,
   panX: 0,
   goal: 0,
-  frame(focusX, los) {
+  cine: 0,
+  frame(focusX, los, cinematic = false) {
     const targetPan = Math.max(-VW * .08, Math.min(VW * .08, (VW / 2 - focusX) * .16));
     const goalYards = Math.max(0, (los - EZ) / YARD);
     const targetGoal = Math.max(0, Math.min(1, (12 - goalYards) / 8));
     this.panX += (targetPan - this.panX) * .10;
     this.goal += (targetGoal - this.goal) * .08;
+    this.cine += ((cinematic ? 1 : 0) - this.cine) * (cinematic ? .09 : .16);
   },
 };
 function projectPoint(x, y) {
@@ -851,11 +853,17 @@ function projectPoint(x, y) {
     : raw > 1 ? VH + (y - VH) : VH * (horizon + (1 - horizon) * Math.pow(t, CAMERA.depth));
   const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
   const pan = CAMERA.panX * (.42 + .58 * t);
-  return { x: VW / 2 + (x - VW / 2) * width + pan, y: py, scale: 0.72 + 0.28 * t };
+  const px = VW / 2 + (x - VW / 2) * width + pan;
+  const zoom = 1 + CAMERA.cine * .12, pivotY = VH * .46;
+  return { x: VW / 2 + (px - VW / 2) * zoom, y: pivotY + (py - pivotY) * zoom,
+    scale: (0.72 + 0.28 * t) * zoom };
 }
 function unprojectPoint(x, y) {
   if (!CAMERA.enabled) return { x, y };
   const horizon = Math.max(.018, CAMERA.horizon - CAMERA.goal * .032);
+  const zoom = 1 + CAMERA.cine * .12, pivotY = VH * .46;
+  x = VW / 2 + (x - VW / 2) / zoom;
+  y = pivotY + (y - pivotY) / zoom;
   const normalized = (y / VH - horizon) / (1 - horizon);
   const t = normalized < 0 ? normalized * (1 - horizon) / CAMERA.farWidth
     : Math.pow(Math.max(0, Math.min(1, normalized)), 1 / CAMERA.depth);
@@ -893,6 +901,8 @@ const TRANSITION_BASE = new Image(), TRANSITION_UNIFORM = new Image();
 const UNIFIED_BASE = new Image(), UNIFIED_UNIFORM = new Image();
 const UNIFIED_ACTION_BASE = new Image(), UNIFIED_ACTION_UNIFORM = new Image();
 const UNIFIED_QB_BASE = new Image(), UNIFIED_QB_UNIFORM = new Image();
+const DIRECTIONAL_BASE = new Image(), DIRECTIONAL_UNIFORM = new Image();
+const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -909,6 +919,10 @@ UNIFIED_ACTION_BASE.src = '/sprites/football-unified-actions-base.png';
 UNIFIED_ACTION_UNIFORM.src = '/sprites/football-unified-actions-uniform.png';
 UNIFIED_QB_BASE.src = '/sprites/football-unified-qb-base.png';
 UNIFIED_QB_UNIFORM.src = '/sprites/football-unified-qb-uniform.png';
+DIRECTIONAL_BASE.src = '/sprites/football-directional-base.png';
+DIRECTIONAL_UNIFORM.src = '/sprites/football-directional-uniform.png';
+DEFENSE_BASE.src = '/sprites/football-defense-base.png';
+DEFENSE_UNIFORM.src = '/sprites/football-defense-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -922,17 +936,18 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   const pose = meta.pose || 'run';
   let artBase = POSE_BASE, artUniform = POSE_UNIFORM, cell;
   let frame = Math.floor(Math.abs(meta.frame || 0));
-  if (pose === 'run') {
-    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
-    cell = [frame % 4, Math.floor((frame % 8) / 4)];
+  if (pose === 'run' || pose === 'run_diag' || pose === 'receiver') {
+    artBase = DIRECTIONAL_BASE; artUniform = DIRECTIONAL_UNIFORM;
+    const row = pose === 'run_diag' ? 1 : pose === 'receiver' ? 2 : 0;
+    cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, row];
   } else if (pose === 'carry') {
-    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
-    const carryCycle = [0, 1, 2, 3, 2, 1];
-    cell = [carryCycle[frame % carryCycle.length], 2];
-  } else if (pose === 'defend') {
-    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
-    const df = 2 + (Math.floor(frame / 2) % 2);
-    cell = [df, 3];
+    artBase = DIRECTIONAL_BASE; artUniform = DIRECTIONAL_UNIFORM;
+    cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, 3];
+  } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
+      || pose === 'safety' || pose === 'rusher') {
+    artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
+    const row = pose === 'db_turn' ? 1 : pose === 'safety' ? 2 : pose === 'rusher' ? 3 : 0;
+    cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, row];
   } else if (pose === 'accelerate' || pose === 'cut') {
     artBase = UNIFIED_ACTION_BASE; artUniform = UNIFIED_ACTION_UNIFORM;
     frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
@@ -986,7 +1001,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const flip = false;
+  const flip = (pose === 'run_diag' || pose === 'db_turn') && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
@@ -996,6 +1011,11 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     const bx = base.x + ((meta.dir || 0) < 0 ? -7 : 7) * scale, by = base.y - 12 * scale;
     ctx.fillStyle = PAL.D; ctx.fillRect(bx - 2 * scale, by - 1.5 * scale, 4 * scale, 3 * scale);
     ctx.fillStyle = PAL.O; ctx.fillRect(bx - 1.4 * scale, by - scale, 2.8 * scale, 2 * scale);
+  }
+  if (pose === 'catch' && frame === 1) {
+    const bx = base.x + 7 * scale, by = base.y - 18 * scale;
+    ctx.fillStyle = 'rgba(255,210,48,.35)'; ctx.fillRect(bx - 3 * scale, by - 3 * scale, 6 * scale, 6 * scale);
+    ctx.fillStyle = '#fff4c0'; ctx.fillRect(bx - scale, by - scale, 2 * scale, 2 * scale);
   }
   return true;
 }
@@ -1435,7 +1455,7 @@ const RUN_GAME = (() => {
       // Everyone pursues, including the corner — so the side the receiver is
       // lined up on is the harder edge to take.
       g.defenders = [...D.front, D.cb, D.safety];
-      for (const d of g.defenders) d.motionAge = 0;
+      for (const d of g.defenders) { d.motionAge = 0; d.animDir = 1; d.recover = 0; }
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
       g.startY = g.los;
@@ -1545,7 +1565,12 @@ const RUN_GAME = (() => {
       }
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       for (const d of g.defenders) {
-        if (d.stumble > 0) { d.stumble--; continue; }
+        if (d.stumble > 0) {
+          d.stumble--;
+          if (d.stumble === 0) d.recover = 10;
+          continue;
+        }
+        if (d.recover > 0) { d.recover--; continue; }
         // A corner plays his side. He is in the picture you read either way,
         // which is what makes the receiver's edge the harder one — but he
         // does not come chasing a carry to the far hash.
@@ -1572,10 +1597,12 @@ const RUN_GAME = (() => {
         }
         const dx = tx - d.x, dy = ty - d.y;
         const dist = Math.hypot(dx, dy) || 1;
+        if (Math.abs(dx) > .35 && (d.motionAge || 0) % 6 === 0) d.animDir = Math.sign(dx);
         // While the burst is on they are still flowing to their own read.
         const flow = rb.burst > 0 ? g.flow : 1;
         d.x += (dx / dist) * d.lateral * flow; d.y += (dy / dist) * d.speed; d.frame += 0.2;
         if (rb.evade <= 0 && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
+          d.x = rb.x - (dx / dist) * 12; d.y = rb.y - (dy / dist) * 12;
           if (rb.truck > 0) {
             // Committed to contact: run him over, or get stood up for a loss.
             // Trucking is for defenders in front of you — a man on your hip
@@ -1632,12 +1659,19 @@ const RUN_GAME = (() => {
       }
       for (const d of g.defenders) {
         const sy = Math.round(d.y - g.camY);
-        if (sy > -SPR && sy < VH + SPR)
+        if (sy > -SPR && sy < VH + SPR) {
+          const prone = d.stumble > 0, recovering = d.recover > 0;
+          ctx.save();
+          if (prone && d.stumble < 10) ctx.globalAlpha *= d.stumble / 10;
+          if (recovering) ctx.globalAlpha *= 1 - d.recover / 10;
           sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF,
-            null, 0, null, { pose: d.stumble > 0 ? 'tackle' : g.state === 'presnap' ? 'db'
-              : d.motionAge < 16 ? 'accelerate' : 'defend', frame: d.frame,
+            null, 0, null, { pose: prone ? 'tackle' : recovering ? 'accelerate'
+              : g.state === 'presnap' ? 'db' : d.deep ? 'safety' : d.contain ? 'db_turn' : 'rusher', frame: d.frame,
+              dir: d.animDir,
               actionFrame: d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
                 : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
+          ctx.restore();
+        }
       }
       // The rest of the huddle. They do not do anything on a carry, but the
       // field should not empty out just because you handed it off.
@@ -1977,11 +2011,12 @@ const PASS_GAME = (() => {
       g.rushers = D.front.slice(0, 2);
       g.safety = D.safety;
       g.wr.db.motionAge = 0;
-      for (const d of g.rushers) d.motionAge = 0;
-      if (g.safety) g.safety.motionAge = 0;
+      g.wr.db.animDir = 1;
+      for (const d of g.rushers) { d.motionAge = 0; d.animDir = 1; }
+      if (g.safety) { g.safety.motionAge = 0; g.safety.animDir = 1; }
       g.qb = off.qb;
       g.rb = { x: VW / 2 - 16, y: g.los + BACKFIELD, frame: 0 };
-      g.ball = null; g.t = 0; g.edge = 0;
+      g.ball = null; g.t = 0; g.edge = 0; g.flightClock = 0;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
       g.state = 'ready';
@@ -2098,11 +2133,19 @@ const PASS_GAME = (() => {
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
       g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
       g.threw = g.t;
+      g.flightClock = 0;
       g.att++; g.state = 'ball';
     },
     step() {
       if (g.state === 'yac') { this.runAfterCatch(); return; }
       if (g.state !== 'live' && g.state !== 'ball') return;
+      // A restrained focus beat: all actors remain synchronised, but the
+      // airborne phase advances at 72% speed so the user can read the finish.
+      if (g.state === 'ball') {
+        g.flightClock = (g.flightClock || 0) + .72;
+        if (g.flightClock < 1) return;
+        g.flightClock -= 1;
+      }
       g.t++;
       const r = g.wr;
       const p = at(r, g.t);
@@ -2128,6 +2171,8 @@ const PASS_GAME = (() => {
       const back = r.hist[Math.max(0, r.hist.length - 1 - lag)] || p;
       r.db.x += (back.x - r.db.x) * tight;
       r.db.y += (back.y - r.db.y) * tight;
+      const dbDx = back.x - r.db.x;
+      if (Math.abs(dbDx) > .4 && r.db.motionAge % 6 === 0) r.db.animDir = Math.sign(dbDx);
 
       // The safety works from depth: he shades across to the receiver and
       // gives ground once the route threatens his level. Standing still until
@@ -2146,6 +2191,7 @@ const PASS_GAME = (() => {
           const d = Math.hypot(bx, by) || 1;
           s.x += (bx / d) * s.lateral * 1.18;
           s.y += (by / d) * s.speed * 1.18;
+          if (Math.abs(bx) > .4 && s.motionAge % 6 === 0) s.animDir = Math.sign(bx);
         } else {
           const lead = r.x - s.x;
           s.x += Math.sign(lead) * Math.min(0.62, Math.abs(lead) * 0.055);
@@ -2195,6 +2241,7 @@ const PASS_GAME = (() => {
         r.alone = near;
         d.x += (dx / dist) * 1.54; d.y += (dy / dist) * 1.54; d.frame += 0.22;
         if (dist < 12) {
+          d.x = r.x - (dx / dist) * 11; d.y = r.y - (dy / dist) * 11;
           FX.kick((r.x + d.x) / 2, (r.y + d.y) / 2, 9, 1.2);
           this.end('complete', g.los - r.y); return;
         }
@@ -2233,12 +2280,16 @@ const PASS_GAME = (() => {
       // trivial. The yards come from the separation the route already earned,
       // so a wide-open catch breaks free and a contested one dies on contact.
       rec.x = b.x; rec.y = b.y;
+      if (dbD < 20) {
+        const dx = rec.db.x - rec.x, dy = rec.db.y - rec.y, m = Math.hypot(dx, dy) || 1;
+        rec.db.x = rec.x + dx / m * 13; rec.db.y = rec.y + dy / m * 13;
+      }
       rec.catchFrames = 12;
       g.yacFrames = 0;
       g.state = 'yac';
     },
     render() {
-      CAMERA.frame(g.ball ? g.ball.x : (g.wr ? g.wr.x : VW / 2), g.los);
+      CAMERA.frame(g.ball ? g.ball.x : (g.wr ? g.wr.x : VW / 2), g.los, g.state === 'ball');
       drawField(g.camY, g.los, g.marker);
       const r = g.wr;
       // The chosen route traces once it is running; nothing to show before.
@@ -2255,19 +2306,19 @@ const PASS_GAME = (() => {
           ctx.beginPath(); ctx.moveTo(ap.x, ap.y); ctx.lineTo(bp.x, bp.y); ctx.stroke();
         }
       }
+      const dbTurning = r.route && g.t >= (BREAK[r.route] || 0) - 4;
       sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF,
         null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db'
-          : (r.db.motionAge || 0) < 16 ? 'accelerate' : 'defend', frame: r.db.frame,
+          : dbTurning ? 'db_turn' : 'db_backpedal', frame: r.db.frame, dir: r.db.animDir,
           actionFrame: r.db.stumble > 0 ? 7 : Math.min(3, Math.floor((r.db.motionAge || 0) / 4)) });
       if (g.safety)
         sprite(DEF20[Math.floor(g.safety.frame) % 3], Math.round(g.safety.x) - HALF, Math.round(g.safety.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ready' ? 'db'
-            : (g.safety.motionAge || 0) < 16 ? 'accelerate' : 'defend', frame: g.safety.frame,
+          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: g.safety.frame,
+            dir: g.safety.animDir,
             actionFrame: Math.min(3, Math.floor((g.safety.motionAge || 0) / 4)) });
       if (g.state !== 'yac')
         for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ready' ? 'db'
-            : (d.motionAge || 0) < 16 ? 'accelerate' : 'defend', frame: d.frame,
+          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame,
             actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
       // Each of your two players wears his own club's colours.
       setJersey(g.wrTeam);
@@ -2299,12 +2350,12 @@ const PASS_GAME = (() => {
         const nearBall = g.ball && Math.hypot(g.ball.x - r.x, g.ball.y - r.y) < 18;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
-        const movingPose = g.t < 16 ? 'accelerate' : 'run';
+        const movingPose = g.t < 16 ? 'accelerate' : cutting ? 'run_diag' : 'receiver';
         const movingFrame = g.t < 16 ? Math.min(3, Math.floor(g.t / 4))
           : cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
           { pose: nearBall ? 'catch' : g.state === 'ready' ? 'wr' : movingPose, frame: r.frame,
-            actionFrame: nearBall ? 1 : movingFrame, dir: 1 });
+            actionFrame: nearBall ? 1 : movingFrame, dir: r.dir });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
@@ -2325,6 +2376,8 @@ const PASS_GAME = (() => {
         ctx.fillStyle = PAL.O;
         ctx.fillRect(bp.x - bs, bp.y, 3 * bs, 2 * bs);
         ctx.fillRect(bp.x, bp.y - bs, bs, 4 * bs);
+        ctx.fillStyle = '#fff4c0';
+        ctx.fillRect(bp.x, bp.y, bs, bs);
       }
       FX.draw(g.camY);
     },
@@ -2772,7 +2825,7 @@ const DRIVE_GAME = (() => {
       // Keep the result card out of the way long enough to see the registered
       // contact/catch sequence finish. The field continues rendering while
       // this short presentation hold counts down.
-      g.overlayDelay = 20;
+      g.overlayDelay = 15;
       const o = cur.outcome();
       g.how = o.kind;
       g.gain = o.gain || 0;
