@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade96-rb-stride';
+const BUILD = 'arcade97-visual-parity';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1069,8 +1069,26 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   poseTintCtx.drawImage(artUniform, sx, sy, 48, 64, 0, 0, 48, 64);
   poseTintCtx.globalCompositeOperation = 'source-in';
   poseTintCtx.fillStyle = defender ? PAL.G : PAL.L; poseTintCtx.fillRect(0, 0, 48, 64);
+  // Uniform masks used to replace every covered pixel with one flat team
+  // colour. That worked on the DB sheets because their masks expose lots of
+  // shaded base art, but it turned the broader QB/RB/WR masks into featureless
+  // silhouettes. Multiply the neutral luminance of the authored frame back
+  // into the tint so folds, pads, helmet planes and leg separation survive.
+  poseTintCtx.globalCompositeOperation = 'multiply';
+  poseTintCtx.globalAlpha = defender ? .42 : .64;
+  poseTintCtx.filter = 'grayscale(1) contrast(1.18) brightness(1.16)';
+  poseTintCtx.drawImage(artBase, sx, sy, 48, 64, 0, 0, 48, 64);
+  poseTintCtx.filter = 'none';
+  poseTintCtx.globalAlpha = 1;
+  poseTintCtx.globalCompositeOperation = 'destination-in';
+  poseTintCtx.drawImage(artUniform, sx, sy, 48, 64, 0, 0, 48, 64);
   poseTintCtx.globalCompositeOperation = 'source-over';
+  // Offensive masks cover more of the body than the DB masks. Leave a
+  // deliberate share of the neutral master visible underneath so black seams,
+  // white highlights and pad/limb boundaries cannot be painted away.
+  poseCtx.globalAlpha = defender ? 1 : .62;
   poseCtx.drawImage(poseTint, 0, 0);
+  poseCtx.globalAlpha = 1;
   if (tint) {
     poseCtx.globalCompositeOperation = 'source-in'; poseCtx.fillStyle = tint; poseCtx.fillRect(0, 0, 48, 64);
     poseCtx.globalCompositeOperation = 'source-over';
