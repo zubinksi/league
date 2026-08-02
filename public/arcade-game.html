@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade80-motion';
+const BUILD = 'arcade81-continuity';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -889,6 +889,7 @@ const POSE_BASE = new Image(), POSE_UNIFORM = new Image();
 const RUN_BASE = new Image(), RUN_UNIFORM = new Image();
 const IDLE_BASE = new Image(), IDLE_UNIFORM = new Image();
 const ACTION_BASE = new Image(), ACTION_UNIFORM = new Image();
+const TRANSITION_BASE = new Image(), TRANSITION_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -897,6 +898,8 @@ IDLE_BASE.src = '/sprites/football-idles-base.png';
 IDLE_UNIFORM.src = '/sprites/football-idles-uniform.png';
 ACTION_BASE.src = '/sprites/football-actions-base.png';
 ACTION_UNIFORM.src = '/sprites/football-actions-uniform.png';
+TRANSITION_BASE.src = '/sprites/football-transitions-base.png';
+TRANSITION_UNIFORM.src = '/sprites/football-transitions-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -913,6 +916,11 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   if (pose === 'run') {
     artBase = RUN_BASE; artUniform = RUN_UNIFORM;
     cell = [frame % 4, Math.floor((frame % 8) / 4)];
+  } else if (pose === 'accelerate' || pose === 'cut') {
+    artBase = TRANSITION_BASE; artUniform = TRANSITION_UNIFORM;
+    const row = pose === 'accelerate' ? 0 : 1;
+    frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame, row];
   } else if (pose === 'qb' || pose === 'wr' || pose === 'rb' || pose === 'db') {
     artBase = IDLE_BASE; artUniform = IDLE_UNIFORM;
     // Calm two-frame breathing/weight shifts. This clock is deliberately
@@ -953,7 +961,12 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   ctx.save();
   // Every frame in the new atlases faces right. Direction changes therefore
   // mirror once at the state boundary instead of oscillating every stride.
-  const flip = (meta.dir || 0) < 0;
+  // A run cycle always keeps the same upfield-facing identity. Only an
+  // authored directional action (cut/catch/contact) may turn the body.
+  // Mirroring every time lateral velocity crossed zero was the source of the
+  // disorienting whole-player flip in the old cycle.
+  const directional = pose === 'cut' || pose === 'catch' || pose === 'tackle' || pose === 'throw';
+  const flip = directional && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
@@ -1394,12 +1407,13 @@ const RUN_GAME = (() => {
       const D = (set && set.def) || alignDefense(g.rnd, g.drive, g.los, off.wrX);
       g.rb = { x: VW / 2, y: g.los + BACKFIELD, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
                clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0, evade: 0,
-               burst: 0, pace: 1 };
+               burst: 0, pace: 1, motionAge: 0, cutFrames: 0, cutDir: 1 };
       g.qb = off.qb; g.wrX = off.wrX;
       g.wr = { x: off.wrX, y: g.los - 2, frame: 0 };   // on the line, clear of the corner
       // Everyone pursues, including the corner — so the side the receiver is
       // lined up on is the harder edge to take.
       g.defenders = [...D.front, D.cb, D.safety];
+      for (const d of g.defenders) d.motionAge = 0;
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
       g.startY = g.los;
@@ -1426,12 +1440,15 @@ const RUN_GAME = (() => {
     pickOption(key) {
       const lane = LANES.find((l) => l.key === key) || LANES[1];
       const rb = g.rb;
+      rb.motionAge++;
+      if (rb.cutFrames > 0) rb.cutFrames--;
       g.lane = lane;
       // How much of the front is sitting in the gap you asked for. Shallow
       // defenders count for more — a man on the line kills the play long
       // before the deep help ever has to make a decision.
       let load = 0;
       for (const d of g.defenders) {
+        d.motionAge = (d.motionAge || 0) + 1;
         const dx = Math.abs(d.x - lane.cx);
         if (dx >= LANE_W) continue;
         const shallow = 1 - Math.min(1, (g.los - d.y) / 90);
@@ -1595,8 +1612,10 @@ const RUN_GAME = (() => {
         const sy = Math.round(d.y - g.camY);
         if (sy > -SPR && sy < VH + SPR)
           sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF,
-            null, 0, null, { pose: d.stumble > 0 ? 'tackle' : g.state === 'presnap' ? 'db' : 'run',
-              frame: d.frame, actionFrame: d.stumble > 0 ? Math.min(3, Math.floor((A.STUMBLE - d.stumble) / 5)) : 0 });
+            null, 0, null, { pose: d.stumble > 0 ? 'tackle' : g.state === 'presnap' ? 'db'
+              : d.motionAge < 16 ? 'accelerate' : 'run', frame: d.frame,
+              actionFrame: d.stumble > 0 ? Math.min(3, Math.floor((A.STUMBLE - d.stumble) / 5))
+                : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
       }
       // The rest of the huddle. They do not do anything on a carry, but the
       // field should not empty out just because you handed it off.
@@ -1641,12 +1660,15 @@ const RUN_GAME = (() => {
           ctx.globalAlpha = 1;
         }
         const visualPose = g.visual && g.visual.frames > 0
-          ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'run';
+          ? (g.visual.kind === 'td' ? 'hero' : 'tackle')
+          : rb.cutFrames > 0 ? 'cut' : rb.motionAge < 16 ? 'accelerate' : 'run';
         const actionFrame = g.visual && g.visual.kind !== 'td'
-          ? Math.min(3, Math.floor((24 - g.visual.frames) / 6)) : 0;
+          ? Math.min(3, Math.floor((24 - g.visual.frames) / 6))
+          : rb.cutFrames > 0 ? Math.min(3, Math.floor((12 - rb.cutFrames) / 3))
+          : Math.min(3, Math.floor(rb.motionAge / 4));
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0, rim,
-          { pose: visualPose, frame: rb.frame, actionFrame, dir: Math.sign(rb.vx), ball: true });
+          { pose: visualPose, frame: rb.frame, actionFrame, dir: visualPose === 'cut' ? rb.cutDir : 1, ball: true });
       }
       FX.draw(g.camY);
     },
@@ -1662,7 +1684,10 @@ const RUN_GAME = (() => {
         }
         return;
       }
-      if (Math.abs(dx) > 18) { rb.vx += Math.sign(dx) * 1.9; return; }
+      if (Math.abs(dx) > 18) {
+        rb.cutDir = Math.sign(dx); rb.cutFrames = 12;
+        rb.vx += rb.cutDir * 1.9; return;
+      }
       if (rb.truck > 0) return;
       if (rb.spin > 0 || rb.spinCd > 0) return;
       let near = null, nd = Infinity;
@@ -1932,6 +1957,9 @@ const PASS_GAME = (() => {
       // drops off. Same bodies you read before the snap either way.
       g.rushers = D.front.slice(0, 2);
       g.safety = D.safety;
+      g.wr.db.motionAge = 0;
+      for (const d of g.rushers) d.motionAge = 0;
+      if (g.safety) g.safety.motionAge = 0;
       g.qb = off.qb;
       g.rb = { x: VW / 2 - 16, y: g.los + BACKFIELD, frame: 0 };
       g.ball = null; g.t = 0; g.edge = 0;
@@ -2063,6 +2091,7 @@ const PASS_GAME = (() => {
       r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
       r.db.frame += 0.2;
+      r.db.motionAge = (r.db.motionAge || 0) + 1;
       // The route's edge on this shell is spent here: a concept that beats the
       // coverage leaves the defender a step further behind all play.
       // How far behind him the corner is, right now. This is where the throw
@@ -2104,11 +2133,13 @@ const PASS_GAME = (() => {
           if (r.y - s.y < 74) s.y = Math.max(EZ + 6, s.y - 0.52);
         }
         s.frame += 0.16;
+        s.motionAge = (s.motionAge || 0) + 1;
       }
       if (g.state === 'live') {
         for (const d of g.rushers) {
           const dx = g.qb.x - d.x, dy = g.qb.y - d.y, dist = Math.hypot(dx, dy) || 1;
           d.x += (dx / dist) * A.RUSH; d.y += (dy / dist) * A.RUSH; d.frame += 0.18;
+          d.motionAge = (d.motionAge || 0) + 1;
           if (dist < 13) {
             // Taken down in his own backfield: the hardest hit in the game.
             FX.hit((g.qb.x + d.x) / 2, (g.qb.y + d.y) / 2, 3);
@@ -2199,14 +2230,19 @@ const PASS_GAME = (() => {
         }
       }
       sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF,
-        null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db' : 'run',
-          frame: r.db.frame, actionFrame: r.db.stumble > 0 ? 3 : 0 });
+        null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db'
+          : (r.db.motionAge || 0) < 16 ? 'accelerate' : 'run', frame: r.db.frame,
+          actionFrame: r.db.stumble > 0 ? 3 : Math.min(3, Math.floor((r.db.motionAge || 0) / 4)) });
       if (g.safety)
         sprite(DEF20[Math.floor(g.safety.frame) % 3], Math.round(g.safety.x) - HALF, Math.round(g.safety.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'run', frame: g.safety.frame });
+          null, 0, null, { pose: g.state === 'ready' ? 'db'
+            : (g.safety.motionAge || 0) < 16 ? 'accelerate' : 'run', frame: g.safety.frame,
+            actionFrame: Math.min(3, Math.floor((g.safety.motionAge || 0) / 4)) });
       if (g.state !== 'yac')
         for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'run', frame: d.frame });
+          null, 0, null, { pose: g.state === 'ready' ? 'db'
+            : (d.motionAge || 0) < 16 ? 'accelerate' : 'run', frame: d.frame,
+            actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
       // Each of your two players wears his own club's colours.
       setJersey(g.wrTeam);
       const rx = Math.round(r.x) - HALF, ry0 = Math.round(r.y - g.camY) - HALF;
@@ -2235,9 +2271,14 @@ const PASS_GAME = (() => {
           { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir, ball: true });
       } else {
         const nearBall = g.ball && Math.hypot(g.ball.x - r.x, g.ball.y - r.y) < 18;
+        const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
+        const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
+        const movingPose = g.t < 16 ? 'accelerate' : cutting ? 'cut' : 'run';
+        const movingFrame = g.t < 16 ? Math.min(3, Math.floor(g.t / 4))
+          : cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
-          { pose: nearBall ? 'catch' : g.state === 'ready' ? 'wr' : 'run', frame: r.frame,
-            actionFrame: nearBall ? 1 : 0, dir: r.dir });
+          { pose: nearBall ? 'catch' : g.state === 'ready' ? 'wr' : movingPose, frame: r.frame,
+            actionFrame: nearBall ? 1 : movingFrame, dir: cutting ? r.dir : 1 });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
