@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade106-registered-sprites';
+const BUILD = 'arcade107-complete-motion-pass';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -771,6 +771,17 @@ const SOUND = (() => {
       if (ctx.state === 'suspended') ctx.resume();
       CUES[name](ctx.currentTime + 0.02);
     },
+    impact(strength = 1) {
+      if (!on) return;
+      wake();
+      if (!ctx) return;
+      if (ctx.state === 'suspended') ctx.resume();
+      const t = ctx.currentTime + .006;
+      voice(62, t, .11, .018 + .009 * strength,
+        { wave: 'triangle', attack: 2, reverb: .025, cutoff: 420, detune: 0, slide: .62 });
+      voice(118, t, .055, .008 + .004 * strength,
+        { wave: 'square', attack: 1, reverb: 0, cutoff: 650, detune: 0, slide: .76 });
+    },
   };
 })();
 
@@ -836,6 +847,7 @@ const CAMERA = {
   panX: 0,
   goal: 0,
   cine: 0,
+  impact: 0,
   frame(focusX, los, cinematic = false) {
     const targetPan = Math.max(-VW * .08, Math.min(VW * .08, (VW / 2 - focusX) * .16));
     const goalYards = Math.max(0, (los - EZ) / YARD);
@@ -843,6 +855,7 @@ const CAMERA = {
     this.panX += (targetPan - this.panX) * .10;
     this.goal += (targetGoal - this.goal) * .08;
     this.cine += ((cinematic ? 1 : 0) - this.cine) * (cinematic ? .09 : .16);
+    this.impact *= .72;
   },
 };
 function projectPoint(x, y) {
@@ -854,7 +867,7 @@ function projectPoint(x, y) {
   const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
   const pan = CAMERA.panX * (.42 + .58 * t);
   const px = VW / 2 + (x - VW / 2) * width + pan;
-  const zoom = 1 + CAMERA.cine * .06, pivotY = VH * .46;
+  const zoom = 1 + CAMERA.cine * .06 + CAMERA.impact * .009, pivotY = VH * .46;
   return { x: VW / 2 + (px - VW / 2) * zoom, y: pivotY + (py - pivotY) * zoom,
     scale: (0.72 + 0.28 * t) * zoom };
 }
@@ -881,6 +894,7 @@ function drawFlightBall(worldX, worldY, angle, alpha = 1, size = 1) {
   ctx.globalAlpha *= alpha;
   ctx.translate(Math.round(p.x), Math.round(p.y));
   ctx.rotate(snapped);
+  ctx.scale(1.08, .80);
   // Pale edge first: it reads against black turf and white yard lines without
   // turning the football back into the old gold rectangle.
   ctx.fillStyle = '#f4e9ce';
@@ -895,6 +909,31 @@ function drawFlightBall(worldX, worldY, angle, alpha = 1, size = 1) {
   ctx.fillStyle = '#f8f1df';
   ctx.fillRect(-.75 * s, -.35 * s, 1.5 * s, .7 * s);
   ctx.restore();
+}
+function finalActorPosition(actor, ease = .22) {
+  if (actor.finalX == null) return { x: actor.x, y: actor.y };
+  actor.finalDrawX = actor.finalDrawX == null ? actor.x : actor.finalDrawX;
+  actor.finalDrawY = actor.finalDrawY == null ? actor.y : actor.finalDrawY;
+  actor.finalDrawX += (actor.finalX - actor.finalDrawX) * ease;
+  actor.finalDrawY += (actor.finalY - actor.finalDrawY) * ease;
+  return { x: actor.finalDrawX, y: actor.finalDrawY };
+}
+function assignFinalFormation(focus, actors, primary = null) {
+  if (!focus) return;
+  const slots = [[-20, 6], [20, 7], [-25, -11], [25, -12], [0, -27]];
+  let slot = 0;
+  if (primary) {
+    const side = Math.sign(primary.x - focus.x) || 1;
+    primary.finalX = focus.x + side * 12; primary.finalY = focus.y + 4;
+  }
+  const ordered = actors.filter((a) => a && a !== primary)
+    .sort((a, b) => Math.hypot(a.x - focus.x, a.y - focus.y)
+      - Math.hypot(b.x - focus.x, b.y - focus.y));
+  for (const actor of ordered) {
+    if (Math.hypot(actor.x - focus.x, actor.y - focus.y) > 34) continue;
+    const [dx, dy] = slots[slot++ % slots.length];
+    actor.finalX = focus.x + dx; actor.finalY = focus.y + dy;
+  }
 }
 // Nav, readout, footer and the gaps between them. The readout is a card now
 // rather than a line of text, which is most of this number.
@@ -937,6 +976,7 @@ const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
 const CARRIER_STATE_BASE = new Image(), CARRIER_STATE_UNIFORM = new Image();
+const TACKLE_FALL_BASE = new Image(), TACKLE_FALL_UNIFORM = new Image();
 const RECEIVER_RUN_BASE = new Image(), RECEIVER_RUN_UNIFORM = new Image();
 const RECEIVER_CUT_BASE = new Image(), RECEIVER_CUT_UNIFORM = new Image();
 const RECEIVER_STATE_BASE = new Image(), RECEIVER_STATE_UNIFORM = new Image();
@@ -978,6 +1018,8 @@ CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v2-base.png';
 CARRIER_CUT_UNIFORM.src = '/sprites/football-carrier-cuts-v2-uniform.png';
 CARRIER_STATE_BASE.src = '/sprites/football-carrier-states-v1-base.png';
 CARRIER_STATE_UNIFORM.src = '/sprites/football-carrier-states-v1-uniform.png';
+TACKLE_FALL_BASE.src = '/sprites/football-tackle-fall-v2-base.png';
+TACKLE_FALL_UNIFORM.src = '/sprites/football-tackle-fall-v2-uniform.png';
 RECEIVER_RUN_BASE.src = '/sprites/football-receiver-run-v2-base.png';
 RECEIVER_RUN_UNIFORM.src = '/sprites/football-receiver-run-v2-uniform.png';
 RECEIVER_CUT_BASE.src = '/sprites/football-receiver-cuts-v2-base.png';
@@ -1029,6 +1071,10 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     const stateCell = { rb_ready: 0, rb_handoff: 1, rb_contact: 4,
       rb_tackle: 5, rb_brake: 6, rb_hero: 7 };
     cell = [stateCell[pose], 0];
+  } else if (pose === 'tackle_fall') {
+    artBase = TACKLE_FALL_BASE; artUniform = TACKLE_FALL_UNIFORM;
+    frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame, 0];
   } else if (pose === 'wr_run') {
     artBase = RECEIVER_RUN_BASE; artUniform = RECEIVER_RUN_UNIFORM;
     cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
@@ -1187,6 +1233,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   ctx.restore();
   const integratedBall = pose === 'carry' || pose === 'spin' || pose.startsWith('cut_')
     || pose.startsWith('rb_') || pose === 'catch' || pose === 'wr_catch' || pose === 'throw'
+    || pose === 'tackle_fall'
     || pose === 'tackle' || pose === 'contact' || pose === 'truck';
   if ((ballPts || meta.ball) && !integratedBall) {
     const bx = base.x + ((meta.dir || 0) < 0 ? -7 : 7) * scale, by = base.y - 12 * scale;
@@ -1365,7 +1412,9 @@ const FX = {
   hit(x, y, mag) {
     FX.kick(x, y, 9 + Math.round(mag * 5), 1.5);
     FX.shake = Math.max(FX.shake, mag);
-    FX.stop = Math.max(FX.stop, 2);
+    FX.stop = Math.max(FX.stop, mag > 2.25 ? 2 : 1);
+    CAMERA.impact = Math.max(CAMERA.impact, Math.min(1.4, mag * .34));
+    SOUND.impact(mag * .45);
   },
   step() {
     if (FX.shake > 0) FX.shake = Math.max(0, FX.shake - 0.32);
@@ -1598,6 +1647,7 @@ const RUN_GAME = (() => {
       nx: dx / len, ny: dy / len,
     };
     defender.primaryContact = true;
+    g.primaryTackler = defender;
     rb.vx = 0;
     rb.spin = 0;
     rb.truck = 0;
@@ -1721,7 +1771,7 @@ const RUN_GAME = (() => {
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
       g.startY = g.los;
-      g.lane = null; g.flow = 1; g.truckLane = 1; g.contact = null;
+      g.lane = null; g.flow = 1; g.truckLane = 1; g.contact = null; g.primaryTackler = null;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
       // The front is set but frozen: this is where you get to look at it.
@@ -1789,6 +1839,7 @@ const RUN_GAME = (() => {
       g.resultHold = kind === 'td' ? 14 : 10;
       g.gain = Math.round((g.startY - g.rb.y) / YARD);
       g.yards += g.gain;
+      if (kind !== 'td') assignFinalFormation(g.rb, g.defenders, g.primaryTackler);
       if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = SNAP; g.state = 'td'; }
       else if (g.down >= 4) g.state = 'gameover';
       else { g.down++; g.los = g.rb.y; g.state = 'between'; }
@@ -1963,7 +2014,8 @@ const RUN_GAME = (() => {
         }
       }
       for (const d of g.defenders) {
-        const sy = d.y - g.camY;
+        const finalAt = finalActorPosition(d);
+        const sy = finalAt.y - g.camY;
         if (sy > -SPR && sy < VH + SPR) {
           const prone = d.stumble > 0, recovering = d.recover > 0;
           const primary = g.contact && g.contact.defender === d;
@@ -1972,7 +2024,7 @@ const RUN_GAME = (() => {
           if (recovering) ctx.globalAlpha *= 1 - d.recover / 10;
           const turningToPursue = g.state !== 'presnap' && d.pursuing
             && (d.turnAge || 0) < (d.turnLen || 9);
-          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], d.x - HALF, sy - HALF,
+          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], finalAt.x - HALF, sy - HALF,
             null, 0, null, { pose: primary ? (g.contact.age < 9 ? 'contact' : 'tackle')
               : prone ? 'tackle' : recovering ? 'accelerate'
               : g.state === 'presnap' ? 'db' : !d.pursuing ? 'db_backpedal'
@@ -2031,17 +2083,17 @@ const RUN_GAME = (() => {
           ctx.globalAlpha = 1;
         }
         const contactEnding = g.contact && g.contact.kind !== 'broken'
-          && g.contact.kind !== 'truck_broken' && g.contact.age >= 9;
+          && g.contact.kind !== 'truck_broken' && g.contact.age >= 4;
         const visualPose = g.state === 'presnap' ? 'rb_ready'
           : rb.motionAge < 7 ? 'rb_handoff'
-          : g.contact ? (contactEnding ? 'rb_tackle' : 'rb_contact')
+          : g.contact ? (contactEnding ? 'tackle_fall' : 'rb_contact')
           : g.visual && g.visual.frames > 0
-            ? (g.visual.kind === 'td' ? (g.visual.frames > 42 ? 'rb_brake' : 'rb_hero') : 'rb_tackle')
+            ? (g.visual.kind === 'td' ? (g.visual.frames > 42 ? 'rb_brake' : 'rb_hero') : 'tackle_fall')
             : rb.cutFrames > 0 ? (rb.cutDir < 0 ? 'cut_left' : 'cut_right') : 'carry';
         const cutFrame = rb.cutAge < 2 ? 0 : rb.cutAge < 6 ? 1 : rb.cutAge < 10 ? 2 : 3;
-        const actionFrame = g.contact ? Math.min(7, Math.floor(g.contact.age / 3))
+        const actionFrame = g.contact ? Math.min(5, Math.floor(g.contact.age * 6 / Math.max(1, g.contact.duration)))
           : g.visual && g.visual.kind !== 'td'
-          ? Math.min(7, Math.floor((24 - g.visual.frames) / 3))
+          ? Math.min(7, 5 + Math.floor((24 - g.visual.frames) / 8))
           : visualPose.startsWith('cut_') ? cutFrame : 0;
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
@@ -2374,11 +2426,12 @@ const PASS_GAME = (() => {
         g.safety.visualAlpha = 1; g.safety.occluded = false;
       }
       g.qb = off.qb;
+      g.qb.snapY = g.qb.y; g.qb.frame = 0; g.qb.dropAge = 0; g.qb.throwAge = 0;
       // Keep the two backfield silhouettes from stacking into one apparently
       // oversized body before the snap. Their football positions are still a
       // conventional offset alignment; the extra presentation width is small.
       g.rb = { x: VW / 2 - 28, y: g.los + BACKFIELD, frame: 0 };
-      g.ball = null; g.t = 0; g.edge = 0; g.flightClock = 0;
+      g.ball = null; g.pendingBall = null; g.t = 0; g.edge = 0; g.flightClock = 0;
       g.catchPair = null;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
@@ -2428,6 +2481,12 @@ const PASS_GAME = (() => {
       // Hold the decisive football picture for roughly 180ms before copy is
       // allowed over it. A sack already has a readable impact beat of its own.
       g.resultHold = kind === 'td' ? 14 : kind === 'sack' ? 8 : 12;
+      const finalFocus = kind === 'sack' ? g.qb : g.wr;
+      const finalActors = (kind === 'sack' ? g.rushers : [g.wr.db, g.safety]).filter(Boolean);
+      const primary = finalActors.slice().sort((a, b) =>
+        Math.hypot(a.x - finalFocus.x, a.y - finalFocus.y)
+        - Math.hypot(b.x - finalFocus.x, b.y - finalFocus.y))[0] || null;
+      assignFinalFormation(finalFocus, finalActors, primary);
       g.yards += Math.max(0, g.gain);
       g.firstDown = false;
       if (kind === 'td') {
@@ -2466,9 +2525,10 @@ const PASS_GAME = (() => {
      */
     throwTo(pt) {
       const rec = g.wr, from = g.qb;
+      const release = 5;
       let f = Math.hypot(rec.x - from.x, rec.y - from.y) / A.V;
-      for (let i = 0; i < 3; i++) { const p = at(rec, g.t + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
-      const aim = at(rec, g.t + f);
+      for (let i = 0; i < 3; i++) { const p = at(rec, g.t + release + f); f = Math.hypot(p.x - from.x, p.y - from.y) / A.V; }
+      const aim = at(rec, g.t + release + f);
       if (pt) {
         // Two different mistakes, and they were being treated as one.
         //
@@ -2499,15 +2559,15 @@ const PASS_GAME = (() => {
       const spread = A.SCATTER * (g.chem ? CHEM.scatter : 1)
         * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
-      g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag,
+      g.pendingBall = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag,
         ty: aim.y + Math.sin(ang) * mag, trail: [] };
-      g.threw = g.t;
+      g.qb.throwAge = 0;
       g.flightClock = 0;
-      g.att++; g.state = 'ball';
+      g.att++; g.state = 'throwing';
     },
     step() {
       if (g.state === 'yac') { this.runAfterCatch(); return; }
-      if (g.state !== 'live' && g.state !== 'ball') return;
+      if (g.state !== 'live' && g.state !== 'throwing' && g.state !== 'ball') return;
       // A restrained focus beat: all actors remain synchronised, but the
       // airborne phase advances at 72% speed so the user can read the finish.
       if (g.state === 'ball') {
@@ -2516,6 +2576,15 @@ const PASS_GAME = (() => {
         g.flightClock -= 1;
       }
       g.t++;
+      // A readable five-step drop with a short hitch before the throw. The QB
+      // moves in world space, so rush depth and artwork stay in agreement.
+      if (g.state === 'live' && g.qb.dropAge < 18) {
+        g.qb.dropAge++;
+        const oldQbY = g.qb.y;
+        g.qb.y = Math.min(g.qb.snapY + 9, g.qb.y + (g.qb.dropAge < 12 ? .62 : .26));
+        g.qb.frame += Math.abs(g.qb.y - oldQbY) * .42;
+      }
+      if (g.state === 'throwing') g.qb.throwAge++;
       const r = g.wr;
       const oldX = r.x, oldY = r.y;
       const p = at(r, g.t);
@@ -2586,7 +2655,7 @@ const PASS_GAME = (() => {
         s.frame += 0.16;
         s.motionAge = (s.motionAge || 0) + 1;
       }
-      if (g.state === 'live') {
+      if (g.state === 'live' || g.state === 'throwing') {
         for (const d of g.rushers) {
           const dx = g.qb.x - d.x, dy = g.qb.y - d.y, dist = Math.hypot(dx, dy) || 1;
           d.x += (dx / dist) * A.RUSH; d.y += (dy / dist) * A.RUSH; d.frame += 0.18;
@@ -2598,12 +2667,18 @@ const PASS_GAME = (() => {
           }
         }
       }
+      if (g.state === 'throwing' && g.qb.throwAge >= 5) {
+        g.ball = g.pendingBall; g.pendingBall = null;
+        g.ball.x = g.qb.x; g.ball.y = g.qb.y - 7;
+        g.threw = g.t;
+        g.state = 'ball';
+      }
       if (g.state === 'ball') {
         const b = g.ball, dx = b.tx - b.x, dy = b.ty - b.y, dist = Math.hypot(dx, dy);
         if (dist <= A.V) { b.x = b.tx; b.y = b.ty; this.resolve(); }
         else {
           b.trail.push({ x: b.x, y: b.y });
-          if (b.trail.length > 4) b.trail.shift();
+          if (b.trail.length > 3) b.trail.shift();
           b.x += (dx / dist) * A.V; b.y += (dy / dist) * A.V;
         }
       }
@@ -2756,17 +2831,18 @@ const PASS_GAME = (() => {
       };
       const wrScreen = actorScreen(r.x, r.y);
       const laneSide = r.db.laneSide || 1;
+      const dbFinal = finalActorPosition(r.db);
       // One anchor, eased once at the snap. Catch proximity no longer changes
       // the offset, so the corner cannot appear magnetized toward a new lane.
       const trailTarget = g.state === 'ready' ? 2 : 8;
       r.db.drawTrail += (trailTarget - r.db.drawTrail) * .16;
-      const dbPerspective = Math.max(.62, actorScreen(r.db.x, r.db.y).scale);
+      const dbPerspective = Math.max(.62, actorScreen(dbFinal.x, dbFinal.y).scale);
       const pairedCatch = g.state === 'yac' && !!g.catchPair && g.catchPair.contested;
       const dbDrawX = pairedCatch
         ? r.x + g.catchPair.side * 15 / dbPerspective
-        : r.db.x + laneSide * r.db.drawTrail / dbPerspective;
+        : dbFinal.x + laneSide * r.db.drawTrail / dbPerspective;
       const dbDrawY = pairedCatch ? r.y + 3
-        : r.db.y + (g.state === 'ready' ? 0 : 2);
+        : dbFinal.y + (g.state === 'ready' ? 0 : 2);
       const dbScreen = actorScreen(dbDrawX, dbDrawY);
 
       // Secondary defenders render first on lanes assigned at the snap. More
@@ -2775,7 +2851,8 @@ const PASS_GAME = (() => {
       // no detached glove, arm, or leg may leak through the matchup.
       if (g.safety) {
         const s = g.safety;
-        const targetX = s.x + (s.laneX || 0), targetY = s.y + (s.laneY || 0);
+        const sFinal = finalActorPosition(s);
+        const targetX = sFinal.x + (s.laneX || 0), targetY = sFinal.y + (s.laneY || 0);
         s.drawX = s.drawX == null ? s.x : s.drawX + (targetX - s.drawX) * .34;
         s.drawY = s.drawY == null ? s.y : s.drawY + (targetY - s.drawY) * .34;
         const sp = actorScreen(s.drawX, s.drawY);
@@ -2805,7 +2882,8 @@ const PASS_GAME = (() => {
       if (g.state !== 'yac') {
         for (let i = 0; i < g.rushers.length; i++) {
           const d = g.rushers[i];
-          const targetX = d.x + (d.laneX || 0), targetY = d.y + (d.laneY || 0);
+          const dFinal = finalActorPosition(d);
+          const targetX = dFinal.x + (d.laneX || 0), targetY = dFinal.y + (d.laneY || 0);
           d.drawX = d.drawX == null ? d.x : d.drawX + (targetX - d.drawX) * .38;
           d.drawY = d.drawY == null ? d.y : d.drawY + (targetY - d.drawY) * .38;
           const dp = actorScreen(d.drawX, d.drawY);
@@ -2858,7 +2936,7 @@ const PASS_GAME = (() => {
         // drift away from the receiver's hip.
         const caught = (r.catchFrames || 0) > 0;
         const visualPose = caught ? 'wr_catch' : (g.visual && g.visual.frames > 0
-          ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry');
+          ? (g.visual.kind === 'td' ? 'rb_hero' : 'tackle_fall') : 'carry');
         const actionFrame = caught ? Math.min(7, 3 + Math.floor(((g.catchPair && g.catchPair.age) || 0) / 2))
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
@@ -2890,10 +2968,15 @@ const PASS_GAME = (() => {
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
         const throwAge = g.state === 'ball' ? Math.max(0, g.t - g.threw) : 0;
+        const throwing = g.state === 'throwing';
+        const followThrough = g.state === 'ball' && throwAge < 7;
+        const qbPose = throwing || followThrough ? 'throw'
+          : g.state === 'live' && g.qb.dropAge < 18 ? 'qb_drop' : 'qb';
         sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ball' ? 'throw' : g.state === 'live' ? 'qb_drop' : 'qb',
+          null, 0, null, { pose: qbPose,
             canonicalScale: .84,
-            actionFrame: g.state === 'ball' ? Math.min(3, Math.floor(throwAge / 2)) : Math.min(3, Math.floor(g.t / 4)) });
+            actionFrame: throwing ? Math.min(3, Math.floor(g.qb.throwAge * 4 / 5))
+              : followThrough ? 3 : Math.min(3, Math.floor(g.qb.dropAge / 5)) });
         setJersey(g.backTeam || g.qbTeam);
         // One registered pass-back body before and after the snap. The old
         // generic RB drawing used a different occupied box, visibly shrinking
@@ -2913,7 +2996,7 @@ const PASS_GAME = (() => {
         const angle = Math.atan2(b.ty - b.y, b.tx - b.x);
         for (let i = 0; i < b.trail.length; i++) {
           const q = b.trail[i];
-          drawFlightBall(q.x, q.y - g.camY, angle, .035 + i * .025, .78);
+          drawFlightBall(q.x, q.y - g.camY, angle, .018 + i * .018, .54);
         }
         drawFlightBall(b.x, b.y - g.camY, angle, 1, 1);
       }
@@ -2939,7 +3022,8 @@ const PASS_GAME = (() => {
     },
     overlay() {
       const t = g.marker <= EZ ? 'GOAL' : Math.max(1, Math.round((g.los - g.marker) / YARD));
-      if (g.state === 'live' || g.state === 'ball' || g.state === 'ready' || g.state === 'yac') return null;
+      if (g.state === 'live' || g.state === 'throwing' || g.state === 'ball'
+          || g.state === 'ready' || g.state === 'yac') return null;
       if ((g.resultHold || 0) > 0) return null;
       if (g.state === 'result') {
         // Let the catch/contest picture resolve before typography covers it.
