@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade104-continuous-motion';
+const BUILD = 'arcade105-football-finish';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -870,6 +870,31 @@ function unprojectPoint(x, y) {
   const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
   const pan = CAMERA.panX * (.42 + .58 * t);
   return { x: VW / 2 + (x - pan - VW / 2) / width, y: t * VH };
+}
+/** A compact pixel football that stays legible at the far end of the field.
+ *  The angle is quantized so its silhouette remains crisp at 2× rendering. */
+function drawFlightBall(worldX, worldY, angle, alpha = 1, size = 1) {
+  const p = projectPoint(worldX, worldY);
+  const s = Math.max(.78, p.scale) * size;
+  const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+  ctx.save();
+  ctx.globalAlpha *= alpha;
+  ctx.translate(Math.round(p.x), Math.round(p.y));
+  ctx.rotate(snapped);
+  // Pale edge first: it reads against black turf and white yard lines without
+  // turning the football back into the old gold rectangle.
+  ctx.fillStyle = '#f4e9ce';
+  ctx.fillRect(-2.5 * s, -1.5 * s, 5 * s, 3 * s);
+  ctx.fillRect(-3.5 * s, -.75 * s, 7 * s, 1.5 * s);
+  ctx.fillStyle = '#24130d';
+  ctx.fillRect(-2.5 * s, -1.1 * s, 5 * s, 2.2 * s);
+  ctx.fillRect(-3 * s, -.55 * s, 6 * s, 1.1 * s);
+  ctx.fillStyle = '#9b4f2d';
+  ctx.fillRect(-2 * s, -.8 * s, 4 * s, 1.6 * s);
+  ctx.fillRect(-2.6 * s, -.35 * s, 5.2 * s, .7 * s);
+  ctx.fillStyle = '#f8f1df';
+  ctx.fillRect(-.75 * s, -.35 * s, 1.5 * s, .7 * s);
+  ctx.restore();
 }
 // Nav, readout, footer and the gaps between them. The readout is a card now
 // rather than a line of text, which is most of this number.
@@ -1738,7 +1763,7 @@ const RUN_GAME = (() => {
     end(kind) {
       g.how = kind;
       g.visual = { kind, frames: kind === 'td' ? 72 : 24 };
-      g.resultHold = kind === 'td' ? 0 : 6;
+      g.resultHold = kind === 'td' ? 14 : 10;
       g.gain = Math.round((g.startY - g.rb.y) / YARD);
       g.yards += g.gain;
       if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = SNAP; g.state = 'td'; }
@@ -2004,7 +2029,8 @@ const RUN_GAME = (() => {
             canonicalScale: visualPose === 'rb_ready' ? .60 : .84 });
       }
       FX.draw(g.camY);
-      if ((g.state === 'between' || g.state === 'gameover') && (g.resultHold || 0) > 0)
+      if ((g.state === 'between' || g.state === 'gameover' || g.state === 'td')
+          && (g.resultHold || 0) > 0)
         g.resultHold--;
     },
     onUp(pt, dx, dy) {
@@ -2380,7 +2406,7 @@ const PASS_GAME = (() => {
       g.visual = { kind, frames: kind === 'td' ? 72 : 24 };
       // Hold the decisive football picture for roughly 180ms before copy is
       // allowed over it. A sack already has a readable impact beat of its own.
-      g.resultHold = kind === 'sack' ? 0 : 11;
+      g.resultHold = kind === 'td' ? 14 : kind === 'sack' ? 8 : 12;
       g.yards += Math.max(0, g.gain);
       g.firstDown = false;
       if (kind === 'td') {
@@ -2452,7 +2478,8 @@ const PASS_GAME = (() => {
       const spread = A.SCATTER * (g.chem ? CHEM.scatter : 1)
         * (0.75 + Math.hypot(aim.x - from.x, aim.y - from.y) / 340);
       const ang = g.roll() * Math.PI * 2, mag = g.roll() * spread;
-      g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag, ty: aim.y + Math.sin(ang) * mag };
+      g.ball = { x: from.x, y: from.y, tx: aim.x + Math.cos(ang) * mag,
+        ty: aim.y + Math.sin(ang) * mag, trail: [] };
       g.threw = g.t;
       g.flightClock = 0;
       g.att++; g.state = 'ball';
@@ -2553,7 +2580,11 @@ const PASS_GAME = (() => {
       if (g.state === 'ball') {
         const b = g.ball, dx = b.tx - b.x, dy = b.ty - b.y, dist = Math.hypot(dx, dy);
         if (dist <= A.V) { b.x = b.tx; b.y = b.ty; this.resolve(); }
-        else { b.x += (dx / dist) * A.V; b.y += (dy / dist) * A.V; }
+        else {
+          b.trail.push({ x: b.x, y: b.y });
+          if (b.trail.length > 4) b.trail.shift();
+          b.x += (dx / dist) * A.V; b.y += (dy / dist) * A.V;
+        }
       }
     },
     /** Pursuit is a shade quicker than the runner, so the head start he caught
@@ -2643,7 +2674,10 @@ const PASS_GAME = (() => {
       if (sep < 15 && g.roll() < 0.46 * (1 - sep / 15) * (1.3 - 0.6 * W.HANDS)) {
         this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
-      if (b.y <= EZ) { this.end('td', gain); return; }
+      if (b.y <= EZ) {
+        rec.x = b.x; rec.y = b.y; rec.catchFrames = 7;
+        this.end('td', gain); return;
+      }
       // He caught it clean and keeps running. This is not a phase you steer —
       // an earlier version let you drive the receiver and that made the game
       // trivial. The yards come from the separation the route already earned,
@@ -2813,6 +2847,7 @@ const PASS_GAME = (() => {
       } else {
         const ballDistance = g.ball ? Math.hypot(g.ball.x - r.x, g.ball.y - r.y) : Infinity;
         const nearBall = ballDistance < 18;
+        const touchdownFinish = g.visual && g.visual.kind === 'td' && g.visual.frames > 0;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
         const movingPose = cutting ? 'wr_cut' : 'wr_run';
@@ -2822,8 +2857,11 @@ const PASS_GAME = (() => {
         const movingFrame = !cutting ? 0 : cutAge < 3 ? 0 : cutAge < 9 ? 1
           : cutAge < 13 ? 2 : 3;
         const visualPose = g.state === 'ready' ? 'wr_ready'
+          : touchdownFinish ? (g.visual.frames > 65 ? 'wr_catch' : 'rb_hero')
           : g.t < 8 ? 'wr_release' : nearBall ? 'wr_catch' : movingPose;
-        const actionFrame = nearBall ? (ballDistance < 9 ? 3 : 2) : movingFrame;
+        const actionFrame = touchdownFinish ? Math.min(7, Math.floor((72 - g.visual.frames) / 2))
+          : nearBall ? (ballDistance < 9 ? 3 : 2) : movingFrame;
+        if (touchdownFinish) g.visual.frames--;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
           { pose: visualPose, frame: g.state === 'ready' ? 0 : r.frame,
             actionFrame, dir: r.dir, stable: true });
@@ -2850,16 +2888,13 @@ const PASS_GAME = (() => {
             canonicalScale: 1.0 });
       }
       if (g.ball) {
-        const bp = projectPoint(g.ball.x, g.ball.y - g.camY);
-        const bs = Math.max(.72, bp.scale);
-        ctx.fillStyle = PAL.D;
-        for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 2]])
-          ctx.fillRect(bp.x - bs + dx * bs, bp.y + dy * bs, 3 * bs, 2 * bs);
-        ctx.fillStyle = PAL.O;
-        ctx.fillRect(bp.x - bs, bp.y, 3 * bs, 2 * bs);
-        ctx.fillRect(bp.x, bp.y - bs, bs, 4 * bs);
-        ctx.fillStyle = '#fff4c0';
-        ctx.fillRect(bp.x, bp.y, bs, bs);
+        const b = g.ball;
+        const angle = Math.atan2(b.ty - b.y, b.tx - b.x);
+        for (let i = 0; i < b.trail.length; i++) {
+          const q = b.trail[i];
+          drawFlightBall(q.x, q.y - g.camY, angle, .035 + i * .025, .78);
+        }
+        drawFlightBall(b.x, b.y - g.camY, angle, 1, 1);
       }
       FX.draw(g.camY);
       if ((g.state === 'result' || g.state === 'td' || g.state === 'gameover')
