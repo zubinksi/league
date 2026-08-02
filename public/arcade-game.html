@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade98-stride-cadence';
+const BUILD = 'arcade99-pursuit';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -938,8 +938,8 @@ DB_BACKPEDAL_BASE.src = '/sprites/football-db-backpedal-v2-base.png';
 DB_BACKPEDAL_UNIFORM.src = '/sprites/football-db-backpedal-v2-uniform.png';
 DB_TURN_BASE.src = '/sprites/football-db-turn-v2-base.png';
 DB_TURN_UNIFORM.src = '/sprites/football-db-turn-v2-uniform.png';
-DB_PURSUIT_BASE.src = '/sprites/football-db-pursuit-v1-base.png';
-DB_PURSUIT_UNIFORM.src = '/sprites/football-db-pursuit-v1-uniform.png';
+DB_PURSUIT_BASE.src = '/sprites/football-db-pursuit-v2-base.png';
+DB_PURSUIT_UNIFORM.src = '/sprites/football-db-pursuit-v2-uniform.png';
 DB_CONTEST_BASE.src = '/sprites/football-db-contest-v2-base.png';
 DB_CONTEST_UNIFORM.src = '/sprites/football-db-contest-v2-uniform.png';
 CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v3-base.png';
@@ -1091,7 +1091,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // Offensive masks cover more of the body than the DB masks. Leave a
   // deliberate share of the neutral master visible underneath so black seams,
   // white highlights and pad/limb boundaries cannot be painted away.
-  poseCtx.globalAlpha = defender ? 1 : .62;
+  poseCtx.globalAlpha = defender ? 1 : .80;
   poseCtx.drawImage(poseTint, 0, 0);
   poseCtx.globalAlpha = 1;
   if (tint) {
@@ -1591,7 +1591,16 @@ const RUN_GAME = (() => {
       // Everyone pursues, including the corner — so the side the receiver is
       // lined up on is the harder edge to take.
       g.defenders = [...D.front, D.cb, D.safety];
-      for (const d of g.defenders) { d.motionAge = 0; d.animDir = 1; d.recover = 0; }
+      for (let i = 0; i < g.defenders.length; i++) {
+        const d = g.defenders[i];
+        d.motionAge = 0; d.turnAge = 0; d.animDir = 1; d.recover = 0;
+        // Stable lineup-derived offsets make the pursuit group read as
+        // independent athletes without adding randomness to gameplay.
+        d.frame = (i * 2.35) % 8;
+        d.strideRate = 0.97 + ((i * 7) % 5) * 0.0175;
+        d.turnLen = 8 + (i % 3);
+        d.pursuing = false;
+      }
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
       g.startY = g.los;
@@ -1619,6 +1628,7 @@ const RUN_GAME = (() => {
       const lane = LANES.find((l) => l.key === key) || LANES[1];
       const rb = g.rb;
       rb.motionAge = 0;
+      for (const d of g.defenders) { d.motionAge = 0; d.turnAge = 0; d.pursuing = false; }
       g.lane = lane;
       // How much of the front is sitting in the gap you asked for. Shallow
       // defenders count for more — a man on the line kills the play long
@@ -1717,11 +1727,11 @@ const RUN_GAME = (() => {
       if (rb.spin <= 0 && rb.truck <= 0) {
         const travelled = Math.hypot(rb.x - beforeX, rb.y - beforeY);
         rb.visualSpeed += (travelled - rb.visualSpeed) * .25;
-        // One complete stride covers roughly seventeen field pixels. Advancing
+        // One complete stride covers roughly twenty field pixels. Advancing
         // solely from distance keeps the planted foot attached to the turf:
         // slow/staggered backs animate slowly, and a burst cannot skate ahead
         // of a leisurely frame clock.
-        rb.frame += Math.min(.58, travelled * (10 / 17));
+        rb.frame += Math.min(.50, travelled * (10 / 20));
       }
       for (const d of g.defenders) {
         if (d.stumble > 0) {
@@ -1733,9 +1743,14 @@ const RUN_GAME = (() => {
         // A corner plays his side. He is in the picture you read either way,
         // which is what makes the receiver's edge the harder one — but he
         // does not come chasing a carry to the far hash.
+        d.motionAge = (d.motionAge || 0) + 1;
         if (d.contain && Math.sign(rb.x - VW / 2) !== Math.sign(d.x - VW / 2)) {
-          d.frame += 0.08; continue;
+          d.pursuing = false;
+          d.frame += 0.045 * (d.strideRate || 1);
+          continue;
         }
+        d.pursuing = true;
+        d.turnAge = Math.min(d.turnLen || 9, (d.turnAge || 0) + 1);
         // The last man takes an angle rather than a chase. Aiming at where
         // the carrier is standing means arriving where he was — and because
         // the pursuit vector is normalised, a defender who needs to travel
@@ -1759,7 +1774,15 @@ const RUN_GAME = (() => {
         if (Math.abs(dx) > .35 && (d.motionAge || 0) % 6 === 0) d.animDir = Math.sign(dx);
         // While the burst is on they are still flowing to their own read.
         const flow = rb.burst > 0 ? g.flow : 1;
-        d.x += (dx / dist) * d.lateral * flow; d.y += (dy / dist) * d.speed; d.frame += 0.2;
+        const beforeDX = d.x, beforeDY = d.y;
+        // Interpolate the athlete's available rate by pursuit angle, then move
+        // once along the normalized chase vector. Scaling x and y separately
+        // made diagonal defenders appear to crab sideways while facing upfield.
+        const lateralShare = Math.abs(dx) / dist;
+        const chaseRate = d.speed + (d.lateral * flow - d.speed) * lateralShare;
+        d.x += (dx / dist) * chaseRate; d.y += (dy / dist) * chaseRate;
+        const defenderTravel = Math.hypot(d.x - beforeDX, d.y - beforeDY);
+        d.frame += Math.min(.56, defenderTravel * (8 / 16) * (d.strideRate || 1));
         if (rb.evade <= 0 && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
           d.x = rb.x - (dx / dist) * 12; d.y = rb.y - (dy / dist) * 12;
           if (rb.truck > 0) {
@@ -1823,12 +1846,17 @@ const RUN_GAME = (() => {
           ctx.save();
           if (prone && d.stumble < 10) ctx.globalAlpha *= d.stumble / 10;
           if (recovering) ctx.globalAlpha *= 1 - d.recover / 10;
+          const turningToPursue = g.state !== 'presnap' && d.pursuing
+            && (d.turnAge || 0) < (d.turnLen || 9);
           sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], d.x - HALF, sy - HALF,
             null, 0, null, { pose: prone ? 'tackle' : recovering ? 'accelerate'
-              : g.state === 'presnap' ? 'db' : d.deep ? 'safety' : d.contain ? 'db_turn' : 'rusher', frame: d.frame,
+              : g.state === 'presnap' ? 'db' : !d.pursuing ? 'db_backpedal'
+              : turningToPursue ? 'db_turn' : 'db_pursuit', frame: d.frame,
               dir: d.animDir, stable: !prone,
               actionFrame: d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
-                : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
+                : turningToPursue
+                  ? Math.min(5, Math.floor((d.turnAge || 0) * 6 / Math.max(1, d.turnLen || 9)))
+                  : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
           ctx.restore();
         }
       }
