@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade93-overlap';
+const BUILD = 'arcade94-readability';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1082,7 +1082,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     || pose.startsWith('cut_') || pose.startsWith('rb_'));
   // The back is rendered at the extreme near edge of the projected field.
   // Compensate that camera-depth magnification after sharing the QB body box.
-  const sourceScale = pose === 'pass_back' ? .72 : 1;
+  const sourceScale = pose === 'pass_back' ? (meta.actorScale == null ? .72 : meta.actorScale) : 1;
   // Keep every DB state on the receiver-width body standard; extended limbs
   // can communicate the action without inflating his torso and shoulders.
   const sourceWidth = pose === 'db_pursuit' ? .95 : pose.startsWith('db_') ? .90 : 1;
@@ -1446,7 +1446,7 @@ const eyeAt = (y, eye) => Math.max(0, Math.min(WORLD_H - VH, y - VH * eye));
  * On those the ideal framing loses to the back being on screen at all.
  */
 const presnapAt = (los) =>
-  eyeAt(los, Math.min(PRESNAP_EYE, (VH - (BACKFIELD + 12)) / VH));
+  eyeAt(los, Math.min(PRESNAP_EYE, (VH - (BACKFIELD + 38)) / VH));
 /** Frames spent gliding from the pre-snap frame to the playing one. Cutting
  *  between them at the snap is a jump at the worst possible moment. */
 const CAM_EASE = 16;
@@ -2145,10 +2145,28 @@ const PASS_GAME = (() => {
       g.wr.db.animDir = 1;
       g.wr.db.turnAge = -1;
       g.wr.db.turnDir = 1;
-      for (const d of g.rushers) { d.motionAge = 0; d.animDir = 1; }
-      if (g.safety) { g.safety.motionAge = 0; g.safety.animDir = 1; }
+      // Presentation lanes are assigned once with the formation and never
+      // swapped mid-play. That keeps help defenders from magnetically jumping
+      // sides when they enter an overlap threshold.
+      g.wr.db.laneSide = Math.sign(g.wr.db.x - sx) || (sx < VW / 2 ? 1 : -1);
+      for (let i = 0; i < g.rushers.length; i++) {
+        const d = g.rushers[i];
+        d.motionAge = 0; d.animDir = 1;
+        d.laneX = (i ? 1 : -1) * 5; d.laneY = 3 + i * 2;
+        d.drawX = d.x + d.laneX; d.drawY = d.y + d.laneY;
+      }
+      if (g.safety) {
+        g.safety.motionAge = 0; g.safety.animDir = 1;
+        g.safety.laneX = (sx < VW / 2 ? 1 : -1) * 7;
+        g.safety.laneY = -8;
+        g.safety.drawX = g.safety.x + g.safety.laneX;
+        g.safety.drawY = g.safety.y + g.safety.laneY;
+      }
       g.qb = off.qb;
-      g.rb = { x: VW / 2 - 16, y: g.los + BACKFIELD, frame: 0 };
+      // Keep the two backfield silhouettes from stacking into one apparently
+      // oversized body before the snap. Their football positions are still a
+      // conventional offset alignment; the extra presentation width is small.
+      g.rb = { x: VW / 2 - 28, y: g.los + BACKFIELD, frame: 0, visualScale: .90 };
       g.ball = null; g.t = 0; g.edge = 0; g.flightClock = 0;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
@@ -2195,6 +2213,9 @@ const PASS_GAME = (() => {
     end(kind, gain) {
       g.result = kind; g.gain = Math.round(gain / YARD);
       g.visual = { kind, frames: kind === 'td' ? 72 : 24 };
+      // Hold the decisive football picture for roughly 180ms before copy is
+      // allowed over it. A sack already has a readable impact beat of its own.
+      g.resultHold = kind === 'sack' ? 0 : 11;
       g.yards += Math.max(0, g.gain);
       g.firstDown = false;
       if (kind === 'td') {
@@ -2468,59 +2489,66 @@ const PASS_GAME = (() => {
         : heldContest ? Math.min(7, 5 + Math.floor((12 - r.db.contestFrames) / 4)) : 0;
       if (heldContest) r.db.contestFrames--;
 
-      // Presentation spacing: physics remains at the true coordinates used by
-      // resolve(), while drawings keep distinct silhouettes at the catch point.
-      let dbDrawX = r.db.x, dbDrawY = r.db.y;
+      // Presentation spacing is solved in screen space. Physics remains at the
+      // true coordinates used by resolve(), but the featured matchup always
+      // retains a stable inside/trail read regardless of field perspective.
+      const actorScreen = (x, y) => projectPoint(x, y - g.camY + HALF);
+      const bodiesOverlap = (a, b, pad = 0) => {
+        const s = (a.scale + b.scale) * .5;
+        return Math.abs(a.x - b.x) < 11.5 * s + pad
+          && Math.abs(a.y - b.y) < 22 * s + pad;
+      };
+      const wrScreen = actorScreen(r.x, r.y);
+      const laneSide = r.db.laneSide || 1;
       const presenting = dbContesting || (g.state === 'yac' && (r.catchFrames || 0) > 0);
-      if (presenting && dbToWr < 16) {
-        let dx = r.db.x - r.x, dy = r.db.y - r.y;
-        const m = Math.hypot(dx, dy) || 1;
-        if (m === 1 && dx === 0 && dy === 0) dx = r.db.x < VW / 2 ? -1 : 1;
-        dbDrawX = r.x + dx / m * 16; dbDrawY = r.y + dy / m * 16;
-      }
-      // Secondary defenders render first and occupy their own presentation
-      // lanes. Their simulation positions are untouched; only drawX/drawY
-      // ease away from merged silhouettes and back toward their real spots.
+      const closeCoverage = dbToWr < 25;
+      const screenTrail = g.state === 'ready' ? 2 : presenting ? 10 : closeCoverage ? 8 : 5;
+      const dbPerspective = Math.max(.62, actorScreen(r.db.x, r.db.y).scale);
+      const dbDrawX = r.db.x + laneSide * screenTrail / dbPerspective;
+      const dbDrawY = r.db.y + (g.state === 'ready' ? 0 : presenting ? 4 : 2);
+      const dbScreen = actorScreen(dbDrawX, dbDrawY);
+
+      // Secondary defenders render first on lanes assigned at the snap. More
+      // importantly, a secondary body is culled whenever its bounding box
+      // would intersect either featured actor. This is deliberately strict:
+      // no detached glove, arm, or leg may leak through the matchup.
       if (g.safety) {
         const s = g.safety;
-        let targetX = s.x, targetY = s.y;
-        const originalWr = Math.hypot(s.x - r.x, s.y - r.y);
-        const originalDb = Math.hypot(s.x - dbDrawX, s.y - dbDrawY);
-        if (g.state !== 'ready' && (originalWr < 24 || originalDb < 20)) {
-          // A safety presents inside and deeper than the trail corner. That is
-          // both football leverage and a consistently readable second body.
-          const inside = Math.sign(VW / 2 - r.x) || 1;
-          targetX = r.x + inside * 12;
-          targetY = r.y - 15;
-        }
+        const targetX = s.x + (s.laneX || 0), targetY = s.y + (s.laneY || 0);
         s.drawX = s.drawX == null ? s.x : s.drawX + (targetX - s.drawX) * .34;
         s.drawY = s.drawY == null ? s.y : s.drawY + (targetY - s.drawY) * .34;
-        const alpha = Math.min(originalWr, originalDb) < 7 ? .55 : 1;
-        ctx.globalAlpha = alpha;
-        sprite(DEF20[Math.floor(s.frame) % 3], s.drawX - HALF, s.drawY - g.camY - HALF,
-          null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: s.frame,
-            dir: s.animDir, stable: true,
-            actionFrame: Math.min(3, Math.floor((s.motionAge || 0) / 4)) });
-        ctx.globalAlpha = 1;
+        const sp = actorScreen(s.drawX, s.drawY);
+        const hidden = g.state !== 'ready'
+          && (bodiesOverlap(sp, wrScreen, 1.5) || bodiesOverlap(sp, dbScreen, 1.5));
+        if (!hidden) {
+          const gap = Math.min(Math.hypot(sp.x - wrScreen.x, sp.y - wrScreen.y),
+            Math.hypot(sp.x - dbScreen.x, sp.y - dbScreen.y));
+          ctx.globalAlpha = g.state === 'ready' ? 1 : Math.max(.22, Math.min(1, (gap - 13) / 14));
+          sprite(DEF20[Math.floor(s.frame) % 3], s.drawX - HALF, s.drawY - g.camY - HALF,
+            null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: s.frame,
+              dir: s.animDir, stable: true,
+              actionFrame: Math.min(3, Math.floor((s.motionAge || 0) / 4)) });
+          ctx.globalAlpha = 1;
+        }
       }
       if (g.state !== 'yac') {
         for (let i = 0; i < g.rushers.length; i++) {
           const d = g.rushers[i];
-          let targetX = d.x, targetY = d.y;
-          const wrGap = Math.hypot(d.x - r.x, d.y - r.y);
-          const dbGap = Math.hypot(d.x - dbDrawX, d.y - dbDrawY);
-          if (g.state !== 'ready' && (wrGap < 17 || dbGap < 15)) {
-            const side = i % 2 ? 1 : -1;
-            targetX = r.x + side * 16;
-            targetY = r.y + 5 + i * 5;
-          }
+          const targetX = d.x + (d.laneX || 0), targetY = d.y + (d.laneY || 0);
           d.drawX = d.drawX == null ? d.x : d.drawX + (targetX - d.drawX) * .38;
           d.drawY = d.drawY == null ? d.y : d.drawY + (targetY - d.drawY) * .38;
-          ctx.globalAlpha = Math.min(wrGap, dbGap) < 6 ? .48 : 1;
-          sprite(DEF20[Math.floor(d.frame) % 3], d.drawX - HALF, d.drawY - g.camY - HALF,
-            null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame, stable: true,
-              actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
-          ctx.globalAlpha = 1;
+          const dp = actorScreen(d.drawX, d.drawY);
+          const hidden = g.state !== 'ready'
+            && (bodiesOverlap(dp, wrScreen, 1.5) || bodiesOverlap(dp, dbScreen, 1.5));
+          if (!hidden) {
+            const gap = Math.min(Math.hypot(dp.x - wrScreen.x, dp.y - wrScreen.y),
+              Math.hypot(dp.x - dbScreen.x, dp.y - dbScreen.y));
+            ctx.globalAlpha = g.state === 'ready' ? 1 : Math.max(.22, Math.min(1, (gap - 13) / 14));
+            sprite(DEF20[Math.floor(d.frame) % 3], d.drawX - HALF, d.drawY - g.camY - HALF,
+              null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame, stable: true,
+                actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
+            ctx.globalAlpha = 1;
+          }
         }
       }
       // The trail corner is always above secondary limbs in the stack; the WR
@@ -2584,8 +2612,20 @@ const PASS_GAME = (() => {
         // One registered pass-back body before and after the snap. The old
         // generic RB drawing used a different occupied box, visibly shrinking
         // as the play switched states.
-        sprite(RUN20[0], g.rb.x - HALF, g.rb.y - g.camY - HALF,
-          null, 0, null, { pose: 'pass_back', frame: 0, stable: true });
+        // The back and passer share one atlas, so matching their projected
+        // depth scales produces an exact body-size standard before and after
+        // the camera begins following the route. Ease tiny camera corrections
+        // rather than switching scale at the snap.
+        // Do not let the route-follow camera crop the back into a helmet or
+        // torso fragment at the lower edge; that read as a shrinking player.
+        const rbRawY = Math.min(VH - 12, g.rb.y - g.camY);
+        const qbDepth = projectPoint(g.qb.x, g.qb.y - g.camY + HALF).scale;
+        const rbDepth = projectPoint(g.rb.x, rbRawY + HALF).scale;
+        const rbScaleTarget = Math.max(.82, Math.min(1, qbDepth / Math.max(.01, rbDepth)));
+        g.rb.visualScale += (rbScaleTarget - g.rb.visualScale) * .18;
+        sprite(RUN20[0], g.rb.x - HALF, rbRawY - HALF,
+          null, 0, null, { pose: 'pass_back', frame: 0, stable: true,
+            actorScale: g.rb.visualScale });
       }
       if (g.ball) {
         const bp = projectPoint(g.ball.x, g.ball.y - g.camY);
@@ -2600,6 +2640,8 @@ const PASS_GAME = (() => {
         ctx.fillRect(bp.x, bp.y, bs, bs);
       }
       FX.draw(g.camY);
+      if ((g.state === 'result' || g.state === 'td' || g.state === 'gameover')
+          && (g.resultHold || 0) > 0) g.resultHold--;
     },
     onUp(pt) {
       if (g.state === 'ready' || g.state === 'yac') return;   // both play themselves
@@ -2620,8 +2662,9 @@ const PASS_GAME = (() => {
     overlay() {
       const t = g.marker <= EZ ? 'GOAL' : Math.max(1, Math.round((g.los - g.marker) / YARD));
       if (g.state === 'live' || g.state === 'ball' || g.state === 'ready' || g.state === 'yac') return null;
+      if ((g.resultHold || 0) > 0) return null;
       if (g.state === 'result') {
-        // Let a compact swat recovery finish before typography covers it.
+        // Let the catch/contest picture resolve before typography covers it.
         if (g.wr && g.wr.db && (g.wr.db.contestFrames || 0) > 0) return null;
         if (g.firstDown) return { ttl: 'First down', gold: true, sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
         if (g.result === 'complete') return { ttl: 'Complete', sub: `${g.gain} yd · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
