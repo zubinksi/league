@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade95-continuity';
+const BUILD = 'arcade96-rb-stride';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -942,8 +942,8 @@ DB_PURSUIT_BASE.src = '/sprites/football-db-pursuit-v1-base.png';
 DB_PURSUIT_UNIFORM.src = '/sprites/football-db-pursuit-v1-uniform.png';
 DB_CONTEST_BASE.src = '/sprites/football-db-contest-v2-base.png';
 DB_CONTEST_UNIFORM.src = '/sprites/football-db-contest-v2-uniform.png';
-CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v2-base.png';
-CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v2-uniform.png';
+CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v3-base.png';
+CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v3-uniform.png';
 CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v1-base.png';
 CARRIER_SPIN_UNIFORM.src = '/sprites/football-carrier-spin-v1-uniform.png';
 CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v1-base.png';
@@ -1693,7 +1693,11 @@ const RUN_GAME = (() => {
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       if (rb.spin <= 0 && rb.truck <= 0) {
         const travelled = Math.hypot(rb.x - beforeX, rb.y - beforeY);
-        rb.frame += Math.max(.11, Math.min(.28, travelled * .22));
+        // One complete stride covers roughly thirteen field pixels. Advancing
+        // solely from distance keeps the planted foot attached to the turf:
+        // slow/staggered backs animate slowly, and a burst cannot skate ahead
+        // of a leisurely frame clock.
+        rb.frame += Math.min(.82, travelled * (8 / 13));
       }
       for (const d of g.defenders) {
         if (d.stumble > 0) {
