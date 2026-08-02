@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade103-planted-turns';
+const BUILD = 'arcade104-continuous-motion';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1545,7 +1545,7 @@ const RUN_GAME = (() => {
     const len = Math.hypot(dx, dy) || 1;
     g.contact = {
       kind, defender, age: 0,
-      duration: kind === 'tackled' ? 24 : kind === 'stuffed' ? 21 : 17,
+      duration: kind === 'tackled' ? 12 : kind === 'stuffed' ? 11 : 9,
       rbX: rb.x, rbY: rb.y,
       nx: dx / len, ny: dy / len,
     };
@@ -1558,13 +1558,15 @@ const RUN_GAME = (() => {
   function advanceContact() {
     const c = g.contact, rb = g.rb, d = c.defender;
     c.age++;
-    const entry = Math.min(1, c.age / 5);
+    const entry = Math.min(1, c.age / 3);
     const eased = entry * entry * (3 - 2 * entry);
     const breakaway = c.kind === 'broken' || c.kind === 'truck_broken';
-    // Five frames to close the final gap, then a short readable compression.
+    // Three frames close the final gap, followed by a compact impact beat.
     // Keeping both bodies on one authored axis prevents the old overlap/snap.
     rb.x = c.rbX - c.nx * 1.5 * eased;
-    rb.y = c.rbY - c.ny * 1.5 * eased - (breakaway && c.age > 8 ? (c.age - 8) * .28 : 0);
+    const carryThrough = c.age * (c.kind === 'stuffed' ? .05 : .18);
+    rb.y = c.rbY - c.ny * 1.5 * eased - carryThrough
+      - (breakaway && c.age > 4 ? (c.age - 4) * .22 : 0);
     d.x = c.rbX + c.nx * (12 - 4 * eased);
     d.y = c.rbY + c.ny * (12 - 4 * eased);
     d.frame += .12;
@@ -1582,7 +1584,7 @@ const RUN_GAME = (() => {
       }
       other.frame += .06 * (other.strideRate || 1);
     }
-    if (c.age === 6) FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2,
+    if (c.age === 4) FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2,
       c.kind === 'stuffed' || c.kind === 'truck_broken' ? 2.4 : 1.9);
     const want = eyeAt(rb.y, PLAY_EYE);
     g.camY += (want - g.camY) * .16;
@@ -1736,6 +1738,7 @@ const RUN_GAME = (() => {
     end(kind) {
       g.how = kind;
       g.visual = { kind, frames: kind === 'td' ? 72 : 24 };
+      g.resultHold = kind === 'td' ? 0 : 6;
       g.gain = Math.round((g.startY - g.rb.y) / YARD);
       g.yards += g.gain;
       if (kind === 'td') { g.tds++; g.drive++; g.down = 1; g.los = SNAP; g.state = 'td'; }
@@ -1758,10 +1761,10 @@ const RUN_GAME = (() => {
         // Brake, plant, then drive. A cut is not a sideways acceleration laid
         // over an unchanged sprint; the outside foot has to accept the body
         // before the new direction can win.
-        const blend = Math.min(1, Math.max(0, (rb.cutAge - 3) / 8));
+        const blend = Math.min(1, Math.max(0, (rb.cutAge - 1) / 5));
         const eased = blend * blend * (3 - 2 * blend);
         const wanted = rb.cutStartVx + (rb.cutTargetVx - rb.cutStartVx) * eased;
-        rb.vx += (wanted - rb.vx) * (rb.cutAge < 4 ? .16 : .48);
+        rb.vx += (wanted - rb.vx) * (rb.cutAge < 3 ? .28 : .48);
         rb.cutFrames--;
       }
       // Getting to the gap you called. Steering, not teleporting — you can
@@ -1791,7 +1794,7 @@ const RUN_GAME = (() => {
       } else {
         const pace = rb.burst > 0 ? rb.pace : 1;
         const cutPace = rb.cutFrames > 0
-          ? rb.cutAge < 4 ? .66 : rb.cutAge < 9 ? .78 : .92
+          ? rb.cutAge < 3 ? .84 : rb.cutAge < 7 ? .91 : .97
           : 1;
         rb.y -= (rb.stagger > 0 ? A.FWD * 0.42 : A.FWD) * pace * cutPace;
         rb.x += rb.vx; rb.vx *= 0.86;
@@ -1807,8 +1810,8 @@ const RUN_GAME = (() => {
         // Do not let the run cycle churn while the outside foot is planted.
         // The authored cut sheet owns those frames; the run clock resumes from
         // nearly the same phase when the carrier exits the move.
-        if (!(rb.cutFrames > 0 && rb.cutAge >= 3 && rb.cutAge <= 8))
-          rb.frame += Math.min(.50, travelled * (10 / 20));
+        const cutStride = rb.cutFrames > 0 && rb.cutAge >= 2 && rb.cutAge <= 6 ? .58 : 1;
+        rb.frame += Math.min(.50, travelled * (10 / 20)) * cutStride;
       }
       for (const d of g.defenders) {
         if (d.stumble > 0) {
@@ -1987,7 +1990,7 @@ const RUN_GAME = (() => {
           : g.visual && g.visual.frames > 0
             ? (g.visual.kind === 'td' ? (g.visual.frames > 42 ? 'rb_brake' : 'rb_hero') : 'rb_tackle')
             : rb.cutFrames > 0 ? (rb.cutDir < 0 ? 'cut_left' : 'cut_right') : 'carry';
-        const cutFrame = rb.cutAge < 3 ? 0 : rb.cutAge < 8 ? 1 : rb.cutAge < 12 ? 2 : 3;
+        const cutFrame = rb.cutAge < 2 ? 0 : rb.cutAge < 6 ? 1 : rb.cutAge < 10 ? 2 : 3;
         const actionFrame = g.contact ? Math.min(7, Math.floor(g.contact.age / 3))
           : g.visual && g.visual.kind !== 'td'
           ? Math.min(7, Math.floor((24 - g.visual.frames) / 3))
@@ -2001,6 +2004,8 @@ const RUN_GAME = (() => {
             canonicalScale: visualPose === 'rb_ready' ? .60 : .84 });
       }
       FX.draw(g.camY);
+      if ((g.state === 'between' || g.state === 'gameover') && (g.resultHold || 0) > 0)
+        g.resultHold--;
     },
     onUp(pt, dx, dy) {
       if (g.state === 'ready' || g.state === 'between' || g.state === 'td') { this.startDown(); return; }
@@ -2056,6 +2061,7 @@ const RUN_GAME = (() => {
     overlay(pick) {
       const t = Math.max(1, Math.round((g.los - EZ) / YARD));
       if (g.state === 'live' || g.state === 'presnap') return null;
+      if ((g.resultHold || 0) > 0) return null;
       if (g.state === 'between') return { ttl: g.how === 'stuffed' ? 'Stood up' : 'Tackled', sub: `${yds(g.gain)} · ${ORD[g.down]} & ${t}`, tap: 'tap for next down' };
       if (g.state === 'td') return { ttl: 'Touchdown', gold: true, sub: `${g.tds} on the day`, tap: 'tap to continue' };
       return { ttl: 'Turnover on downs', bad: true, sub: `${g.tds} TD · ${g.yards} total yards`, tap: 'tap to play again' };
@@ -2473,7 +2479,7 @@ const PASS_GAME = (() => {
       // feet planted through slow lateral breaks instead of skating at the
       // same cadence used on a vertical release.
       const strideAdvance = Math.max(.10, Math.min(.28, Math.hypot(r.x - oldX, r.y - oldY) * .22));
-      r.frame += planting ? strideAdvance * .18 : strideAdvance;
+      r.frame += planting ? strideAdvance * .58 : strideAdvance;
       r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
       r.db.motionAge = (r.db.motionAge || 0) + 1;
@@ -2562,12 +2568,15 @@ const PASS_GAME = (() => {
         const pair = g.catchPair;
         pair.age++;
         r.catchFrames--;
+        // Keep the catch moving downfield. The receiver gathers the ball but
+        // never becomes a stationary presentation card in the middle of play.
+        r.y -= .20 + .10 * W.SPEED;
         if (pair.contested) {
           const targetX = r.x + pair.side * 15;
           const targetY = r.y + 3;
-          r.db.x += (targetX - r.db.x) * .42;
-          r.db.y += (targetY - r.db.y) * .42;
-          r.db.frame += .09;
+          r.db.x += (targetX - r.db.x) * .32;
+          r.db.y += (targetY - r.db.y) * .32;
+          r.db.frame += .14;
         }
         // Help can close after the tuck, but cannot enter the featured catch
         // pocket and turn two readable players into one many-limbed shape.
@@ -2648,7 +2657,7 @@ const PASS_GAME = (() => {
         rec.db.x = rec.x + catchSide * Math.max(11, Math.abs(rec.db.x - rec.x));
         rec.db.y = rec.y + 3;
       }
-      rec.catchFrames = 14;
+      rec.catchFrames = 7;
       g.yacFrames = 0;
       g.state = 'yac';
     },
@@ -2696,19 +2705,13 @@ const PASS_GAME = (() => {
       // the offset, so the corner cannot appear magnetized toward a new lane.
       const trailTarget = g.state === 'ready' ? 2 : 8;
       r.db.drawTrail += (trailTarget - r.db.drawTrail) * .16;
-      // Coverage stays authoritative, but its drawing eases across the route
-      // break. The DB turn atlas now has time to show the plant instead of
-      // sliding bodily to the new pursuit vector underneath it.
-      const motionEase = dbContesting ? .72 : dbTurning ? .20 : .48;
-      r.db.drawMotionX += (r.db.x - r.db.drawMotionX) * motionEase;
-      r.db.drawMotionY += (r.db.y - r.db.drawMotionY) * motionEase;
       const dbPerspective = Math.max(.62, actorScreen(r.db.x, r.db.y).scale);
       const pairedCatch = g.state === 'yac' && !!g.catchPair && g.catchPair.contested;
       const dbDrawX = pairedCatch
         ? r.x + g.catchPair.side * 15 / dbPerspective
-        : r.db.drawMotionX + laneSide * r.db.drawTrail / dbPerspective;
+        : r.db.x + laneSide * r.db.drawTrail / dbPerspective;
       const dbDrawY = pairedCatch ? r.y + 3
-        : r.db.drawMotionY + (g.state === 'ready' ? 0 : 2);
+        : r.db.y + (g.state === 'ready' ? 0 : 2);
       const dbScreen = actorScreen(dbDrawX, dbDrawY);
 
       // Secondary defenders render first on lanes assigned at the snap. More
@@ -2801,7 +2804,7 @@ const PASS_GAME = (() => {
         const caught = (r.catchFrames || 0) > 0;
         const visualPose = caught ? 'wr_catch' : (g.visual && g.visual.frames > 0
           ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry');
-        const actionFrame = caught ? Math.min(7, 3 + Math.floor(((g.catchPair && g.catchPair.age) || 0) / 3))
+        const actionFrame = caught ? Math.min(7, 3 + Math.floor(((g.catchPair && g.catchPair.age) || 0) / 2))
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
