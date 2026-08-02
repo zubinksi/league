@@ -63,7 +63,7 @@
   canvas {
     image-rendering: pixelated; image-rendering: crisp-edges;
     touch-action: none;                   /* the field owns every gesture */
-    background: #08090b; border: 1px solid rgba(255,255,255,0.08); display: block;
+    background: #08090b; border: 0; display: block;
   }
   /* Type lives in the DOM so it renders at device resolution, not upscaled. */
   #overlay {
@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade74-depth';
+const BUILD = 'arcade76-camera';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -793,8 +793,13 @@ function drawField(camY, los, marker) {
   if (gy > -WORLD_H && gy < VH + 40) {
     const l = projectPoint(0, goalRaw), r = projectPoint(VW, goalRaw);
     ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(l.x, gy, r.x - l.x, 1);
-    const endTop = projectPoint(VW / 2, goalRaw - EZ).y;
-    ctx.fillStyle = 'rgba(232,197,97,0.035)'; ctx.fillRect(l.x, Math.max(0, endTop), r.x - l.x, Math.max(0, gy - endTop));
+    const tl = projectPoint(0, goalRaw - EZ), tr = projectPoint(VW, goalRaw - EZ);
+    // The end zone is field geometry, not a screen-space rectangle. Its four
+    // projected corners keep both edges on the same vanishing lines as the
+    // sidelines.
+    ctx.fillStyle = 'rgba(255,255,255,0.018)';
+    ctx.beginPath(); ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y);
+    ctx.lineTo(r.x, r.y); ctx.lineTo(l.x, l.y); ctx.closePath(); ctx.fill();
   }
   if (marker && marker > EZ) {
     const raw = marker - camY, p = projectPoint(VW / 2, raw), my = Math.round(p.y);
@@ -824,26 +829,39 @@ const ctx = canvas.getContext('2d');
  */
 const CAMERA = {
   enabled: true,
-  horizon: 0.08,
-  depth: 1.28,
+  horizon: 0.055,
+  depth: 1.20,
   nearWidth: 1,
-  farWidth: 0.58,
+  farWidth: 0.68,
+  panX: 0,
+  goal: 0,
+  frame(focusX, los) {
+    const targetPan = Math.max(-VW * .08, Math.min(VW * .08, (VW / 2 - focusX) * .16));
+    const goalYards = Math.max(0, (los - EZ) / YARD);
+    const targetGoal = Math.max(0, Math.min(1, (12 - goalYards) / 8));
+    this.panX += (targetPan - this.panX) * .10;
+    this.goal += (targetGoal - this.goal) * .08;
+  },
 };
 function projectPoint(x, y) {
   if (!CAMERA.enabled) return { x, y, scale: 1 };
   const raw = y / VH, t = Math.max(0, Math.min(1, raw));
-  const py = raw < 0 ? VH * CAMERA.horizon + y * CAMERA.farWidth
-    : raw > 1 ? VH + (y - VH) : VH * (CAMERA.horizon + (1 - CAMERA.horizon) * Math.pow(t, CAMERA.depth));
+  const horizon = Math.max(.018, CAMERA.horizon - CAMERA.goal * .032);
+  const py = raw < 0 ? VH * horizon + y * CAMERA.farWidth
+    : raw > 1 ? VH + (y - VH) : VH * (horizon + (1 - horizon) * Math.pow(t, CAMERA.depth));
   const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
-  return { x: VW / 2 + (x - VW / 2) * width, y: py, scale: 0.66 + 0.34 * t };
+  const pan = CAMERA.panX * (.42 + .58 * t);
+  return { x: VW / 2 + (x - VW / 2) * width + pan, y: py, scale: 0.72 + 0.28 * t };
 }
 function unprojectPoint(x, y) {
   if (!CAMERA.enabled) return { x, y };
-  const normalized = (y / VH - CAMERA.horizon) / (1 - CAMERA.horizon);
-  const t = normalized < 0 ? normalized * (1 - CAMERA.horizon) / CAMERA.farWidth
+  const horizon = Math.max(.018, CAMERA.horizon - CAMERA.goal * .032);
+  const normalized = (y / VH - horizon) / (1 - horizon);
+  const t = normalized < 0 ? normalized * (1 - horizon) / CAMERA.farWidth
     : Math.pow(Math.max(0, Math.min(1, normalized)), 1 / CAMERA.depth);
   const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
-  return { x: VW / 2 + (x - VW / 2) / width, y: t * VH };
+  const pan = CAMERA.panX * (.42 + .58 * t);
+  return { x: VW / 2 + (x - pan - VW / 2) / width, y: t * VH };
 }
 // Nav, readout, footer and the gaps between them. The readout is a card now
 // rather than a line of text, which is most of this number.
@@ -873,18 +891,21 @@ function sprite(rows, px, py, ballPts, ballDx, tint) {
   py = base.y - h * s;
   if (!tint && ctx.globalAlpha > 0.9) {
     ctx.save();
-    ctx.fillStyle = 'rgba(0,0,0,0.48)';
+    ctx.fillStyle = 'rgba(0,0,0,0.32)';
     ctx.beginPath();
-    ctx.ellipse(base.x, base.y - 1, w * s * 0.34, Math.max(1, 2.3 * s), 0, 0, Math.PI * 2);
+    ctx.ellipse(base.x, base.y - .5, w * s * 0.27, Math.max(.7, 1.55 * s), 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
   for (let y = 0; y < rows.length; y++) {
     const row = rows[y];
     for (let x = 0; x < row.length; x++) {
-      const c = PAL[row[x]];
+      const code = row[x], c = PAL[code];
       if (!c) continue;
-      ctx.fillStyle = tint || c; ctx.fillRect(px + x * s, py + y * s, Math.max(.72, s), Math.max(.72, s));
+      // At distance the one-pixel outline is most of the character. Lift it
+      // slightly so defenders remain bodies rather than grey noise.
+      const ink = code === 'D' && s < .84 ? mix(c, '#74777e', (.84 - s) * 1.8) : c;
+      ctx.fillStyle = tint || ink; ctx.fillRect(px + x * s, py + y * s, Math.max(.72, s), Math.max(.72, s));
     }
   }
   if (ballPts) {
@@ -978,31 +999,28 @@ function rimmed(rows, px, py, ballPts, ballDx, glow) {
 
 function yardLines(camY, worldH, yards, yard) {
   CAMERA.enabled = true;
-  const turf = ctx.createLinearGradient(0, 0, 0, VH);
-  turf.addColorStop(0, '#080b0b'); turf.addColorStop(1, '#10130f');
-  ctx.fillStyle = turf; ctx.fillRect(0, 0, VW, VH);
-  // Sideline wedges and alternating turf bands give the eye enough depth to
-  // read the projection before anything moves.
+  ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
   const topL = projectPoint(0, 0), topR = projectPoint(VW, 0);
-  ctx.fillStyle = 'rgba(0,0,0,.25)';
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(topL.x, topL.y); ctx.lineTo(2, VH); ctx.lineTo(0, VH); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(VW, 0); ctx.lineTo(topR.x, topR.y); ctx.lineTo(VW - 2, VH); ctx.lineTo(VW, VH); ctx.fill();
+  const bottomL = projectPoint(0, VH), bottomR = projectPoint(VW, VH);
   for (let i = 0; i <= yards; i++) {
     const rawY = worldH - i * yard - camY;
     const p = projectPoint(VW / 2, rawY);
     const sy = Math.round(p.y);
     if (sy < -2 || sy > VH + 2) continue;
     const half = (VW / 2) * (CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(Math.max(0, Math.min(1, rawY / VH)), .72));
-    if (i % 5 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(VW / 2 - half, sy, half * 2, 1); }
+    if (i % 5 === 0) {
+      ctx.fillStyle = `rgba(255,255,255,${(0.07 + p.scale * 0.10).toFixed(3)})`;
+      ctx.fillRect(VW / 2 - half + CAMERA.panX * (.42 + .58 * Math.max(0, Math.min(1, rawY / VH))), sy, half * 2, 1);
+    }
     else {
-      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillStyle = `rgba(255,255,255,${(0.018 + p.scale * 0.035).toFixed(3)})`;
       const hash = 14 * p.scale;
-      ctx.fillRect(VW / 2 - hash, sy, 5 * p.scale, 1); ctx.fillRect(VW / 2 + hash - 5 * p.scale, sy, 5 * p.scale, 1);
+      ctx.fillRect(p.x - hash, sy, 5 * p.scale, 1); ctx.fillRect(p.x + hash - 5 * p.scale, sy, 5 * p.scale, 1);
     }
   }
   ctx.fillStyle = 'rgba(255,255,255,0.14)';
-  ctx.beginPath(); ctx.moveTo(topL.x, topL.y); ctx.lineTo(2, VH); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1; ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(topR.x, topR.y); ctx.lineTo(VW - 2, VH); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(topL.x, topL.y); ctx.lineTo(bottomL.x, bottomL.y); ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(topR.x, topR.y); ctx.lineTo(bottomR.x, bottomR.y); ctx.stroke();
 }
 
 // ---- the defense ---------------------------------------------------------
@@ -1393,6 +1411,7 @@ const RUN_GAME = (() => {
       else g.camY = want;
     },
     render() {
+      CAMERA.frame(g.rb ? g.rb.x : VW / 2, g.los);
       const ly = drawField(g.camY, g.los, g.marker);
       // Pre-snap the four gaps get tick marks on the line. They name the
       // lanes, they do not grade them — reading the bodies is the game.
@@ -1981,15 +2000,21 @@ const PASS_GAME = (() => {
       g.state = 'yac';
     },
     render() {
+      CAMERA.frame(g.ball ? g.ball.x : (g.wr ? g.wr.x : VW / 2), g.los);
       drawField(g.camY, g.los, g.marker);
       const r = g.wr;
       // The chosen route traces once it is running; nothing to show before.
       if (r.route) {
-        ctx.fillStyle = 'rgba(255,255,255,0.10)';
-        for (let t = 0; t < 150; t += 3) {
-          const p = at(r, t), sy = Math.round(p.y - g.camY);
-          if (sy < -2 || sy > VH + 2) continue;
-          ctx.fillRect(Math.round(p.x), sy, 1, 1);
+        ctx.lineCap = 'square';
+        for (let t = 0; t < 150; t += 7) {
+          const a = at(r, t), b = at(r, t + 3);
+          const ay = a.y - g.camY, by = b.y - g.camY;
+          if ((ay < -3 && by < -3) || (ay > VH + 3 && by > VH + 3)) continue;
+          const ap = projectPoint(a.x, ay), bp = projectPoint(b.x, by);
+          const passed = t < g.t;
+          ctx.strokeStyle = `rgba(255,255,255,${passed ? .045 : (.08 + ap.scale * .08).toFixed(3)})`;
+          ctx.lineWidth = Math.max(.65, ap.scale);
+          ctx.beginPath(); ctx.moveTo(ap.x, ap.y); ctx.lineTo(bp.x, bp.y); ctx.stroke();
         }
       }
       sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF);
@@ -2011,10 +2036,10 @@ const PASS_GAME = (() => {
           }
           ctx.globalAlpha = 1;
         }
-        rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, 0.3 + 0.45 * loose);
-        const ry = Math.round(r.y - g.camY);
-        ctx.fillStyle = PAL.D; ctx.fillRect(Math.round(r.x) + 3, ry + 1, 4, 4);
-        ctx.fillStyle = PAL.O; ctx.fillRect(Math.round(r.x) + 4, ry + 2, 2, 2);
+        // Use the same embedded ball pixels as the running back. Drawing a
+        // separate screen-space square after projection made the caught ball
+        // drift away from the receiver's hip.
+        rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose);
       } else {
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0);
       }
@@ -2025,13 +2050,14 @@ const PASS_GAME = (() => {
         sprite(RUN20[0], Math.round(g.rb.x) - HALF, Math.round(g.rb.y - g.camY) - HALF);
       }
       if (g.ball) {
-        const by = Math.round(g.ball.y - g.camY);
+        const bp = projectPoint(g.ball.x, g.ball.y - g.camY);
+        const bs = Math.max(.72, bp.scale);
         ctx.fillStyle = PAL.D;
         for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 2]])
-          ctx.fillRect(Math.round(g.ball.x) - 1 + dx, by + dy, 3, 2);
+          ctx.fillRect(bp.x - bs + dx * bs, bp.y + dy * bs, 3 * bs, 2 * bs);
         ctx.fillStyle = PAL.O;
-        ctx.fillRect(Math.round(g.ball.x) - 1, by, 3, 2);
-        ctx.fillRect(Math.round(g.ball.x), by - 1, 1, 4);
+        ctx.fillRect(bp.x - bs, bp.y, 3 * bs, 2 * bs);
+        ctx.fillRect(bp.x, bp.y - bs, bs, 4 * bs);
       }
       FX.draw(g.camY);
     },
