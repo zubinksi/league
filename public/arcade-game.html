@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade102-catch-pairing';
+const BUILD = 'arcade103-planted-turns';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1755,10 +1755,13 @@ const RUN_GAME = (() => {
       if (g.contact) { advanceContact(); return; }
       if (rb.cutFrames > 0 && rb.spin <= 0 && rb.truck <= 0) {
         rb.cutAge++;
-        const blend = Math.min(1, rb.cutAge / 6);
+        // Brake, plant, then drive. A cut is not a sideways acceleration laid
+        // over an unchanged sprint; the outside foot has to accept the body
+        // before the new direction can win.
+        const blend = Math.min(1, Math.max(0, (rb.cutAge - 3) / 8));
         const eased = blend * blend * (3 - 2 * blend);
         const wanted = rb.cutStartVx + (rb.cutTargetVx - rb.cutStartVx) * eased;
-        rb.vx += (wanted - rb.vx) * .48;
+        rb.vx += (wanted - rb.vx) * (rb.cutAge < 4 ? .16 : .48);
         rb.cutFrames--;
       }
       // Getting to the gap you called. Steering, not teleporting — you can
@@ -1787,7 +1790,10 @@ const RUN_GAME = (() => {
         }
       } else {
         const pace = rb.burst > 0 ? rb.pace : 1;
-        rb.y -= (rb.stagger > 0 ? A.FWD * 0.42 : A.FWD) * pace;
+        const cutPace = rb.cutFrames > 0
+          ? rb.cutAge < 4 ? .66 : rb.cutAge < 9 ? .78 : .92
+          : 1;
+        rb.y -= (rb.stagger > 0 ? A.FWD * 0.42 : A.FWD) * pace * cutPace;
         rb.x += rb.vx; rb.vx *= 0.86;
       }
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
@@ -1798,7 +1804,11 @@ const RUN_GAME = (() => {
         // solely from distance keeps the planted foot attached to the turf:
         // slow/staggered backs animate slowly, and a burst cannot skate ahead
         // of a leisurely frame clock.
-        rb.frame += Math.min(.50, travelled * (10 / 20));
+        // Do not let the run cycle churn while the outside foot is planted.
+        // The authored cut sheet owns those frames; the run clock resumes from
+        // nearly the same phase when the carrier exits the move.
+        if (!(rb.cutFrames > 0 && rb.cutAge >= 3 && rb.cutAge <= 8))
+          rb.frame += Math.min(.50, travelled * (10 / 20));
       }
       for (const d of g.defenders) {
         if (d.stumble > 0) {
@@ -1977,10 +1987,11 @@ const RUN_GAME = (() => {
           : g.visual && g.visual.frames > 0
             ? (g.visual.kind === 'td' ? (g.visual.frames > 42 ? 'rb_brake' : 'rb_hero') : 'rb_tackle')
             : rb.cutFrames > 0 ? (rb.cutDir < 0 ? 'cut_left' : 'cut_right') : 'carry';
+        const cutFrame = rb.cutAge < 3 ? 0 : rb.cutAge < 8 ? 1 : rb.cutAge < 12 ? 2 : 3;
         const actionFrame = g.contact ? Math.min(7, Math.floor(g.contact.age / 3))
           : g.visual && g.visual.kind !== 'td'
           ? Math.min(7, Math.floor((24 - g.visual.frames) / 3))
-          : visualPose.startsWith('cut_') ? Math.min(3, Math.floor(rb.cutAge / (CUT_LEN / 4))) : 0;
+          : visualPose.startsWith('cut_') ? cutFrame : 0;
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame,
@@ -2288,6 +2299,8 @@ const PASS_GAME = (() => {
       g.wr.db.turnAge = -1;
       g.wr.db.turnDir = 1;
       g.wr.db.drawTrail = 2;
+      g.wr.db.drawMotionX = g.wr.db.x;
+      g.wr.db.drawMotionY = g.wr.db.y;
       // Presentation lanes are assigned once with the formation and never
       // swapped mid-play. That keeps help defenders from magnetically jumping
       // sides when they enter an overlap threshold.
@@ -2453,10 +2466,14 @@ const PASS_GAME = (() => {
       const oldX = r.x, oldY = r.y;
       const p = at(r, g.t);
       r.x = p.x; r.y = p.y;
+      const routeBreak = BREAK[r.route] || 0;
+      const breakPhase = g.t - routeBreak;
+      const planting = breakPhase >= -2 && breakPhase <= 5;
       // Advance the eight-frame stride from actual ground covered. This keeps
       // feet planted through slow lateral breaks instead of skating at the
       // same cadence used on a vertical release.
-      r.frame += Math.max(.10, Math.min(.28, Math.hypot(r.x - oldX, r.y - oldY) * .22));
+      const strideAdvance = Math.max(.10, Math.min(.28, Math.hypot(r.x - oldX, r.y - oldY) * .22));
+      r.frame += planting ? strideAdvance * .18 : strideAdvance;
       r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
       r.db.motionAge = (r.db.motionAge || 0) + 1;
@@ -2480,7 +2497,7 @@ const PASS_GAME = (() => {
       r.db.y += (back.y - r.db.y) * tight;
       const dbDx = back.x - r.db.x;
       if (Math.abs(dbDx) > .4 && r.db.motionAge % 6 === 0) r.db.animDir = Math.sign(dbDx);
-      const breakAt = BREAK[r.route] || 0;
+      const breakAt = routeBreak;
       if (g.t >= breakAt - 4 && r.db.turnAge < 0) {
         r.db.turnAge = 0;
         r.db.turnDir = r.dir;
@@ -2679,12 +2696,19 @@ const PASS_GAME = (() => {
       // the offset, so the corner cannot appear magnetized toward a new lane.
       const trailTarget = g.state === 'ready' ? 2 : 8;
       r.db.drawTrail += (trailTarget - r.db.drawTrail) * .16;
+      // Coverage stays authoritative, but its drawing eases across the route
+      // break. The DB turn atlas now has time to show the plant instead of
+      // sliding bodily to the new pursuit vector underneath it.
+      const motionEase = dbContesting ? .72 : dbTurning ? .20 : .48;
+      r.db.drawMotionX += (r.db.x - r.db.drawMotionX) * motionEase;
+      r.db.drawMotionY += (r.db.y - r.db.drawMotionY) * motionEase;
       const dbPerspective = Math.max(.62, actorScreen(r.db.x, r.db.y).scale);
       const pairedCatch = g.state === 'yac' && !!g.catchPair && g.catchPair.contested;
       const dbDrawX = pairedCatch
         ? r.x + g.catchPair.side * 15 / dbPerspective
-        : r.db.x + laneSide * r.db.drawTrail / dbPerspective;
-      const dbDrawY = pairedCatch ? r.y + 3 : r.db.y + (g.state === 'ready' ? 0 : 2);
+        : r.db.drawMotionX + laneSide * r.db.drawTrail / dbPerspective;
+      const dbDrawY = pairedCatch ? r.y + 3
+        : r.db.drawMotionY + (g.state === 'ready' ? 0 : 2);
       const dbScreen = actorScreen(dbDrawX, dbDrawY);
 
       // Secondary defenders render first on lanes assigned at the snap. More
@@ -2789,7 +2813,11 @@ const PASS_GAME = (() => {
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
         const movingPose = cutting ? 'wr_cut' : 'wr_run';
-        const movingFrame = cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
+        const cutAge = g.t - (breakAt - 4);
+        // The plant drawing gets the longest hold; entry and exit stay short
+        // so the receiver flows into and out of the break without skating.
+        const movingFrame = !cutting ? 0 : cutAge < 3 ? 0 : cutAge < 9 ? 1
+          : cutAge < 13 ? 2 : 3;
         const visualPose = g.state === 'ready' ? 'wr_ready'
           : g.t < 8 ? 'wr_release' : nearBall ? 'wr_catch' : movingPose;
         const actionFrame = nearBall ? (ballDistance < 9 ? 3 : 2) : movingFrame;
