@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade99-pursuit';
+const BUILD = 'arcade100-carrier-actions';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -906,6 +906,7 @@ const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
 const DB_BACKPEDAL_BASE = new Image(), DB_BACKPEDAL_UNIFORM = new Image();
 const DB_TURN_BASE = new Image(), DB_TURN_UNIFORM = new Image();
 const DB_PURSUIT_BASE = new Image(), DB_PURSUIT_UNIFORM = new Image();
+const DB_PURSUIT_FRONT_BASE = new Image(), DB_PURSUIT_FRONT_UNIFORM = new Image();
 const DB_CONTEST_BASE = new Image(), DB_CONTEST_UNIFORM = new Image();
 const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
@@ -940,14 +941,16 @@ DB_TURN_BASE.src = '/sprites/football-db-turn-v2-base.png';
 DB_TURN_UNIFORM.src = '/sprites/football-db-turn-v2-uniform.png';
 DB_PURSUIT_BASE.src = '/sprites/football-db-pursuit-v2-base.png';
 DB_PURSUIT_UNIFORM.src = '/sprites/football-db-pursuit-v2-uniform.png';
+DB_PURSUIT_FRONT_BASE.src = '/sprites/football-db-pursuit-v1-base.png';
+DB_PURSUIT_FRONT_UNIFORM.src = '/sprites/football-db-pursuit-v1-uniform.png';
 DB_CONTEST_BASE.src = '/sprites/football-db-contest-v2-base.png';
 DB_CONTEST_UNIFORM.src = '/sprites/football-db-contest-v2-uniform.png';
 CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v3-base.png';
 CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v3-uniform.png';
-CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v1-base.png';
-CARRIER_SPIN_UNIFORM.src = '/sprites/football-carrier-spin-v1-uniform.png';
-CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v1-base.png';
-CARRIER_CUT_UNIFORM.src = '/sprites/football-carrier-cuts-v1-uniform.png';
+CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v2-base.png';
+CARRIER_SPIN_UNIFORM.src = '/sprites/football-carrier-spin-v2-uniform.png';
+CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v2-base.png';
+CARRIER_CUT_UNIFORM.src = '/sprites/football-carrier-cuts-v2-uniform.png';
 CARRIER_STATE_BASE.src = '/sprites/football-carrier-states-v1-base.png';
 CARRIER_STATE_UNIFORM.src = '/sprites/football-carrier-states-v1-uniform.png';
 RECEIVER_RUN_BASE.src = '/sprites/football-receiver-run-v2-base.png';
@@ -1025,7 +1028,8 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     frame = Math.max(0, Math.min(5, meta.actionFrame == null ? frame : meta.actionFrame));
     cell = [frame + ((meta.dir || 0) < 0 ? 6 : 0), 0];
   } else if (pose === 'db_pursuit') {
-    artBase = DB_PURSUIT_BASE; artUniform = DB_PURSUIT_UNIFORM;
+    artBase = meta.facingAway ? DB_PURSUIT_BASE : DB_PURSUIT_FRONT_BASE;
+    artUniform = meta.facingAway ? DB_PURSUIT_UNIFORM : DB_PURSUIT_FRONT_UNIFORM;
     cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
   } else if (pose === 'db_contest') {
     artBase = DB_CONTEST_BASE; artUniform = DB_CONTEST_UNIFORM;
@@ -1716,7 +1720,6 @@ const RUN_GAME = (() => {
         rb.vx *= 0.7; rb.spin--;
         if (rb.spin === 0) {
           rb.vx = rb.spinDir * .65;
-          rb.frame = rb.spinDir > 0 ? 4 : 0;
         }
       } else {
         const pace = rb.burst > 0 ? rb.pace : 1;
@@ -1783,6 +1786,11 @@ const RUN_GAME = (() => {
         d.x += (dx / dist) * chaseRate; d.y += (dy / dist) * chaseRate;
         const defenderTravel = Math.hypot(d.x - beforeDX, d.y - beforeDY);
         d.frame += Math.min(.56, defenderTravel * (8 / 16) * (d.strideRate || 1));
+        // A defender ahead of the carrier runs downfield toward the camera;
+        // one behind him runs upfield away from it. Keep a contact dead band
+        // so the atlas cannot flip while the bodies converge.
+        const pursuitDepth = d.y - rb.y;
+        if (Math.abs(pursuitDepth) > 10) d.pursuitFacingAway = pursuitDepth > 0;
         if (rb.evade <= 0 && Math.hypot(rb.x - d.x, rb.y - d.y) < TACKLE_R) {
           d.x = rb.x - (dx / dist) * 12; d.y = rb.y - (dy / dist) * 12;
           if (rb.truck > 0) {
@@ -1852,7 +1860,7 @@ const RUN_GAME = (() => {
             null, 0, null, { pose: prone ? 'tackle' : recovering ? 'accelerate'
               : g.state === 'presnap' ? 'db' : !d.pursuing ? 'db_backpedal'
               : turningToPursue ? 'db_turn' : 'db_pursuit', frame: d.frame,
-              dir: d.animDir, stable: !prone,
+              dir: d.animDir, facingAway: !!d.pursuitFacingAway, stable: !prone,
               actionFrame: d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
                 : turningToPursue
                   ? Math.min(5, Math.floor((d.turnAge || 0) * 6 / Math.max(1, d.turnLen || 9)))
@@ -1935,12 +1943,15 @@ const RUN_GAME = (() => {
         return;
       }
       if (Math.abs(dx) > 18) {
-        rb.cutDir = Math.sign(dx); rb.cutFrames = CUT_LEN; rb.cutAge = 0;
-        rb.cutStartVx = rb.vx;
-        rb.cutTargetVx = Math.max(-2.4, Math.min(2.4, rb.vx + rb.cutDir * 1.9));
+        if (rb.cutFrames <= 0 && rb.spin <= 0 && rb.truck <= 0) {
+          rb.cutDir = Math.sign(dx); rb.cutFrames = CUT_LEN; rb.cutAge = 0;
+          rb.cutStartVx = rb.vx;
+          rb.cutTargetVx = Math.max(-2.4, Math.min(2.4, rb.vx + rb.cutDir * 1.9));
+        }
         return;
       }
       if (rb.truck > 0) return;
+      if (rb.cutFrames > 0) return;
       if (rb.spin > 0 || rb.spinCd > 0) return;
       let near = null, nd = Infinity;
       for (const d of g.defenders) {
@@ -1958,8 +1969,9 @@ const RUN_GAME = (() => {
       rb.evade = rb.clean ? Math.round(3 + 11 * A.ELU) : 0;
       rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
       rb.spinStartX = rb.x;
-      if (rb.clean) for (const d of g.defenders)
-        if (Math.hypot(rb.x - d.x, rb.y - d.y) < A.CONTACT + 10) d.stumble = A.STUMBLE;
+      // One spin defeats one committed tackler. The old radius sweep dropped
+      // every nearby defender, including players outside the contact lane.
+      if (rb.clean && near) near.stumble = A.STUMBLE;
     },
     score() { return { value: g.tds, tie: g.yards, detail: `${g.yards} yd` }; },
     status() {
