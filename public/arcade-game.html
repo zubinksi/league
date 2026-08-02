@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade77-sprites';
+const BUILD = 'arcade78-stride';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -890,73 +890,76 @@ fit();
  *  pixel while the character keeps the same footprint as the old 20px man. */
 function detailedSprite(rows, base, scale, ballPts, tint, meta = {}) {
   const defender = rows.some((row) => row.includes('G'));
+  const low = !!meta.low;
   const u = scale / 2;
-  const ox = base.x - 20 * u, oy = base.y - 48 * u;
-  const dir = meta.dir || 0, pose = meta.pose || 'run', frame = Math.abs(meta.frame || 0) % 4;
+  const ox = base.x - 20 * u, oy = base.y - 43 * u;
+  const dir = meta.dir || 0, pose = meta.pose || 'run';
+  // Discrete frames are essential. The old modulo ran on a fractional
+  // animation clock, so it almost always chose the same stride.
+  const frame = Math.floor(Math.abs(meta.frame || 0)) % 4;
   const C = tint || (defender ? PAL.G : PAL.L);
-  const HI = tint || (defender ? mix(PAL.G, '#ffffff', .18) : PAL.W);
+  const HI = tint || (defender ? mix(PAL.G, '#ffffff', .16) : PAL.W);
   const SH = tint || (defender ? mix(PAL.G, '#111317', .34) : PAL.M);
-  const SKIN = tint || (defender ? '#8b6b58' : '#b77955');
+  const SKIN = tint || (defender ? '#886a59' : '#b77955');
   const D = tint || PAL.D;
   const rect = (x, y, w, h, color) => {
     const rx = dir < 0 ? 40 - x - w : x;
     ctx.fillStyle = color; ctx.fillRect(ox + rx * u, oy + y * u, w * u, h * u);
   };
   if (!tint && ctx.globalAlpha > .9) {
-    ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.30)'; ctx.beginPath();
-    ctx.ellipse(base.x, base.y - .4, 6.2 * scale, 1.25 * scale, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.34)'; ctx.beginPath();
+    ctx.ellipse(base.x, base.y - .25, 7.4 * scale, 1.35 * scale, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   }
 
-  // Helmet, face and mask. These are the pixels the old silhouette did not
-  // have room for, and the part that makes the player feel like a character.
-  rect(11, 2, 18, 2, D); rect(9, 4, 22, 8, D);
-  rect(11, 4, 18, 7, HI); rect(19, 4, 3, 7, C);
-  rect(12, 10, 16, 7, D); rect(14, 10, 12, 6, SKIN);
-  rect(15, 11, 3, 2, D); rect(23, 11, 3, 2, D);
-  rect(14, 14, 12, 2, D); rect(27, 11, 3, 6, HI);
+  // Broad helmet and shoulders establish the football silhouette. Normal
+  // gameplay is viewed from behind; face detail belongs to the hero sprite.
+  rect(12, 2, 16, 2, D); rect(9, 4, 22, 9, D);
+  rect(11, 4, 18, 7, low ? C : HI); rect(18, 4, 4, 7, C);
+  rect(12, 11, 16, 3, D); rect(14, 11, 12, 2, SH);
+  rect(5, 14, 30, 5, D); rect(3, 17, 34, 8, D);
+  rect(6, 15, 28, 10, C); rect(9, 16, 22, 3, low ? C : HI);
+  // A simple back panel, not a faux number that reads as a medical cross.
+  if (!low) { rect(18, 20, 4, 4, HI); rect(17, 24, 6, 2, SH); }
 
-  // Pads and jersey.
-  rect(8, 17, 24, 4, D); rect(6, 20, 28, 13, D);
-  rect(8, 19, 24, 13, C); rect(10, 19, 20, 3, HI);
-  rect(18, 23, 4, 7, HI); rect(15, 25, 10, 2, HI);
-
-  // Arms change silhouette by action. Contact leans both shoulders forward;
-  // catch raises the hands; run alternates a compact pump.
   if (pose === 'hero') {
-    rect(3, 21, 9, 7, D); rect(28, 21, 9, 7, D);
-    rect(4, 22, 7, 5, SKIN); rect(29, 22, 7, 5, SKIN);
-    rect(9, 27, 5, 4, SKIN); rect(26, 27, 5, 4, SKIN);
+    rect(1, 18, 9, 8, D); rect(30, 18, 9, 8, D);
+    rect(3, 20, 6, 5, SKIN); rect(31, 20, 6, 5, SKIN);
   } else if (pose === 'catch') {
-    rect(4, 14, 5, 13, D); rect(31, 14, 5, 13, D);
-    rect(5, 15, 3, 10, SKIN); rect(32, 15, 3, 10, SKIN);
-    rect(6, 12, 4, 4, SKIN); rect(30, 12, 4, 4, SKIN);
+    rect(4, 8, 6, 13, D); rect(30, 8, 6, 13, D);
+    rect(5, 8, 4, 10, SKIN); rect(31, 8, 4, 10, SKIN);
+    rect(7, 6, 5, 4, SKIN); rect(28, 6, 5, 4, SKIN);
   } else if (pose === 'contact' || pose === 'truck') {
-    rect(3, 20, 8, 9, D); rect(29, 20, 8, 9, D);
-    rect(4, 21, 6, 7, SKIN); rect(30, 21, 6, 7, SKIN);
+    rect(0, 17, 11, 9, D); rect(29, 17, 11, 9, D);
+    rect(2, 19, 8, 5, SKIN); rect(30, 19, 8, 5, SKIN);
   } else if (pose === 'fall') {
-    rect(3, 24, 9, 6, D); rect(4, 25, 7, 4, SKIN);
-    rect(29, 17, 7, 12, D); rect(30, 18, 5, 10, SKIN);
+    rect(0, 21, 12, 7, D); rect(28, 16, 10, 12, D);
+    rect(2, 23, 8, 4, SKIN); rect(30, 18, 6, 8, SKIN);
   } else {
-    const swing = frame % 2 ? 3 : -2;
-    rect(4, 20 + Math.max(0, swing), 7, 12, D); rect(5, 21 + Math.max(0, swing), 5, 9, SKIN);
-    rect(29, 20 + Math.max(0, -swing), 7, 12, D); rect(30, 21 + Math.max(0, -swing), 5, 9, SKIN);
+    // Arms pump opposite the legs. Four discrete frames give two extremes and
+    // two passing positions, avoiding the mechanical two-frame flicker.
+    const arm = [0, 3, 0, -3][frame];
+    rect(1, 18 + Math.max(0, arm), 10, 10, D);
+    rect(29, 18 + Math.max(0, -arm), 10, 10, D);
+    if (!low) {
+      rect(3, 20 + Math.max(0, arm), 7, 6, SKIN);
+      rect(30, 20 + Math.max(0, -arm), 7, 6, SKIN);
+    }
   }
 
-  // Pants, directional stride, socks and shoes.
-  rect(10, 32, 20, 5, D); rect(11, 32, 18, 4, HI);
-  const stride = pose === 'fall' ? 0 : frame % 2 ? 4 : -4;
-  rect(11 + Math.max(0, -stride), 36, 7, pose === 'fall' ? 5 : 8, D);
-  rect(22 + Math.max(0, stride), 36, 7, pose === 'fall' ? 5 : 8, D);
-  rect(12 + Math.max(0, -stride), 37, 5, pose === 'fall' ? 4 : 6, SH);
-  rect(23 + Math.max(0, stride), 37, 5, pose === 'fall' ? 4 : 6, SH);
-  rect(10 + Math.max(0, -stride), 43, 9, 3, HI);
-  rect(21 + Math.max(0, stride), 43, 9, 3, HI);
-  rect(9 + Math.max(0, -stride), 46, 10, 2, D);
-  rect(21 + Math.max(0, stride), 46, 10, 2, D);
+  rect(8, 25, 24, 5, D); rect(10, 25, 20, 4, HI);
+  const stride = pose === 'run' ? [-5, 0, 5, 0][frame] : 0;
+  const leftX = 8 + Math.max(0, -stride), rightX = 23 + Math.max(0, stride);
+  const leftH = pose === 'fall' ? 5 : stride > 0 ? 8 : 12;
+  const rightH = pose === 'fall' ? 5 : stride < 0 ? 8 : 12;
+  rect(leftX, 29, 9, leftH, D); rect(rightX, 29, 9, rightH, D);
+  rect(leftX + 2, 30, 5, Math.max(3, leftH - 2), SH);
+  rect(rightX + 2, 30, 5, Math.max(3, rightH - 2), SH);
+  rect(leftX - 1, 29 + leftH, 12, 3, HI); rect(rightX - 1, 29 + rightH, 12, 3, HI);
+  rect(leftX - 2, 32 + leftH, 13, 2, D); rect(rightX - 1, 32 + rightH, 13, 2, D);
 
   if (ballPts || meta.ball) {
-    rect(dir < 0 ? 7 : 29, pose === 'catch' ? 15 : 26, 6, 5, D);
-    rect(dir < 0 ? 8 : 30, pose === 'catch' ? 16 : 27, 4, 3, PAL.O);
+    const bx = dir < 0 ? 5 : 30, by = pose === 'catch' ? 9 : 22;
+    rect(bx, by, 7, 5, D); rect(bx + 1, by + 1, 5, 3, PAL.O);
   }
 }
 
@@ -964,13 +967,12 @@ function sprite(rows, px, py, ballPts, ballDx, tint, meta) {
   const h = rows.length, w = rows[0] ? rows[0].length : 20;
   const base = projectPoint(px + w / 2, py + h);
   const s = base.scale;
-  // Distant figures deliberately keep the simpler silhouette. At that size
-  // face masks and fingers become noise; the detail returns smoothly as the
-  // player approaches the camera.
-  if (s > .84 && ctx.globalAlpha > .16) {
-    detailedSprite(rows, base, s, ballPts, tint, meta);
-    return;
-  }
+  // Far players use the same broad body with fewer internal marks. This keeps
+  // the LOD change from looking like a switch to a different art style.
+  detailedSprite(rows, base, s, ballPts, tint, { ...(meta || {}), low: s <= .84 });
+  return;
+  /* Legacy 20px renderer retained below as a reference for the standalone
+     sprite definitions; gameplay returns through the shared silhouette above. */
   px = base.x - w * s / 2;
   py = base.y - h * s;
   if (!tint && ctx.globalAlpha > 0.9) {
