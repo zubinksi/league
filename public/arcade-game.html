@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade81-continuity';
+const BUILD = 'arcade82-registered';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -890,6 +890,9 @@ const RUN_BASE = new Image(), RUN_UNIFORM = new Image();
 const IDLE_BASE = new Image(), IDLE_UNIFORM = new Image();
 const ACTION_BASE = new Image(), ACTION_UNIFORM = new Image();
 const TRANSITION_BASE = new Image(), TRANSITION_UNIFORM = new Image();
+const UNIFIED_BASE = new Image(), UNIFIED_UNIFORM = new Image();
+const UNIFIED_ACTION_BASE = new Image(), UNIFIED_ACTION_UNIFORM = new Image();
+const UNIFIED_QB_BASE = new Image(), UNIFIED_QB_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -900,6 +903,12 @@ ACTION_BASE.src = '/sprites/football-actions-base.png';
 ACTION_UNIFORM.src = '/sprites/football-actions-uniform.png';
 TRANSITION_BASE.src = '/sprites/football-transitions-base.png';
 TRANSITION_UNIFORM.src = '/sprites/football-transitions-uniform.png';
+UNIFIED_BASE.src = '/sprites/football-unified-base.png';
+UNIFIED_UNIFORM.src = '/sprites/football-unified-uniform.png';
+UNIFIED_ACTION_BASE.src = '/sprites/football-unified-actions-base.png';
+UNIFIED_ACTION_UNIFORM.src = '/sprites/football-unified-actions-uniform.png';
+UNIFIED_QB_BASE.src = '/sprites/football-unified-qb-base.png';
+UNIFIED_QB_UNIFORM.src = '/sprites/football-unified-qb-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -914,26 +923,38 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   let artBase = POSE_BASE, artUniform = POSE_UNIFORM, cell;
   let frame = Math.floor(Math.abs(meta.frame || 0));
   if (pose === 'run') {
-    artBase = RUN_BASE; artUniform = RUN_UNIFORM;
+    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
     cell = [frame % 4, Math.floor((frame % 8) / 4)];
+  } else if (pose === 'carry') {
+    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
+    const carryCycle = [0, 1, 2, 3, 2, 1];
+    cell = [carryCycle[frame % carryCycle.length], 2];
+  } else if (pose === 'defend') {
+    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
+    const df = 2 + (Math.floor(frame / 2) % 2);
+    cell = [df, 3];
   } else if (pose === 'accelerate' || pose === 'cut') {
-    artBase = TRANSITION_BASE; artUniform = TRANSITION_UNIFORM;
-    const row = pose === 'accelerate' ? 0 : 1;
+    artBase = UNIFIED_ACTION_BASE; artUniform = UNIFIED_ACTION_UNIFORM;
     frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
-    cell = [frame, row];
-  } else if (pose === 'qb' || pose === 'wr' || pose === 'rb' || pose === 'db') {
-    artBase = IDLE_BASE; artUniform = IDLE_UNIFORM;
-    // Calm two-frame breathing/weight shifts. This clock is deliberately
-    // independent of the 60 Hz simulation; feeding g.t here made stationary
-    // players thrash through poses every repaint.
-    const idle = Math.floor(performance.now() / 520 + (meta.phase || 0)) % 2;
-    const start = { qb: 0, wr: 2, rb: 4, db: 6 }[pose];
-    cell = [(start + idle) % 4, Math.floor((start + idle) / 4)];
-  } else if (pose === 'throw' || pose === 'catch' || pose === 'tackle') {
-    artBase = ACTION_BASE; artUniform = ACTION_UNIFORM;
-    const row = { throw: 0, catch: 1, tackle: 2 }[pose];
+    cell = [frame, 0];
+  } else if (pose === 'qb' || pose === 'qb_drop' || pose === 'throw') {
+    artBase = UNIFIED_QB_BASE; artUniform = UNIFIED_QB_UNIFORM;
+    frame = Math.max(0, Math.min(3, meta.actionFrame == null ? 0 : meta.actionFrame));
+    cell = [pose === 'qb' ? 0 : frame, pose === 'throw' ? 1 : 0];
+  } else if (pose === 'wr' || pose === 'rb') {
+    artBase = UNIFIED_ACTION_BASE; artUniform = UNIFIED_ACTION_UNIFORM;
+    cell = [0, 0];
+  } else if (pose === 'db') {
+    artBase = UNIFIED_BASE; artUniform = UNIFIED_UNIFORM;
+    cell = [0, 3];
+  } else if (pose === 'catch') {
+    artBase = UNIFIED_ACTION_BASE; artUniform = UNIFIED_ACTION_UNIFORM;
     frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
-    cell = [frame, row];
+    cell = [frame, 1];
+  } else if (pose === 'tackle' || pose === 'contact' || pose === 'truck') {
+    artBase = UNIFIED_ACTION_BASE; artUniform = UNIFIED_ACTION_UNIFORM;
+    frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame % 4, 2 + Math.floor(frame / 4)];
   } else {
     const key = pose === 'ready' ? 'presnap' : pose;
     cell = POSE_CELL[key] || POSE_CELL.run0;
@@ -965,12 +986,13 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const directional = pose === 'cut' || pose === 'catch' || pose === 'tackle' || pose === 'throw';
-  const flip = directional && (meta.dir || 0) < 0;
+  const flip = false;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
-  if ((ballPts || meta.ball) && pose !== 'catch' && pose !== 'throw' && pose !== 'tackle') {
+  const integratedBall = pose === 'carry' || pose === 'catch' || pose === 'throw'
+    || pose === 'tackle' || pose === 'contact' || pose === 'truck';
+  if ((ballPts || meta.ball) && !integratedBall) {
     const bx = base.x + ((meta.dir || 0) < 0 ? -7 : 7) * scale, by = base.y - 12 * scale;
     ctx.fillStyle = PAL.D; ctx.fillRect(bx - 2 * scale, by - 1.5 * scale, 4 * scale, 3 * scale);
     ctx.fillStyle = PAL.O; ctx.fillRect(bx - 1.4 * scale, by - scale, 2.8 * scale, 2 * scale);
@@ -1519,7 +1541,7 @@ const RUN_GAME = (() => {
         const pace = rb.burst > 0 ? rb.pace : 1;
         rb.y -= (rb.stagger > 0 ? A.FWD * 0.42 : A.FWD) * pace;
         rb.x += rb.vx; rb.vx *= 0.86;
-        rb.frame += rb.stagger > 0 ? 0.12 : 0.22;
+        rb.frame += rb.stagger > 0 ? 0.10 : 0.16;
       }
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       for (const d of g.defenders) {
@@ -1613,8 +1635,8 @@ const RUN_GAME = (() => {
         if (sy > -SPR && sy < VH + SPR)
           sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], Math.round(d.x) - HALF, sy - HALF,
             null, 0, null, { pose: d.stumble > 0 ? 'tackle' : g.state === 'presnap' ? 'db'
-              : d.motionAge < 16 ? 'accelerate' : 'run', frame: d.frame,
-              actionFrame: d.stumble > 0 ? Math.min(3, Math.floor((A.STUMBLE - d.stumble) / 5))
+              : d.motionAge < 16 ? 'accelerate' : 'defend', frame: d.frame,
+              actionFrame: d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
                 : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
       }
       // The rest of the huddle. They do not do anything on a carry, but the
@@ -1660,12 +1682,9 @@ const RUN_GAME = (() => {
           ctx.globalAlpha = 1;
         }
         const visualPose = g.visual && g.visual.frames > 0
-          ? (g.visual.kind === 'td' ? 'hero' : 'tackle')
-          : rb.cutFrames > 0 ? 'cut' : rb.motionAge < 16 ? 'accelerate' : 'run';
+          ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry';
         const actionFrame = g.visual && g.visual.kind !== 'td'
-          ? Math.min(3, Math.floor((24 - g.visual.frames) / 6))
-          : rb.cutFrames > 0 ? Math.min(3, Math.floor((12 - rb.cutFrames) / 3))
-          : Math.min(3, Math.floor(rb.motionAge / 4));
+          ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame, dir: visualPose === 'cut' ? rb.cutDir : 1, ball: true });
@@ -2088,7 +2107,7 @@ const PASS_GAME = (() => {
       const r = g.wr;
       const p = at(r, g.t);
       r.x = p.x; r.y = p.y;
-      r.frame += 0.2; r.hist.push({ x: r.x, y: r.y });
+      r.frame += 0.16; r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
       r.db.frame += 0.2;
       r.db.motionAge = (r.db.motionAge || 0) + 1;
@@ -2158,10 +2177,17 @@ const PASS_GAME = (() => {
     runAfterCatch() {
       const r = g.wr;
       g.yacFrames++;
+      // Give the four catch/tuck drawings a readable beat before pursuit and
+      // camera motion resume. Moving the world underneath the catch made the
+      // ball simply disappear into a cluster of bodies.
+      if ((r.catchFrames || 0) > 4) {
+        r.frame += 0.08;
+        return;
+      }
       r.y -= 0.92 + 0.56 * W.SPEED;
       r.x += Math.sign(VW / 2 - r.x) * 0.34;      // works back to the grass
       r.x = Math.max(10, Math.min(VW - 10, r.x));
-      r.frame += 0.24;
+      r.frame += 0.16;
       let near = Infinity;
       for (const d of [r.db, g.safety]) {
         const dx = r.x - d.x, dy = r.y - d.y, dist = Math.hypot(dx, dy) || 1;
@@ -2231,17 +2257,17 @@ const PASS_GAME = (() => {
       }
       sprite(DEF20[Math.floor(r.db.frame) % 3], Math.round(r.db.x) - HALF, Math.round(r.db.y - g.camY) - HALF,
         null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db'
-          : (r.db.motionAge || 0) < 16 ? 'accelerate' : 'run', frame: r.db.frame,
-          actionFrame: r.db.stumble > 0 ? 3 : Math.min(3, Math.floor((r.db.motionAge || 0) / 4)) });
+          : (r.db.motionAge || 0) < 16 ? 'accelerate' : 'defend', frame: r.db.frame,
+          actionFrame: r.db.stumble > 0 ? 7 : Math.min(3, Math.floor((r.db.motionAge || 0) / 4)) });
       if (g.safety)
         sprite(DEF20[Math.floor(g.safety.frame) % 3], Math.round(g.safety.x) - HALF, Math.round(g.safety.y - g.camY) - HALF,
           null, 0, null, { pose: g.state === 'ready' ? 'db'
-            : (g.safety.motionAge || 0) < 16 ? 'accelerate' : 'run', frame: g.safety.frame,
+            : (g.safety.motionAge || 0) < 16 ? 'accelerate' : 'defend', frame: g.safety.frame,
             actionFrame: Math.min(3, Math.floor((g.safety.motionAge || 0) / 4)) });
       if (g.state !== 'yac')
         for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], Math.round(d.x) - HALF, Math.round(d.y - g.camY) - HALF,
           null, 0, null, { pose: g.state === 'ready' ? 'db'
-            : (d.motionAge || 0) < 16 ? 'accelerate' : 'run', frame: d.frame,
+            : (d.motionAge || 0) < 16 ? 'accelerate' : 'defend', frame: d.frame,
             actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
       // Each of your two players wears his own club's colours.
       setJersey(g.wrTeam);
@@ -2263,9 +2289,9 @@ const PASS_GAME = (() => {
         const caught = (r.catchFrames || 0) > 0;
         if (caught) r.catchFrames--;
         const visualPose = caught ? 'catch' : (g.visual && g.visual.frames > 0
-          ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'run');
+          ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry');
         const actionFrame = caught ? Math.min(3, Math.floor((12 - r.catchFrames) / 3))
-          : g.visual && g.visual.kind !== 'td' ? Math.min(3, Math.floor((24 - g.visual.frames) / 6)) : 0;
+          : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
           { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir, ball: true });
@@ -2273,18 +2299,19 @@ const PASS_GAME = (() => {
         const nearBall = g.ball && Math.hypot(g.ball.x - r.x, g.ball.y - r.y) < 18;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
-        const movingPose = g.t < 16 ? 'accelerate' : cutting ? 'cut' : 'run';
+        const movingPose = g.t < 16 ? 'accelerate' : 'run';
         const movingFrame = g.t < 16 ? Math.min(3, Math.floor(g.t / 4))
           : cutting ? Math.min(3, Math.floor((g.t - (breakAt - 4)) / 4)) : 0;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
           { pose: nearBall ? 'catch' : g.state === 'ready' ? 'wr' : movingPose, frame: r.frame,
-            actionFrame: nearBall ? 1 : movingFrame, dir: cutting ? r.dir : 1 });
+            actionFrame: nearBall ? 1 : movingFrame, dir: 1 });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
         const throwAge = g.state === 'ball' ? Math.max(0, g.t - g.threw) : 0;
         sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF,
-          null, 0, null, { pose: g.state === 'ball' ? 'throw' : 'qb', actionFrame: Math.min(3, Math.floor(throwAge / 2)) });
+          null, 0, null, { pose: g.state === 'ball' ? 'throw' : g.state === 'live' ? 'qb_drop' : 'qb',
+            actionFrame: g.state === 'ball' ? Math.min(3, Math.floor(throwAge / 2)) : Math.min(3, Math.floor(g.t / 4)) });
         setJersey(g.backTeam || g.qbTeam);
         sprite(RUN20[0], Math.round(g.rb.x) - HALF, Math.round(g.rb.y - g.camY) - HALF,
           null, 0, null, { pose: 'rb', phase: 1 });
@@ -2731,6 +2758,10 @@ const DRIVE_GAME = (() => {
       cur.pickOption(inner);
     },
     step() {
+      if (g.overlayDelay > 0) {
+        if (--g.overlayDelay === 0) paintUI();
+        return;
+      }
       if (g.state !== 'play' || !cur) return;
       cur.step();
       if (!PLAYING.includes(cur.state)) this.settle();
@@ -2738,6 +2769,10 @@ const DRIVE_GAME = (() => {
     /** The engine reports in yards; the chains are ours. */
     settle() {
       if (g.kicking) { this.settleKick(); return; }
+      // Keep the result card out of the way long enough to see the registered
+      // contact/catch sequence finish. The field continues rendering while
+      // this short presentation hold counts down.
+      g.overlayDelay = 20;
       const o = cur.outcome();
       g.how = o.kind;
       g.gain = o.gain || 0;
@@ -2811,6 +2846,7 @@ const DRIVE_GAME = (() => {
     /** Whichever engine has the ball. */
     get engine() { return cur; },
     onUp(pt, dx, dy) {
+      if (g.overlayDelay > 0) return;
       if (g.state === 'td') { this.kickAt(XP_YD, 'xp'); return; }
       if (g.state === 'result') { this.callPlay(); return; }
       if (g.state === 'gameover') { this.reset(); g.state = 'select'; return; }
@@ -2834,6 +2870,7 @@ const DRIVE_GAME = (() => {
       };
     },
     overlay() {
+      if (g.overlayDelay > 0) return null;
       if (g.state === 'call' || g.state === 'play') return null;
       const t = g.toGo >= g.losYards ? 'GOAL' : g.toGo;
       const NAME = { td: 'Touchdown', tackled: 'Tackled', stuffed: 'Stood up',
