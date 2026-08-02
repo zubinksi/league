@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade73-timing';
+const BUILD = 'arcade74-depth';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -788,23 +788,26 @@ const QB_DROP = 26;                     // and how deep the passer sets up
 /** The grass, the stripes, the line and the chains — drawn once for everyone. */
 function drawField(camY, los, marker) {
   yardLines(camY, WORLD_H, DRIVE_YARDS + 10, YARD);
-  const gy = Math.round(EZ - camY);
+  const goalRaw = EZ - camY, goalP = projectPoint(VW / 2, goalRaw);
+  const gy = Math.round(goalP.y);
   if (gy > -WORLD_H && gy < VH + 40) {
-    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(0, gy, VW, 1);
-    ctx.fillStyle = 'rgba(255,255,255,0.030)';
-    ctx.fillRect(0, Math.max(0, gy - EZ), VW, Math.min(EZ, gy));
+    const l = projectPoint(0, goalRaw), r = projectPoint(VW, goalRaw);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'; ctx.fillRect(l.x, gy, r.x - l.x, 1);
+    const endTop = projectPoint(VW / 2, goalRaw - EZ).y;
+    ctx.fillStyle = 'rgba(232,197,97,0.035)'; ctx.fillRect(l.x, Math.max(0, endTop), r.x - l.x, Math.max(0, gy - endTop));
   }
   if (marker && marker > EZ) {
-    const my = Math.round(marker - camY);
+    const raw = marker - camY, p = projectPoint(VW / 2, raw), my = Math.round(p.y);
     if (my > -2 && my < VH + 2) {
       ctx.fillStyle = 'rgba(232,197,97,0.72)';
-      ctx.fillRect(0, my, VW, 1);
+      const l = projectPoint(0, raw), r = projectPoint(VW, raw); ctx.fillRect(l.x, my, r.x - l.x, 1);
     }
   }
-  const ly = Math.round(los - camY);
+  const losRaw = los - camY, losP = projectPoint(VW / 2, losRaw), ly = Math.round(losP.y);
   if (ly > -2 && ly < VH + 2) {
     ctx.fillStyle = 'rgba(255,255,255,0.20)';
-    for (let x = 0; x < VW; x += 6) ctx.fillRect(x, ly, 3, 1);
+    const l = projectPoint(0, losRaw), r = projectPoint(VW, losRaw);
+    for (let x = l.x; x < r.x; x += 6 * losP.scale) ctx.fillRect(x, ly, 3 * losP.scale, 1);
   }
   return ly;
 }
@@ -813,6 +816,35 @@ function drawField(camY, los, marker) {
 const canvas = document.getElementById('c');
 const stage = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
+/**
+ * A 2.5D camera over the existing simulation. Physics stay in the flat,
+ * deterministic field coordinates; only the final pixels are projected.
+ * Near players grow, distant players tighten toward the vanishing point, and
+ * input is unprojected before it reaches the game.
+ */
+const CAMERA = {
+  enabled: true,
+  horizon: 0.08,
+  depth: 1.28,
+  nearWidth: 1,
+  farWidth: 0.58,
+};
+function projectPoint(x, y) {
+  if (!CAMERA.enabled) return { x, y, scale: 1 };
+  const raw = y / VH, t = Math.max(0, Math.min(1, raw));
+  const py = raw < 0 ? VH * CAMERA.horizon + y * CAMERA.farWidth
+    : raw > 1 ? VH + (y - VH) : VH * (CAMERA.horizon + (1 - CAMERA.horizon) * Math.pow(t, CAMERA.depth));
+  const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
+  return { x: VW / 2 + (x - VW / 2) * width, y: py, scale: 0.66 + 0.34 * t };
+}
+function unprojectPoint(x, y) {
+  if (!CAMERA.enabled) return { x, y };
+  const normalized = (y / VH - CAMERA.horizon) / (1 - CAMERA.horizon);
+  const t = normalized < 0 ? normalized * (1 - CAMERA.horizon) / CAMERA.farWidth
+    : Math.pow(Math.max(0, Math.min(1, normalized)), 1 / CAMERA.depth);
+  const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
+  return { x: VW / 2 + (x - VW / 2) / width, y: t * VH };
+}
 // Nav, readout, footer and the gaps between them. The readout is a card now
 // rather than a line of text, which is most of this number.
 const CHROME = 152;
@@ -834,24 +866,37 @@ window.addEventListener('resize', fit);
 fit();
 
 function sprite(rows, px, py, ballPts, ballDx, tint) {
+  const h = rows.length, w = rows[0] ? rows[0].length : 20;
+  const base = projectPoint(px + w / 2, py + h);
+  const s = base.scale;
+  px = base.x - w * s / 2;
+  py = base.y - h * s;
+  if (!tint && ctx.globalAlpha > 0.9) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,0.48)';
+    ctx.beginPath();
+    ctx.ellipse(base.x, base.y - 1, w * s * 0.34, Math.max(1, 2.3 * s), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   for (let y = 0; y < rows.length; y++) {
     const row = rows[y];
     for (let x = 0; x < row.length; x++) {
       const c = PAL[row[x]];
       if (!c) continue;
-      ctx.fillStyle = tint || c; ctx.fillRect(px + x, py + y, 1, 1);
+      ctx.fillStyle = tint || c; ctx.fillRect(px + x * s, py + y * s, Math.max(.72, s), Math.max(.72, s));
     }
   }
   if (ballPts) {
     // Dark halo first: gold on a gold-ish jersey would otherwise disappear.
     ctx.fillStyle = PAL.D;
     for (const [y, x] of ballPts) {
-      const bx = px + x + (ballDx || 0), by = py + y;
-      ctx.fillRect(bx - 1, by, 1, 1); ctx.fillRect(bx + 1, by, 1, 1);
-      ctx.fillRect(bx, by - 1, 1, 1); ctx.fillRect(bx, by + 1, 1, 1);
+      const bx = px + (x + (ballDx || 0)) * s, by = py + y * s;
+      ctx.fillRect(bx - s, by, s, s); ctx.fillRect(bx + s, by, s, s);
+      ctx.fillRect(bx, by - s, s, s); ctx.fillRect(bx, by + s, s, s);
     }
     ctx.fillStyle = PAL.O;
-    for (const [y, x] of ballPts) ctx.fillRect(px + x + (ballDx || 0), py + y, 1, 1);
+    for (const [y, x] of ballPts) ctx.fillRect(px + (x + (ballDx || 0)) * s, py + y * s, s, s);
   }
 }
 /**
@@ -908,8 +953,9 @@ const FX = {
     for (const p of FX.dust) {
       const sy = Math.round(p.y - camY);
       if (sy < -1 || sy > VH + 1) continue;
+      const at = projectPoint(p.x, sy);
       ctx.globalAlpha = Math.min(0.44, p.life / 30);
-      ctx.fillRect(Math.round(p.x), sy, 1, 1);
+      ctx.fillRect(Math.round(at.x), Math.round(at.y), Math.max(.75, at.scale), Math.max(.75, at.scale));
     }
     ctx.globalAlpha = 1;
   },
@@ -931,18 +977,32 @@ function rimmed(rows, px, py, ballPts, ballDx, glow) {
 }
 
 function yardLines(camY, worldH, yards, yard) {
-  ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
+  CAMERA.enabled = true;
+  const turf = ctx.createLinearGradient(0, 0, 0, VH);
+  turf.addColorStop(0, '#080b0b'); turf.addColorStop(1, '#10130f');
+  ctx.fillStyle = turf; ctx.fillRect(0, 0, VW, VH);
+  // Sideline wedges and alternating turf bands give the eye enough depth to
+  // read the projection before anything moves.
+  const topL = projectPoint(0, 0), topR = projectPoint(VW, 0);
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(topL.x, topL.y); ctx.lineTo(2, VH); ctx.lineTo(0, VH); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(VW, 0); ctx.lineTo(topR.x, topR.y); ctx.lineTo(VW - 2, VH); ctx.lineTo(VW, VH); ctx.fill();
   for (let i = 0; i <= yards; i++) {
-    const sy = Math.round(worldH - i * yard - camY);
+    const rawY = worldH - i * yard - camY;
+    const p = projectPoint(VW / 2, rawY);
+    const sy = Math.round(p.y);
     if (sy < -2 || sy > VH + 2) continue;
-    if (i % 5 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(0, sy, VW, 1); }
+    const half = (VW / 2) * (CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(Math.max(0, Math.min(1, rawY / VH)), .72));
+    if (i % 5 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(VW / 2 - half, sy, half * 2, 1); }
     else {
       ctx.fillStyle = 'rgba(255,255,255,0.06)';
-      ctx.fillRect(VW / 2 - 14, sy, 5, 1); ctx.fillRect(VW / 2 + 9, sy, 5, 1);
+      const hash = 14 * p.scale;
+      ctx.fillRect(VW / 2 - hash, sy, 5 * p.scale, 1); ctx.fillRect(VW / 2 + hash - 5 * p.scale, sy, 5 * p.scale, 1);
     }
   }
   ctx.fillStyle = 'rgba(255,255,255,0.14)';
-  ctx.fillRect(2, 0, 1, VH); ctx.fillRect(VW - 3, 0, 1, VH);
+  ctx.beginPath(); ctx.moveTo(topL.x, topL.y); ctx.lineTo(2, VH); ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(topR.x, topR.y); ctx.lineTo(VW - 2, VH); ctx.stroke();
 }
 
 // ---- the defense ---------------------------------------------------------
@@ -1338,10 +1398,11 @@ const RUN_GAME = (() => {
       // lanes, they do not grade them — reading the bodies is the game.
       if (g.state === 'presnap' && ly > -2 && ly < VH + 2) {
         for (const l of LANES) {
+          const lp = projectPoint(l.cx, g.los - g.camY);
           ctx.fillStyle = 'rgba(255,255,255,0.55)';
-          ctx.fillRect(l.cx - 3, ly - 9, 7, 1);
+          ctx.fillRect(lp.x - 3 * lp.scale, ly - 7 * lp.scale, 6 * lp.scale, 1);
           ctx.fillStyle = 'rgba(255,255,255,0.30)';
-          ctx.fillRect(l.cx, ly - 8, 1, 7);
+          ctx.fillRect(lp.x, ly - 6 * lp.scale, 1, 5 * lp.scale);
         }
       }
       for (const d of g.defenders) {
@@ -2098,6 +2159,7 @@ const KICK_GAME = (() => {
     },
     render() {
       tick++;
+      CAMERA.enabled = false;
       ctx.fillStyle = '#08090b'; ctx.fillRect(0, 0, VW, VH);
       const groundY = VH - 34;
       const postY = groundY - g.dist * PPY;
@@ -3024,7 +3086,8 @@ let pStart = null;
 function logical(e) {
   const r = canvas.getBoundingClientRect();
   const camY = active.g && active.g.camY ? active.g.camY : 0;
-  return { x: ((e.clientX - r.left) / r.width) * VW, y: ((e.clientY - r.top) / r.height) * VH + camY };
+  const flat = unprojectPoint(((e.clientX - r.left) / r.width) * VW, ((e.clientY - r.top) / r.height) * VH);
+  return { x: flat.x, y: flat.y + camY };
 }
 // Any touch anywhere is the gesture the audio context needs; it is built on
 // the first one and never at load.
@@ -3093,6 +3156,27 @@ window.addEventListener('keydown', (e) => {
 /** Terminal states differ per game: the kick run ends on the first miss. */
 const isOver = (g) => g.state === 'gameover' || (g.key === 'kick' && g.state === 'miss');
 
+const CINE = {
+  flare: 0,
+  trigger(state) { if (state === 'td' || state === 'good') this.flare = 70; else if (state === 'gameover') this.flare = 38; },
+  draw() {
+    if (this.flare > 0) this.flare--;
+    ctx.save();
+    // A quiet lens vignette makes the logical 180px field read like a camera,
+    // not a UI panel. Scoring briefly warms it into the app's gold.
+    const edge = ctx.createRadialGradient(VW / 2, VH * .55, VH * .12, VW / 2, VH * .55, VH * .72);
+    edge.addColorStop(0, 'rgba(0,0,0,0)'); edge.addColorStop(1, 'rgba(0,0,0,.42)');
+    ctx.fillStyle = edge; ctx.fillRect(0, 0, VW, VH);
+    if (this.flare > 0) {
+      const a = Math.sin((this.flare / 70) * Math.PI) * .22;
+      const glow = ctx.createRadialGradient(VW / 2, VH * .48, 2, VW / 2, VH * .48, VW * .72);
+      glow.addColorStop(0, `rgba(232,197,97,${a})`); glow.addColorStop(1, 'rgba(232,197,97,0)');
+      ctx.fillStyle = glow; ctx.fillRect(0, 0, VW, VH);
+    }
+    ctx.restore();
+  },
+};
+
 let reported = '';
 function reportScore() {
   if (!active.score || !active.g) return;
@@ -3128,13 +3212,13 @@ function frame(now) {
     else if (active.state !== 'select') { active.step(); FX.step(); }
     acc -= 1000 / 60;
   }
-  if (before !== active.state) paintUI();
+  if (before !== active.state) { CINE.trigger(active.state); paintUI(); }
   // Checked every frame rather than only on the transition into it. reportScore
   // already refuses to send the same finish twice, and a missed transition
   // meant a banked run silently never reaching the host — the worst thing this
   // can get wrong.
   if (isOver(active)) reportScore();
-  if (active.state !== 'select' && active.g) active.render();
+  if (active.state !== 'select' && active.g) { active.render(); CINE.draw(); }
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
