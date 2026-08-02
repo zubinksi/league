@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade94-readability';
+const BUILD = 'arcade95-continuity';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1082,7 +1082,13 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     || pose.startsWith('cut_') || pose.startsWith('rb_'));
   // The back is rendered at the extreme near edge of the projected field.
   // Compensate that camera-depth magnification after sharing the QB body box.
-  const sourceScale = pose === 'pass_back' ? (meta.actorScale == null ? .72 : meta.actorScale) : 1;
+  // A canonical screen scale is useful for pocket players: unlike a route
+  // runner they remain part of one backfield tableau while the camera moves.
+  // Dividing by projection here prevents their body height changing with the
+  // ready -> live camera transition.
+  const sourceScale = meta.canonicalScale == null
+    ? (pose === 'pass_back' ? (meta.actorScale == null ? .72 : meta.actorScale) : 1)
+    : meta.canonicalScale / Math.max(.01, scale);
   // Keep every DB state on the receiver-width body standard; extended limbs
   // can communicate the action without inflating his torso and shoulders.
   const sourceWidth = pose === 'db_pursuit' ? .95 : pose.startsWith('db_') ? .90 : 1;
@@ -1821,12 +1827,13 @@ const RUN_GAME = (() => {
         }
         ctx.globalAlpha = 1;
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF + 1, BALL20, 0, 0.6,
-          { pose: 'rb_contact', frame: rb.frame, dir: Math.sign(rb.vx), ball: true, stable: true });
+          { pose: 'rb_contact', frame: rb.frame, dir: Math.sign(rb.vx), ball: true,
+            stable: true, canonicalScale: .84 });
       } else if (rb.spin > 0) {
         const s = Math.min(7, Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 8)));
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: 'spin', frame: rb.frame, actionFrame: s,
-            dir: rb.spinDir, ball: true, stable: true });
+            dir: rb.spinDir, ball: true, stable: true, canonicalScale: .84 });
       } else {
         // The trail is the ground he has already covered, so it lies behind
         // him — downfield is up, which puts each image lower than the last.
@@ -1849,7 +1856,10 @@ const RUN_GAME = (() => {
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame,
-            dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true });
+            dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true,
+            // rb_ready fills much more of its atlas cell than the moving rig.
+            // Normalize occupied pixels, not the transparent source box.
+            canonicalScale: visualPose === 'rb_ready' ? .60 : .84 });
       }
       FX.draw(g.camY);
     },
@@ -2145,6 +2155,7 @@ const PASS_GAME = (() => {
       g.wr.db.animDir = 1;
       g.wr.db.turnAge = -1;
       g.wr.db.turnDir = 1;
+      g.wr.db.drawTrail = 2;
       // Presentation lanes are assigned once with the formation and never
       // swapped mid-play. That keeps help defenders from magnetically jumping
       // sides when they enter an overlap threshold.
@@ -2154,6 +2165,7 @@ const PASS_GAME = (() => {
         d.motionAge = 0; d.animDir = 1;
         d.laneX = (i ? 1 : -1) * 5; d.laneY = 3 + i * 2;
         d.drawX = d.x + d.laneX; d.drawY = d.y + d.laneY;
+        d.visualAlpha = 1; d.occluded = false;
       }
       if (g.safety) {
         g.safety.motionAge = 0; g.safety.animDir = 1;
@@ -2161,12 +2173,13 @@ const PASS_GAME = (() => {
         g.safety.laneY = -8;
         g.safety.drawX = g.safety.x + g.safety.laneX;
         g.safety.drawY = g.safety.y + g.safety.laneY;
+        g.safety.visualAlpha = 1; g.safety.occluded = false;
       }
       g.qb = off.qb;
       // Keep the two backfield silhouettes from stacking into one apparently
       // oversized body before the snap. Their football positions are still a
       // conventional offset alignment; the extra presentation width is small.
-      g.rb = { x: VW / 2 - 28, y: g.los + BACKFIELD, frame: 0, visualScale: .90 };
+      g.rb = { x: VW / 2 - 28, y: g.los + BACKFIELD, frame: 0 };
       g.ball = null; g.t = 0; g.edge = 0; g.flightClock = 0;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
@@ -2500,12 +2513,13 @@ const PASS_GAME = (() => {
       };
       const wrScreen = actorScreen(r.x, r.y);
       const laneSide = r.db.laneSide || 1;
-      const presenting = dbContesting || (g.state === 'yac' && (r.catchFrames || 0) > 0);
-      const closeCoverage = dbToWr < 25;
-      const screenTrail = g.state === 'ready' ? 2 : presenting ? 10 : closeCoverage ? 8 : 5;
+      // One anchor, eased once at the snap. Catch proximity no longer changes
+      // the offset, so the corner cannot appear magnetized toward a new lane.
+      const trailTarget = g.state === 'ready' ? 2 : 8;
+      r.db.drawTrail += (trailTarget - r.db.drawTrail) * .16;
       const dbPerspective = Math.max(.62, actorScreen(r.db.x, r.db.y).scale);
-      const dbDrawX = r.db.x + laneSide * screenTrail / dbPerspective;
-      const dbDrawY = r.db.y + (g.state === 'ready' ? 0 : presenting ? 4 : 2);
+      const dbDrawX = r.db.x + laneSide * r.db.drawTrail / dbPerspective;
+      const dbDrawY = r.db.y + (g.state === 'ready' ? 0 : 2);
       const dbScreen = actorScreen(dbDrawX, dbDrawY);
 
       // Secondary defenders render first on lanes assigned at the snap. More
@@ -2518,12 +2532,22 @@ const PASS_GAME = (() => {
         s.drawX = s.drawX == null ? s.x : s.drawX + (targetX - s.drawX) * .34;
         s.drawY = s.drawY == null ? s.y : s.drawY + (targetY - s.drawY) * .34;
         const sp = actorScreen(s.drawX, s.drawY);
-        const hidden = g.state !== 'ready'
-          && (bodiesOverlap(sp, wrScreen, 1.5) || bodiesOverlap(sp, dbScreen, 1.5));
-        if (!hidden) {
+        const intersects = bodiesOverlap(sp, wrScreen, 1.5) || bodiesOverlap(sp, dbScreen, 1.5);
+        const approaching = bodiesOverlap(sp, wrScreen, 8) || bodiesOverlap(sp, dbScreen, 8);
+        if (g.state === 'ready') { s.occluded = false; s.visualAlpha = 1; }
+        else {
+          if (!s.occluded && intersects) s.occluded = true;
+          else if (s.occluded && !approaching) s.occluded = false;
           const gap = Math.min(Math.hypot(sp.x - wrScreen.x, sp.y - wrScreen.y),
             Math.hypot(sp.x - dbScreen.x, sp.y - dbScreen.y));
-          ctx.globalAlpha = g.state === 'ready' ? 1 : Math.max(.22, Math.min(1, (gap - 13) / 14));
+          const alphaTarget = s.occluded || approaching ? 0 : Math.max(.28, Math.min(1, (gap - 17) / 15));
+          s.visualAlpha += (alphaTarget - s.visualAlpha) * (alphaTarget < s.visualAlpha ? .32 : .14);
+        }
+        // Intersections are never drawn, even during the fade. The early fade
+        // normally reaches zero first; this final guard guarantees no limb can
+        // leak through under a large single-frame movement.
+        if (!intersects && s.visualAlpha > .025) {
+          ctx.globalAlpha = s.visualAlpha;
           sprite(DEF20[Math.floor(s.frame) % 3], s.drawX - HALF, s.drawY - g.camY - HALF,
             null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: s.frame,
               dir: s.animDir, stable: true,
@@ -2538,12 +2562,19 @@ const PASS_GAME = (() => {
           d.drawX = d.drawX == null ? d.x : d.drawX + (targetX - d.drawX) * .38;
           d.drawY = d.drawY == null ? d.y : d.drawY + (targetY - d.drawY) * .38;
           const dp = actorScreen(d.drawX, d.drawY);
-          const hidden = g.state !== 'ready'
-            && (bodiesOverlap(dp, wrScreen, 1.5) || bodiesOverlap(dp, dbScreen, 1.5));
-          if (!hidden) {
+          const intersects = bodiesOverlap(dp, wrScreen, 1.5) || bodiesOverlap(dp, dbScreen, 1.5);
+          const approaching = bodiesOverlap(dp, wrScreen, 8) || bodiesOverlap(dp, dbScreen, 8);
+          if (g.state === 'ready') { d.occluded = false; d.visualAlpha = 1; }
+          else {
+            if (!d.occluded && intersects) d.occluded = true;
+            else if (d.occluded && !approaching) d.occluded = false;
             const gap = Math.min(Math.hypot(dp.x - wrScreen.x, dp.y - wrScreen.y),
               Math.hypot(dp.x - dbScreen.x, dp.y - dbScreen.y));
-            ctx.globalAlpha = g.state === 'ready' ? 1 : Math.max(.22, Math.min(1, (gap - 13) / 14));
+            const alphaTarget = d.occluded || approaching ? 0 : Math.max(.28, Math.min(1, (gap - 17) / 15));
+            d.visualAlpha += (alphaTarget - d.visualAlpha) * (alphaTarget < d.visualAlpha ? .32 : .14);
+          }
+          if (!intersects && d.visualAlpha > .025) {
+            ctx.globalAlpha = d.visualAlpha;
             sprite(DEF20[Math.floor(d.frame) % 3], d.drawX - HALF, d.drawY - g.camY - HALF,
               null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame, stable: true,
                 actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
@@ -2607,25 +2638,21 @@ const PASS_GAME = (() => {
         const throwAge = g.state === 'ball' ? Math.max(0, g.t - g.threw) : 0;
         sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF,
           null, 0, null, { pose: g.state === 'ball' ? 'throw' : g.state === 'live' ? 'qb_drop' : 'qb',
+            canonicalScale: .84,
             actionFrame: g.state === 'ball' ? Math.min(3, Math.floor(throwAge / 2)) : Math.min(3, Math.floor(g.t / 4)) });
         setJersey(g.backTeam || g.qbTeam);
         // One registered pass-back body before and after the snap. The old
         // generic RB drawing used a different occupied box, visibly shrinking
         // as the play switched states.
-        // The back and passer share one atlas, so matching their projected
-        // depth scales produces an exact body-size standard before and after
-        // the camera begins following the route. Ease tiny camera corrections
-        // rather than switching scale at the snap.
+        // The back and passer share one atlas and one canonical screen scale.
+        // There is no ready/live scale branch left to pop at the snap.
         // Do not let the route-follow camera crop the back into a helmet or
         // torso fragment at the lower edge; that read as a shrinking player.
         const rbRawY = Math.min(VH - 12, g.rb.y - g.camY);
-        const qbDepth = projectPoint(g.qb.x, g.qb.y - g.camY + HALF).scale;
-        const rbDepth = projectPoint(g.rb.x, rbRawY + HALF).scale;
-        const rbScaleTarget = Math.max(.82, Math.min(1, qbDepth / Math.max(.01, rbDepth)));
-        g.rb.visualScale += (rbScaleTarget - g.rb.visualScale) * .18;
         sprite(RUN20[0], g.rb.x - HALF, rbRawY - HALF,
           null, 0, null, { pose: 'pass_back', frame: 0, stable: true,
-            actorScale: g.rb.visualScale });
+            // pass_back is a compact stance inside the same 48x64 cell.
+            canonicalScale: 1.0 });
       }
       if (g.ball) {
         const bp = projectPoint(g.ball.x, g.ball.y - g.camY);
