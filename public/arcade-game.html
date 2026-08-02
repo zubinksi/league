@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade101-contact-resolution';
+const BUILD = 'arcade102-catch-pairing';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2313,6 +2313,7 @@ const PASS_GAME = (() => {
       // conventional offset alignment; the extra presentation width is small.
       g.rb = { x: VW / 2 - 28, y: g.los + BACKFIELD, frame: 0 };
       g.ball = null; g.t = 0; g.edge = 0; g.flightClock = 0;
+      g.catchPair = null;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
       g.state = 'ready';
@@ -2537,11 +2538,36 @@ const PASS_GAME = (() => {
     runAfterCatch() {
       const r = g.wr;
       g.yacFrames++;
-      // Give the four catch/tuck drawings a readable beat before pursuit and
-      // camera motion resume. Moving the world underneath the catch made the
-      // ball simply disappear into a cluster of bodies.
-      if ((r.catchFrames || 0) > 8) {
+      // The catch is one paired simulation state, not two independently drawn
+      // bodies. Hold the receiver at the football and ease the corner onto a
+      // stable contest shoulder before either player resumes pursuit.
+      if (g.catchPair && (r.catchFrames || 0) > 0) {
+        const pair = g.catchPair;
+        pair.age++;
+        r.catchFrames--;
+        if (pair.contested) {
+          const targetX = r.x + pair.side * 15;
+          const targetY = r.y + 3;
+          r.db.x += (targetX - r.db.x) * .42;
+          r.db.y += (targetY - r.db.y) * .42;
+          r.db.frame += .09;
+        }
+        // Help can close after the tuck, but cannot enter the featured catch
+        // pocket and turn two readable players into one many-limbed shape.
+        if (g.safety) {
+          const sx = g.safety.x - r.x, sy = g.safety.y - r.y;
+          const sd = Math.hypot(sx, sy) || 1;
+          if (sd < 27) {
+            g.safety.x = r.x + sx / sd * 27;
+            g.safety.y = r.y + sy / sd * 27;
+          }
+        }
         r.frame += 0.08;
+        if (r.catchFrames <= 0) {
+          g.catchPair = null;
+          r.db.contestFrames = 0;
+          r.db.turnAge = 18;
+        }
         return;
       }
       r.y -= 0.92 + 0.56 * W.SPEED;
@@ -2597,11 +2623,15 @@ const PASS_GAME = (() => {
       // trivial. The yards come from the separation the route already earned,
       // so a wide-open catch breaks free and a contested one dies on contact.
       rec.x = b.x; rec.y = b.y;
-      if (dbD < 20) {
-        const dx = rec.db.x - rec.x, dy = rec.db.y - rec.y, m = Math.hypot(dx, dy) || 1;
-        rec.db.x = rec.x + dx / m * 13; rec.db.y = rec.y + dy / m * 13;
+      const catchSide = Math.sign(rec.db.x - rec.x) || rec.db.laneSide || 1;
+      g.catchPair = { side: catchSide, age: 0, contested: dbD < 28 };
+      // Seed the DB on the same side he approached from. The simulation then
+      // eases him to the exact shoulder instead of changing sides at contact.
+      if (dbD < 24) {
+        rec.db.x = rec.x + catchSide * Math.max(11, Math.abs(rec.db.x - rec.x));
+        rec.db.y = rec.y + 3;
       }
-      rec.catchFrames = 12;
+      rec.catchFrames = 14;
       g.yacFrames = 0;
       g.state = 'yac';
     },
@@ -2650,8 +2680,11 @@ const PASS_GAME = (() => {
       const trailTarget = g.state === 'ready' ? 2 : 8;
       r.db.drawTrail += (trailTarget - r.db.drawTrail) * .16;
       const dbPerspective = Math.max(.62, actorScreen(r.db.x, r.db.y).scale);
-      const dbDrawX = r.db.x + laneSide * r.db.drawTrail / dbPerspective;
-      const dbDrawY = r.db.y + (g.state === 'ready' ? 0 : 2);
+      const pairedCatch = g.state === 'yac' && !!g.catchPair && g.catchPair.contested;
+      const dbDrawX = pairedCatch
+        ? r.x + g.catchPair.side * 15 / dbPerspective
+        : r.db.x + laneSide * r.db.drawTrail / dbPerspective;
+      const dbDrawY = pairedCatch ? r.y + 3 : r.db.y + (g.state === 'ready' ? 0 : 2);
       const dbScreen = actorScreen(dbDrawX, dbDrawY);
 
       // Secondary defenders render first on lanes assigned at the snap. More
@@ -2742,10 +2775,9 @@ const PASS_GAME = (() => {
         // separate screen-space square after projection made the caught ball
         // drift away from the receiver's hip.
         const caught = (r.catchFrames || 0) > 0;
-        if (caught) r.catchFrames--;
         const visualPose = caught ? 'wr_catch' : (g.visual && g.visual.frames > 0
           ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry');
-        const actionFrame = caught ? Math.min(7, 4 + Math.floor((12 - r.catchFrames) / 3))
+        const actionFrame = caught ? Math.min(7, 3 + Math.floor(((g.catchPair && g.catchPair.age) || 0) / 3))
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
