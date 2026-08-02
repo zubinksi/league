@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade100-carrier-actions';
+const BUILD = 'arcade101-contact-resolution';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1539,6 +1539,69 @@ const RUN_GAME = (() => {
   ];
 
   let A = {}, g = null;
+  function beginContact(kind, defender) {
+    const rb = g.rb;
+    const dx = defender.x - rb.x, dy = defender.y - rb.y;
+    const len = Math.hypot(dx, dy) || 1;
+    g.contact = {
+      kind, defender, age: 0,
+      duration: kind === 'tackled' ? 24 : kind === 'stuffed' ? 21 : 17,
+      rbX: rb.x, rbY: rb.y,
+      nx: dx / len, ny: dy / len,
+    };
+    defender.primaryContact = true;
+    rb.vx = 0;
+    rb.spin = 0;
+    rb.truck = 0;
+    rb.cutFrames = 0;
+  }
+  function advanceContact() {
+    const c = g.contact, rb = g.rb, d = c.defender;
+    c.age++;
+    const entry = Math.min(1, c.age / 5);
+    const eased = entry * entry * (3 - 2 * entry);
+    const breakaway = c.kind === 'broken' || c.kind === 'truck_broken';
+    // Five frames to close the final gap, then a short readable compression.
+    // Keeping both bodies on one authored axis prevents the old overlap/snap.
+    rb.x = c.rbX - c.nx * 1.5 * eased;
+    rb.y = c.rbY - c.ny * 1.5 * eased - (breakaway && c.age > 8 ? (c.age - 8) * .28 : 0);
+    d.x = c.rbX + c.nx * (12 - 4 * eased);
+    d.y = c.rbY + c.ny * (12 - 4 * eased);
+    d.frame += .12;
+
+    // The primary collision owns its pocket. Help can close after the play
+    // survives, but cannot merge into the paired animation or sprout limbs.
+    for (const other of g.defenders) {
+      if (other === d || other.stumble > 0) continue;
+      const ox = other.x - c.rbX, oy = other.y - c.rbY;
+      const od = Math.hypot(ox, oy) || 1;
+      const keepOut = 23;
+      if (od < keepOut) {
+        other.x = c.rbX + ox / od * keepOut;
+        other.y = c.rbY + oy / od * keepOut;
+      }
+      other.frame += .06 * (other.strideRate || 1);
+    }
+    if (c.age === 6) FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2,
+      c.kind === 'stuffed' || c.kind === 'truck_broken' ? 2.4 : 1.9);
+    const want = eyeAt(rb.y, PLAY_EYE);
+    g.camY += (want - g.camY) * .16;
+    if (c.age < c.duration) return;
+
+    d.primaryContact = false;
+    g.contact = null;
+    if (c.kind === 'broken') {
+      rb.breakCd = 80; rb.stagger = 13; rb.evade = 7; d.stumble = A.STUMBLE;
+      FX.kick((rb.x + d.x) / 2, (rb.y + d.y) / 2, 7, 1.1);
+      return;
+    }
+    if (c.kind === 'truck_broken') {
+      d.stumble = A.STUMBLE * 1.5; rb.truck = 0; rb.stagger = 18; rb.evade = 6;
+      return;
+    }
+    d.stumble = A.STUMBLE;
+    RUN_GAME.end(c.kind);
+  }
   function setAttrs(p) {
     A = {
       FWD: 0.82 + 0.24 * p.a, BREAK: 0.05 + 0.30 * p.b,
@@ -1608,7 +1671,7 @@ const RUN_GAME = (() => {
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
       g.startY = g.los;
-      g.lane = null; g.flow = 1; g.truckLane = 1;
+      g.lane = null; g.flow = 1; g.truckLane = 1; g.contact = null;
       FX.reset();
       g.camY = presnapAt(g.los); g.camEase = CAM_EASE;
       // The front is set but frozen: this is where you get to look at it.
@@ -1689,6 +1752,7 @@ const RUN_GAME = (() => {
       if (rb.breakCd > 0) rb.breakCd--;
       if (rb.stagger > 0) rb.stagger--;
       if (rb.truckCd > 0) rb.truckCd--;
+      if (g.contact) { advanceContact(); return; }
       if (rb.cutFrames > 0 && rb.spin <= 0 && rb.truck <= 0) {
         rb.cutAge++;
         const blend = Math.min(1, rb.cutAge / 6);
@@ -1803,24 +1867,14 @@ const RUN_GAME = (() => {
             // it outside has left his best tool at the hash — which is what
             // makes the gap a real choice for him and not just a formality.
             if (g.roll() < A.TRUCK * g.truckLane * (0.45 + 0.55 * square)) {
-              d.stumble = A.STUMBLE * 1.5;
-              rb.truck = 0; rb.stagger = 26;
-              // You ran a man over. Of everything that happens out here this
-              // is the one that has earned two frames of nothing.
-              FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2, 2.6);
-              continue;
+              beginContact('truck_broken', d); return;
             }
-            FX.hit((rb.x + d.x) / 2, (rb.y + d.y) / 2, 2.2);
-            this.end('stuffed'); return;
+            beginContact('stuffed', d); return;
           }
           if (rb.breakCd <= 0 && g.roll() < A.BREAK) {
-            rb.breakCd = 80; rb.stagger = 22; d.stumble = A.STUMBLE;
-            // Broken, not stopped: turf but no hold, or every play would stutter.
-            FX.kick((rb.x + d.x) / 2, (rb.y + d.y) / 2, 7, 1.1);
-            continue;
+            beginContact('broken', d); return;
           }
-          FX.kick((rb.x + d.x) / 2, (rb.y + d.y) / 2, 9, 1.2);
-          this.end('tackled'); return;
+          beginContact('tackled', d); return;
         }
       }
       if (rb.y <= EZ) { this.end('td'); return; }
@@ -1851,17 +1905,20 @@ const RUN_GAME = (() => {
         const sy = d.y - g.camY;
         if (sy > -SPR && sy < VH + SPR) {
           const prone = d.stumble > 0, recovering = d.recover > 0;
+          const primary = g.contact && g.contact.defender === d;
           ctx.save();
           if (prone && d.stumble < 10) ctx.globalAlpha *= d.stumble / 10;
           if (recovering) ctx.globalAlpha *= 1 - d.recover / 10;
           const turningToPursue = g.state !== 'presnap' && d.pursuing
             && (d.turnAge || 0) < (d.turnLen || 9);
           sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], d.x - HALF, sy - HALF,
-            null, 0, null, { pose: prone ? 'tackle' : recovering ? 'accelerate'
+            null, 0, null, { pose: primary ? (g.contact.age < 9 ? 'contact' : 'tackle')
+              : prone ? 'tackle' : recovering ? 'accelerate'
               : g.state === 'presnap' ? 'db' : !d.pursuing ? 'db_backpedal'
               : turningToPursue ? 'db_turn' : 'db_pursuit', frame: d.frame,
               dir: d.animDir, facingAway: !!d.pursuitFacingAway, stable: !prone,
-              actionFrame: d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
+              actionFrame: primary ? Math.min(7, Math.floor(g.contact.age / 3))
+                : d.stumble > 0 ? Math.min(7, Math.floor((A.STUMBLE - d.stumble) / 3))
                 : turningToPursue
                   ? Math.min(5, Math.floor((d.turnAge || 0) * 6 / Math.max(1, d.turnLen || 9)))
                   : Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
@@ -1912,12 +1969,16 @@ const RUN_GAME = (() => {
           }
           ctx.globalAlpha = 1;
         }
+        const contactEnding = g.contact && g.contact.kind !== 'broken'
+          && g.contact.kind !== 'truck_broken' && g.contact.age >= 9;
         const visualPose = g.state === 'presnap' ? 'rb_ready'
           : rb.motionAge < 7 ? 'rb_handoff'
+          : g.contact ? (contactEnding ? 'rb_tackle' : 'rb_contact')
           : g.visual && g.visual.frames > 0
             ? (g.visual.kind === 'td' ? (g.visual.frames > 42 ? 'rb_brake' : 'rb_hero') : 'rb_tackle')
             : rb.cutFrames > 0 ? (rb.cutDir < 0 ? 'cut_left' : 'cut_right') : 'carry';
-        const actionFrame = g.visual && g.visual.kind !== 'td'
+        const actionFrame = g.contact ? Math.min(7, Math.floor(g.contact.age / 3))
+          : g.visual && g.visual.kind !== 'td'
           ? Math.min(7, Math.floor((24 - g.visual.frames) / 3))
           : visualPose.startsWith('cut_') ? Math.min(3, Math.floor(rb.cutAge / (CUT_LEN / 4))) : 0;
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
