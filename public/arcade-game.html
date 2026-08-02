@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade83-cinematic';
+const BUILD = 'arcade84-stable-carrier';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -854,14 +854,14 @@ function projectPoint(x, y) {
   const width = CAMERA.farWidth + (CAMERA.nearWidth - CAMERA.farWidth) * Math.pow(t, 0.72);
   const pan = CAMERA.panX * (.42 + .58 * t);
   const px = VW / 2 + (x - VW / 2) * width + pan;
-  const zoom = 1 + CAMERA.cine * .12, pivotY = VH * .46;
+  const zoom = 1 + CAMERA.cine * .06, pivotY = VH * .46;
   return { x: VW / 2 + (px - VW / 2) * zoom, y: pivotY + (py - pivotY) * zoom,
     scale: (0.72 + 0.28 * t) * zoom };
 }
 function unprojectPoint(x, y) {
   if (!CAMERA.enabled) return { x, y };
   const horizon = Math.max(.018, CAMERA.horizon - CAMERA.goal * .032);
-  const zoom = 1 + CAMERA.cine * .12, pivotY = VH * .46;
+  const zoom = 1 + CAMERA.cine * .06, pivotY = VH * .46;
   x = VW / 2 + (x - VW / 2) / zoom;
   y = pivotY + (y - pivotY) / zoom;
   const normalized = (y / VH - horizon) / (1 - horizon);
@@ -903,6 +903,7 @@ const UNIFIED_ACTION_BASE = new Image(), UNIFIED_ACTION_UNIFORM = new Image();
 const UNIFIED_QB_BASE = new Image(), UNIFIED_QB_UNIFORM = new Image();
 const DIRECTIONAL_BASE = new Image(), DIRECTIONAL_UNIFORM = new Image();
 const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
+const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -923,6 +924,8 @@ DIRECTIONAL_BASE.src = '/sprites/football-directional-base.png';
 DIRECTIONAL_UNIFORM.src = '/sprites/football-directional-uniform.png';
 DEFENSE_BASE.src = '/sprites/football-defense-base.png';
 DEFENSE_UNIFORM.src = '/sprites/football-defense-uniform.png';
+CARRIER_RIG_BASE.src = '/sprites/football-carrier-rig-v1-base.png';
+CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-rig-v1-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -941,8 +944,8 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     const row = pose === 'run_diag' ? 1 : pose === 'receiver' ? 2 : 0;
     cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, row];
   } else if (pose === 'carry') {
-    artBase = DIRECTIONAL_BASE; artUniform = DIRECTIONAL_UNIFORM;
-    cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, 3];
+    artBase = CARRIER_RIG_BASE; artUniform = CARRIER_RIG_UNIFORM;
+    cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
   } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
       || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
@@ -1101,10 +1104,16 @@ function detailedSprite(rows, base, scale, ballPts, tint, meta = {}) {
 function sprite(rows, px, py, ballPts, ballDx, tint, meta) {
   const h = rows.length, w = rows[0] ? rows[0].length : 20;
   const base = projectPoint(px + w / 2, py + h);
-  const s = base.scale;
+  // Detailed pixel art shimmers when continuously resampled by perspective.
+  // The stable gameplay rig therefore occupies fixed near/mid/far sizes while
+  // its world position continues to move at full subpixel precision.
+  const rawScale = base.scale;
+  const s = meta && meta.stable
+    ? rawScale < .80 ? .76 : rawScale < .91 ? .86 : rawScale < 1.02 ? .96 : 1.06
+    : rawScale;
   // Far players use the same broad body with fewer internal marks. This keeps
   // the LOD change from looking like a switch to a different art style.
-  detailedSprite(rows, base, s, ballPts, tint, { ...(meta || {}), low: s <= .84 });
+  detailedSprite(rows, base, s, ballPts, tint, { ...(meta || {}), low: s <= .80 });
   return;
   /* Legacy 20px renderer retained below as a reference for the standalone
      sprite definitions; gameplay returns through the shared silhouette above. */
@@ -1561,7 +1570,7 @@ const RUN_GAME = (() => {
         const pace = rb.burst > 0 ? rb.pace : 1;
         rb.y -= (rb.stagger > 0 ? A.FWD * 0.42 : A.FWD) * pace;
         rb.x += rb.vx; rb.vx *= 0.86;
-        rb.frame += rb.stagger > 0 ? 0.10 : 0.16;
+        rb.frame += rb.stagger > 0 ? 0.12 : 0.22;
       }
       rb.x = Math.max(12, Math.min(VW - 12, rb.x));
       for (const d of g.defenders) {
@@ -1684,7 +1693,7 @@ const RUN_GAME = (() => {
       // Set here rather than at pick time: inside a drive the pass play has
       // repainted the kit for its own two players since our last carry.
       setJersey(g.backTeam);
-      const rb = g.rb, ry = Math.round(rb.y - g.camY);
+      const rb = g.rb, ry = rb.y - g.camY;
       // Nobody within CLEAR is running away; it ramps over the next twenty so
       // the trail arrives with the daylight rather than snapping on.
       const loose = Math.max(0, Math.min(1, ((rb.alone || 0) - CLEAR) / 20));
@@ -1720,8 +1729,9 @@ const RUN_GAME = (() => {
         const actionFrame = g.visual && g.visual.kind !== 'td'
           ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
-        rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF, BALL20, 0, rim,
-          { pose: visualPose, frame: rb.frame, actionFrame, dir: visualPose === 'cut' ? rb.cutDir : 1, ball: true });
+        rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
+          { pose: visualPose, frame: rb.frame, actionFrame,
+            dir: visualPose === 'cut' ? rb.cutDir : 1, ball: true, stable: visualPose === 'carry' });
       }
       FX.draw(g.camY);
     },
@@ -2345,7 +2355,8 @@ const PASS_GAME = (() => {
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
-          { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir, ball: true });
+          { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir,
+            ball: true, stable: visualPose === 'carry' });
       } else {
         const nearBall = g.ball && Math.hypot(g.ball.x - r.x, g.ball.y - r.y) < 18;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
