@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade85-stride-spin';
+const BUILD = 'arcade86-rb-complete';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -905,6 +905,8 @@ const DIRECTIONAL_BASE = new Image(), DIRECTIONAL_UNIFORM = new Image();
 const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
 const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
+const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
+const CARRIER_STATE_BASE = new Image(), CARRIER_STATE_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
 POSE_UNIFORM.src = '/sprites/football-poses-uniform.png';
 RUN_BASE.src = '/sprites/football-run8-base.png';
@@ -929,6 +931,10 @@ CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v2-base.png';
 CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v2-uniform.png';
 CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v1-base.png';
 CARRIER_SPIN_UNIFORM.src = '/sprites/football-carrier-spin-v1-uniform.png';
+CARRIER_CUT_BASE.src = '/sprites/football-carrier-cuts-v1-base.png';
+CARRIER_CUT_UNIFORM.src = '/sprites/football-carrier-cuts-v1-uniform.png';
+CARRIER_STATE_BASE.src = '/sprites/football-carrier-states-v1-base.png';
+CARRIER_STATE_UNIFORM.src = '/sprites/football-carrier-states-v1-uniform.png';
 const poseBuffer = document.createElement('canvas'), poseTint = document.createElement('canvas');
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
@@ -952,10 +958,22 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   } else if (pose === 'spin') {
     frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
     if (frame === 0) {
-      artBase = CARRIER_RIG_BASE; artUniform = CARRIER_RIG_UNIFORM; cell = [0, 0];
+      artBase = CARRIER_STATE_BASE; artUniform = CARRIER_STATE_UNIFORM; cell = [2, 0];
+    } else if (frame === 7) {
+      artBase = CARRIER_STATE_BASE; artUniform = CARRIER_STATE_UNIFORM; cell = [3, 0];
     } else {
       artBase = CARRIER_SPIN_BASE; artUniform = CARRIER_SPIN_UNIFORM; cell = [frame, 0];
     }
+  } else if (pose === 'cut_left' || pose === 'cut_right') {
+    artBase = CARRIER_CUT_BASE; artUniform = CARRIER_CUT_UNIFORM;
+    frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame, pose === 'cut_left' ? 0 : 1];
+  } else if (pose === 'rb_ready' || pose === 'rb_handoff' || pose === 'rb_contact'
+      || pose === 'rb_tackle' || pose === 'rb_brake' || pose === 'rb_hero') {
+    artBase = CARRIER_STATE_BASE; artUniform = CARRIER_STATE_UNIFORM;
+    const stateCell = { rb_ready: 0, rb_handoff: 1, rb_contact: 4,
+      rb_tackle: 5, rb_brake: 6, rb_hero: 7 };
+    cell = [stateCell[pose] % 4, Math.floor(stateCell[pose] / 4)];
   } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
       || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
@@ -1018,7 +1036,8 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
   ctx.restore();
-  const integratedBall = pose === 'carry' || pose === 'spin' || pose === 'catch' || pose === 'throw'
+  const integratedBall = pose === 'carry' || pose === 'spin' || pose.startsWith('cut_')
+    || pose.startsWith('rb_') || pose === 'catch' || pose === 'throw'
     || pose === 'tackle' || pose === 'contact' || pose === 'truck';
   if ((ballPts || meta.ball) && !integratedBall) {
     const bx = base.x + ((meta.dir || 0) < 0 ? -7 : 7) * scale, by = base.y - 12 * scale;
@@ -1396,7 +1415,7 @@ const RUN_GAME = (() => {
   // a tackle at 17px looked like the defender standing inside the runner, and
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
-  const SPIN_LEN = 24, SPIN_CD = 74, TACKLE_R = 17;
+  const SPIN_LEN = 24, SPIN_CD = 74, CUT_LEN = 16, TACKLE_R = 17;
   /** Daylight. Two and a half tackle radii from the nearest man is the point
    *  where a carry stops being a collision waiting to happen. */
   const CLEAR = 42;
@@ -1468,7 +1487,8 @@ const RUN_GAME = (() => {
       const D = (set && set.def) || alignDefense(g.rnd, g.drive, g.los, off.wrX);
       g.rb = { x: VW / 2, y: g.los + BACKFIELD, vx: 0, frame: 0, spin: 0, spinCd: 0, spinDir: 1,
                clean: false, breakCd: 0, stagger: 0, truck: 0, truckCd: 0, evade: 0,
-               burst: 0, pace: 1, motionAge: 0, cutFrames: 0, cutDir: 1 };
+               burst: 0, pace: 1, motionAge: 0, cutFrames: 0, cutAge: 0,
+               cutDir: 1, cutTargetVx: 0 };
       g.qb = off.qb; g.wrX = off.wrX;
       g.wr = { x: off.wrX, y: g.los - 2, frame: 0 };   // on the line, clear of the corner
       // Everyone pursues, including the corner — so the side the receiver is
@@ -1501,8 +1521,7 @@ const RUN_GAME = (() => {
     pickOption(key) {
       const lane = LANES.find((l) => l.key === key) || LANES[1];
       const rb = g.rb;
-      rb.motionAge++;
-      if (rb.cutFrames > 0) rb.cutFrames--;
+      rb.motionAge = 0;
       g.lane = lane;
       // How much of the front is sitting in the gap you asked for. Shallow
       // defenders count for more — a man on the line kills the play long
@@ -1553,11 +1572,20 @@ const RUN_GAME = (() => {
       if (g.state !== 'live') return;
       const rb = g.rb;
       const beforeX = rb.x, beforeY = rb.y;
+      rb.motionAge++;
       if (rb.spinCd > 0) rb.spinCd--;
       if (rb.evade > 0) rb.evade--;
       if (rb.breakCd > 0) rb.breakCd--;
       if (rb.stagger > 0) rb.stagger--;
       if (rb.truckCd > 0) rb.truckCd--;
+      if (rb.cutFrames > 0 && rb.spin <= 0 && rb.truck <= 0) {
+        rb.cutAge++;
+        const blend = Math.min(1, rb.cutAge / 6);
+        const eased = blend * blend * (3 - 2 * blend);
+        const wanted = rb.cutStartVx + (rb.cutTargetVx - rb.cutStartVx) * eased;
+        rb.vx += (wanted - rb.vx) * .48;
+        rb.cutFrames--;
+      }
       // Getting to the gap you called. Steering, not teleporting — you can
       // still cut out of it, and a long edge run is visibly a long trip.
       if (rb.burst > 0) {
@@ -1724,8 +1752,8 @@ const RUN_GAME = (() => {
           sprite(RUN20[Math.floor(rb.frame + i) % 3], Math.round(rb.x) - HALF, ry - HALF + i * 3);
         }
         ctx.globalAlpha = 1;
-        rimmed(RUN20[Math.floor(rb.frame) % 3], Math.round(rb.x) - HALF, ry - HALF + 1, BALL20, 0, 0.6,
-          { pose: 'truck', frame: rb.frame, dir: Math.sign(rb.vx), ball: true });
+        rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF + 1, BALL20, 0, 0.6,
+          { pose: 'rb_contact', frame: rb.frame, dir: Math.sign(rb.vx), ball: true, stable: true });
       } else if (rb.spin > 0) {
         const s = Math.min(7, Math.floor((SPIN_LEN - rb.spin) / (SPIN_LEN / 8)));
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
@@ -1742,14 +1770,18 @@ const RUN_GAME = (() => {
           }
           ctx.globalAlpha = 1;
         }
-        const visualPose = g.visual && g.visual.frames > 0
-          ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry';
+        const visualPose = g.state === 'presnap' ? 'rb_ready'
+          : rb.motionAge < 7 ? 'rb_handoff'
+          : g.visual && g.visual.frames > 0
+            ? (g.visual.kind === 'td' ? (g.visual.frames > 42 ? 'rb_brake' : 'rb_hero') : 'rb_tackle')
+            : rb.cutFrames > 0 ? (rb.cutDir < 0 ? 'cut_left' : 'cut_right') : 'carry';
         const actionFrame = g.visual && g.visual.kind !== 'td'
-          ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
+          ? Math.min(7, Math.floor((24 - g.visual.frames) / 3))
+          : visualPose.startsWith('cut_') ? Math.min(3, Math.floor(rb.cutAge / (CUT_LEN / 4))) : 0;
         if (g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame,
-            dir: visualPose === 'cut' ? rb.cutDir : 1, ball: true, stable: visualPose === 'carry' });
+            dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true });
       }
       FX.draw(g.camY);
     },
@@ -1766,8 +1798,10 @@ const RUN_GAME = (() => {
         return;
       }
       if (Math.abs(dx) > 18) {
-        rb.cutDir = Math.sign(dx); rb.cutFrames = 12;
-        rb.vx += rb.cutDir * 1.9; return;
+        rb.cutDir = Math.sign(dx); rb.cutFrames = CUT_LEN; rb.cutAge = 0;
+        rb.cutStartVx = rb.vx;
+        rb.cutTargetVx = Math.max(-2.4, Math.min(2.4, rb.vx + rb.cutDir * 1.9));
+        return;
       }
       if (rb.truck > 0) return;
       if (rb.spin > 0 || rb.spinCd > 0) return;
