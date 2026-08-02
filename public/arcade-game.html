@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade107-complete-motion-pass';
+const BUILD = 'arcade108-kicking-and-balance';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -977,6 +977,7 @@ const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
 const CARRIER_STATE_BASE = new Image(), CARRIER_STATE_UNIFORM = new Image();
 const TACKLE_FALL_BASE = new Image(), TACKLE_FALL_UNIFORM = new Image();
+const KICKER_BASE = new Image(), KICKER_UNIFORM = new Image();
 const RECEIVER_RUN_BASE = new Image(), RECEIVER_RUN_UNIFORM = new Image();
 const RECEIVER_CUT_BASE = new Image(), RECEIVER_CUT_UNIFORM = new Image();
 const RECEIVER_STATE_BASE = new Image(), RECEIVER_STATE_UNIFORM = new Image();
@@ -1020,6 +1021,8 @@ CARRIER_STATE_BASE.src = '/sprites/football-carrier-states-v1-base.png';
 CARRIER_STATE_UNIFORM.src = '/sprites/football-carrier-states-v1-uniform.png';
 TACKLE_FALL_BASE.src = '/sprites/football-tackle-fall-v2-base.png';
 TACKLE_FALL_UNIFORM.src = '/sprites/football-tackle-fall-v2-uniform.png';
+KICKER_BASE.src = '/sprites/football-kicker-v1-base.png';
+KICKER_UNIFORM.src = '/sprites/football-kicker-v1-uniform.png';
 RECEIVER_RUN_BASE.src = '/sprites/football-receiver-run-v2-base.png';
 RECEIVER_RUN_UNIFORM.src = '/sprites/football-receiver-run-v2-uniform.png';
 RECEIVER_CUT_BASE.src = '/sprites/football-receiver-cuts-v2-base.png';
@@ -1073,6 +1076,10 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     cell = [stateCell[pose], 0];
   } else if (pose === 'tackle_fall') {
     artBase = TACKLE_FALL_BASE; artUniform = TACKLE_FALL_UNIFORM;
+    frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame, 0];
+  } else if (pose === 'kicker') {
+    artBase = KICKER_BASE; artUniform = KICKER_UNIFORM;
     frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
     cell = [frame, 0];
   } else if (pose === 'wr_run') {
@@ -1613,7 +1620,7 @@ const RUN_GAME = (() => {
   // a tackle at 17px looked like the defender standing inside the runner, and
   // at 20px it reads as the collision it always was.
   const SPR = 20, HALF = 10;
-  const SPIN_LEN = 24, SPIN_CD = 74, CUT_LEN = 16, TACKLE_R = 17;
+  const SPIN_LEN = 24, SPIN_CD = 62, CUT_LEN = 16, TACKLE_R = 17;
   /** Daylight. Two and a half tackle radii from the nearest man is the point
    *  where a carry stops being a collision waiting to happen. */
   const CLEAR = 42;
@@ -2136,13 +2143,13 @@ const RUN_GAME = (() => {
         if (dist < nd) { nd = dist; near = d; }
       }
       rb.spin = SPIN_LEN; rb.spinCd = SPIN_LEN + SPIN_CD;
-      rb.clean = !!near && nd < 30;
+      rb.clean = !!near && nd < 36;
       // A spin beats a man you are about to meet. It used to be twenty-two
       // frames where the tackle check was skipped outright, granted on every
       // tap wherever you were, so in the open field it was a free escape with
       // no failure case. Now the frames are only earned by spinning into
       // contact, and how many you get is what Elusive buys.
-      rb.evade = rb.clean ? Math.round(3 + 11 * A.ELU) : 0;
+      rb.evade = rb.clean ? Math.round(6 + 14 * A.ELU) : 0;
       rb.spinDir = near && nd < 56 ? (Math.sign(rb.x - near.x) || 1) : (Math.sign(rb.vx) || 1);
       rb.spinStartX = rb.x;
       // One spin defeats one committed tackler. The old radius sweep dropped
@@ -2173,7 +2180,7 @@ const RUN_GAME = (() => {
 // GAME 2 — PASS
 // ===========================================================================
 const PASS_GAME = (() => {
-  const SPR = 20, HALF = 10, CATCH_R = 11;
+  const SPR = 20, HALF = 10, CATCH_R = 13;
   /**
    * How far off the solved lead a tap can land and still be pulled onto it, at
    * average accuracy. About a fifth of the field's width — forgiving enough for
@@ -2265,12 +2272,13 @@ const PASS_GAME = (() => {
    * rather than when he turns.
    */
   const BREAK = { go: 44, slant: 34, out: 52, post: 66, quick: 16, drag: 12, flat: 8, fade: 38 };
+  const SEPARATION = { go: 38, slant: 29, out: 46, post: 59, quick: 12, drag: 8, flat: 5, fade: 32 };
   /** Frames of daylight after he breaks, before the corner is back on him. */
-  const OPEN = 30;
+  const OPEN = 42;
   /** How many times his usual cushion the corner is giving up: a tenth of it
    *  while he is still in phase, four times it the instant he is beaten. That
    *  ratio is the throw window, and it is the whole of the timing skill. */
-  const GRIP_EARLY = 0.1, GRIP_OPEN = 4;
+  const GRIP_EARLY = 0.1, GRIP_OPEN = 4.6;
   /**
    * The pre-snap read. Man coverage trails the route, so a break wins; zone
    * sits in an area, so you go over the top of it. Positive means the route
@@ -2360,7 +2368,7 @@ const PASS_GAME = (() => {
       // The rush has to actually arrive. At the old rate two men needed ~110
       // frames to cover the last stretch to a passer who had already thrown
       // by 100, so a dropback carried no risk at all and Escape did nothing.
-      A = { V: 2.1 + 2.0 * p.a, SCATTER: 4 + 14 * (1 - p.b), RUSH: 0.52 - 0.22 * p.c,
+      A = { V: 2.1 + 2.0 * p.a, SCATTER: 3 + 11 * (1 - p.b), RUSH: 0.52 - 0.22 * p.c,
             ACC: p.b };
       g.qbTeam = p.team;
     },
@@ -2608,7 +2616,7 @@ const PASS_GAME = (() => {
       // them is set by how many frames back he is reading. Tightening the
       // closing rate instead moved completion by six points across the whole
       // window, which is another way of saying it did nothing.
-      const since = g.t - (BREAK[r.route] || 0);
+      const since = g.t - (SEPARATION[r.route] || 0);
       const slip = since < 0 ? GRIP_EARLY
         : since < OPEN ? GRIP_OPEN - (GRIP_OPEN - 1) * (since / OPEN)
         : 1;
@@ -2757,17 +2765,17 @@ const PASS_GAME = (() => {
       // Hands widen the catch radius and win the ball in traffic.
       const reach = CATCH_R * (0.86 + 0.30 * W.HANDS);
       if (dbD < reach && dbD < recD) {
-        this.end(g.roll() < 0.28 ? 'int' : 'incomplete', 0); return;
+        this.end(g.roll() < 0.18 ? 'int' : 'incomplete', 0); return;
       }
       // Over the top. He is arriving from depth with his back to the throw,
       // so he knocks it down far more often than he takes it.
       const safD = g.safety ? Math.hypot(g.safety.x - b.x, g.safety.y - b.y) : Infinity;
       if (safD < reach * 0.82 && safD < recD) {
-        this.end(g.roll() < 0.18 ? 'int' : 'incomplete', 0); return;
+        this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
       if (recD > reach) { this.end('incomplete', 0); return; }
       const sep = dbD - recD;
-      if (sep < 15 && g.roll() < 0.46 * (1 - sep / 15) * (1.3 - 0.6 * W.HANDS)) {
+      if (sep < 15 && g.roll() < 0.32 * (1 - sep / 15) * (1.25 - 0.55 * W.HANDS)) {
         this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
       if (b.y <= EZ) {
@@ -3052,6 +3060,7 @@ const KICK_GAME = (() => {
     + 'J. Tucker:BAL:0.88:0.94:0.72|C. Boswell:PIT:0.74:0.92:0.78';
   const wr = mulberry32(hashSeed(SEED + '|wind'));
   const WIND = Math.round((wr() * 2 - 1) * 10) / 10;          // -1 .. 1
+  const WIND_MPH = Math.round(Math.abs(WIND) * 8);
   const WIND_LABEL = Math.abs(WIND) < 0.22 ? 'No wind'
     : `${Math.abs(WIND) > 0.66 ? 'Strong' : 'Light'} wind ${WIND < 0 ? 'left' : 'right'}`;
   const POST_HALF = 13;                        // half the gap between uprights
@@ -3092,7 +3101,7 @@ const KICK_GAME = (() => {
     maxRange() { return Math.floor(A.MAX || 0); },
     setup() {
       g.phase = 'power'; g.power = 0; g.powerDir = 1; g.aim = 0; g.aimDir = 1;
-      g.ball = null; g.state = 'ready';
+      g.ball = null; g.pendingKick = null; g.kickAge = 0; g.state = 'ready';
     },
     kick() {
       // required power scales with distance against this kicker's max range
@@ -3100,8 +3109,9 @@ const KICK_GAME = (() => {
       const short = g.lockedPower < need;
       // aim error plus wind drift over the flight
       const drift = g.lockedAim * 30 + WIND * (g.dist / 60) * 26;
-      g.ball = { t: 0, drift, short, need };
-      g.state = 'flight';
+      g.pendingKick = { t: 0, drift, short, need };
+      g.kickAge = 0;
+      g.state = 'kicking';
     },
     step() {
       if (g.state === 'aiming' || g.state === 'charging') {
@@ -3116,7 +3126,15 @@ const KICK_GAME = (() => {
         }
         return;
       }
-      if (g.state !== 'flight') return;
+      if (g.state === 'kicking') {
+        g.kickAge++;
+        if (g.kickAge === 4) {
+          g.ball = g.pendingKick; g.pendingKick = null;
+        }
+        if (g.kickAge < 4) return;
+        if (g.kickAge >= 7) g.state = 'flight';
+      }
+      if (g.state !== 'flight' && g.state !== 'kicking') return;
       const b = g.ball;
       b.t += 0.016;
       const reach = b.short ? (g.lockedPower / b.need) : 1;
@@ -3172,23 +3190,32 @@ const KICK_GAME = (() => {
           ctx.fillRect(px + fdir * i, ftop + wave, 1, 1);
         }
       }
+      // A direct numeric read complements the streamers without replacing
+      // them. It stays attached to the uprights rather than the app chrome.
+      const windText = WIND_MPH === 0 ? '0 MPH' : `${WIND_MPH} MPH ${WIND < 0 ? '←' : '→'}`;
+      ctx.save();
+      ctx.font = '5px Geist Mono, monospace'; ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(255,255,255,.62)';
+      ctx.fillText(windText, cx, Math.max(8, ftop - 7));
+      ctx.restore();
 
       // kicker — in his own club's colours, like everyone else
       setJersey(g.team);
-      sprite(RUN20[0], Math.round(cx) - HALF - 8, groundY - HALF);
+      const kickFrame = g.state === 'kicking' ? Math.min(7, g.kickAge)
+        : g.state === 'flight' || g.state === 'good' || g.state === 'miss' ? 7 : 0;
+      sprite(RUN20[0], Math.round(cx) - HALF - 8, groundY - HALF,
+        null, 0, null, { pose: 'kicker', actionFrame: kickFrame, stable: true });
 
-      if (g.state === 'flight' || g.state === 'good' || g.state === 'miss') {
+      if (g.ball) {
         const b = g.ball;
         const prog = Math.min(1, b.t / (b.short ? (g.lockedPower / b.need) : 1));
         const y = groundY + (postY - groundY) * prog;
         const x = cx + b.drift * prog;
         const hgt = Math.sin(prog * Math.PI);                         // reads as height
-        const r = 1 + Math.round(hgt * 1.6);
-        ctx.fillStyle = PAL.O;
-        ctx.fillRect(Math.round(x) - r, Math.round(y) - r, r * 2, r * 2);
+        const angle = -Math.PI / 2 + Math.atan2(b.drift, Math.max(20, g.dist * PPY));
+        drawFlightBall(x, y, angle, 1, .82 + hgt * .20);
       } else {
-        ctx.fillStyle = PAL.O;
-        ctx.fillRect(Math.round(cx) - 1, groundY - 1, 3, 2);
+        drawFlightBall(cx, groundY - 1, 0, 1, .82);
       }
 
       // meters — hairline, only while they matter
@@ -3241,7 +3268,7 @@ const KICK_GAME = (() => {
         + `<span class="sc">LONG ${g.longest || '—'}</span>`;
     },
     overlay(pick) {
-      if (g.state === 'charging' || g.state === 'aiming' || g.state === 'flight') return null;
+      if (g.state === 'charging' || g.state === 'aiming' || g.state === 'kicking' || g.state === 'flight') return null;
       if (g.state === 'ready') return { ttl: pick.name, sub: `${pick.team} · ${g.dist} yard attempt`,
                                         tap: g.auto ? 'tap to set aim' : 'tap to start power', attrs: !g.embedded && g.made === 0 };
       if (g.state === 'good') return { ttl: 'Good', gold: true, sub: `${g.dist - 5} yd · back to ${g.dist}`, tap: 'tap for the next one' };
@@ -3287,7 +3314,7 @@ const DRIVE_GAME = (() => {
   // States in which the engine still has the ball. Anything else means the
   // play is over and the drive takes back control.
   const PLAYING = ['presnap', 'ready', 'live', 'throwing', 'ball', 'yac',
-    'charging', 'aiming', 'flight'];
+    'charging', 'aiming', 'kicking', 'flight'];
   const TD = 6, XP = 1, FG = 3, XP_YD = 20;
   /**
    * The field is twenty-one yards; a real one is a hundred. Taken literally
