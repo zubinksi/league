@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade90-db-motion';
+const BUILD = 'arcade91-db-contest';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -906,6 +906,7 @@ const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
 const DB_BACKPEDAL_BASE = new Image(), DB_BACKPEDAL_UNIFORM = new Image();
 const DB_TURN_BASE = new Image(), DB_TURN_UNIFORM = new Image();
 const DB_PURSUIT_BASE = new Image(), DB_PURSUIT_UNIFORM = new Image();
+const DB_CONTEST_BASE = new Image(), DB_CONTEST_UNIFORM = new Image();
 const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
@@ -939,6 +940,8 @@ DB_TURN_BASE.src = '/sprites/football-db-turn-v1-base.png';
 DB_TURN_UNIFORM.src = '/sprites/football-db-turn-v1-uniform.png';
 DB_PURSUIT_BASE.src = '/sprites/football-db-pursuit-v1-base.png';
 DB_PURSUIT_UNIFORM.src = '/sprites/football-db-pursuit-v1-uniform.png';
+DB_CONTEST_BASE.src = '/sprites/football-db-contest-v1-base.png';
+DB_CONTEST_UNIFORM.src = '/sprites/football-db-contest-v1-uniform.png';
 CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v2-base.png';
 CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v2-uniform.png';
 CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v1-base.png';
@@ -1020,6 +1023,10 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   } else if (pose === 'db_pursuit') {
     artBase = DB_PURSUIT_BASE; artUniform = DB_PURSUIT_UNIFORM;
     cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
+  } else if (pose === 'db_contest') {
+    artBase = DB_CONTEST_BASE; artUniform = DB_CONTEST_UNIFORM;
+    frame = Math.max(0, Math.min(7, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame, 0];
   } else if (pose === 'defend' || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
     const row = pose === 'safety' ? 2 : pose === 'rusher' ? 3 : 0;
@@ -1091,7 +1098,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const flip = pose === 'run_diag'
+  const flip = (pose === 'run_diag' || pose === 'db_contest')
     && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
@@ -2397,6 +2404,9 @@ const PASS_GAME = (() => {
       const recD = Math.hypot(rec.x - b.x, rec.y - b.y);
       const dbD = Math.hypot(rec.db.x - b.x, rec.db.y - b.y);
       const gain = g.los - b.y;
+      // Preserve a readable contest/follow-through after the ball disappears.
+      // This is visual state only and never changes the coverage calculation.
+      rec.db.contestFrames = dbD < 24 ? 18 : 0;
       g.ball = null;
       // Hands widen the catch radius and win the ball in traffic.
       const reach = CATCH_R * (0.86 + 0.30 * W.HANDS);
@@ -2448,17 +2458,50 @@ const PASS_GAME = (() => {
       }
       const dbTurning = (r.db.turnAge || 0) > 0 && r.db.turnAge < 16;
       const dbChasing = (r.db.turnAge || -1) >= 16;
-      sprite(DEF20[Math.floor(r.db.frame) % 3], r.db.x - HALF, r.db.y - g.camY - HALF,
-        null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db_ready'
-          : dbTurning ? 'db_turn' : dbChasing ? 'db_pursuit' : 'db_backpedal',
-          frame: r.db.frame, dir: dbTurning ? r.db.turnDir : r.db.animDir, stable: true,
-          actionFrame: r.db.stumble > 0 ? 7 : dbTurning
+      const ballToWr = g.ball ? Math.hypot(g.ball.x - r.x, g.ball.y - r.y) : Infinity;
+      const dbToWr = Math.hypot(r.db.x - r.x, r.db.y - r.y);
+      const liveContest = g.state === 'ball' && ballToWr < 34 && dbToWr < 26;
+      const heldContest = (r.db.contestFrames || 0) > 0;
+      const dbContesting = liveContest || heldContest;
+      let dbAction = liveContest ? Math.min(5, Math.max(0, Math.floor((34 - ballToWr) / 5.5)))
+        : heldContest ? Math.min(7, 4 + Math.floor((18 - r.db.contestFrames) / 6)) : 0;
+      if (heldContest) r.db.contestFrames--;
+
+      // Presentation spacing: physics remains at the true coordinates used by
+      // resolve(), while drawings keep distinct silhouettes at the catch point.
+      let dbDrawX = r.db.x, dbDrawY = r.db.y;
+      const presenting = dbContesting || (g.state === 'yac' && (r.catchFrames || 0) > 0);
+      if (presenting && dbToWr < 14) {
+        let dx = r.db.x - r.x, dy = r.db.y - r.y;
+        const m = Math.hypot(dx, dy) || 1;
+        if (m === 1 && dx === 0 && dy === 0) dx = r.db.x < VW / 2 ? -1 : 1;
+        dbDrawX = r.x + dx / m * 14; dbDrawY = r.y + dy / m * 14;
+      }
+      sprite(DEF20[Math.floor(r.db.frame) % 3], dbDrawX - HALF, dbDrawY - g.camY - HALF,
+        null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : dbContesting ? 'db_contest'
+          : g.state === 'ready' ? 'db_ready' : dbTurning ? 'db_turn'
+          : dbChasing ? 'db_pursuit' : 'db_backpedal',
+          frame: r.db.frame, dir: dbContesting ? Math.sign(r.x - r.db.x) || r.db.animDir
+            : dbTurning ? r.db.turnDir : r.db.animDir, stable: true,
+          actionFrame: r.db.stumble > 0 ? 7 : dbContesting ? dbAction : dbTurning
             ? Math.min(3, Math.floor((r.db.turnAge - 1) / 4)) : 0 });
-      if (g.safety)
-        sprite(DEF20[Math.floor(g.safety.frame) % 3], g.safety.x - HALF, g.safety.y - g.camY - HALF,
+      if (g.safety) {
+        let sx = g.safety.x, sy = g.safety.y;
+        if (presenting) {
+          let dx = sx - r.x, dy = sy - r.y;
+          if (dx === 0 && dy === 0) dx = sx < VW / 2 ? -1 : 1;
+          let m = Math.hypot(dx, dy) || 1;
+          if (m < 15) { sx = r.x + dx / m * 15; sy = r.y + dy / m * 15; }
+          dx = sx - dbDrawX; dy = sy - dbDrawY;
+          if (dx === 0 && dy === 0) dx = sx < VW / 2 ? -1 : 1;
+          m = Math.hypot(dx, dy) || 1;
+          if (m < 11) { sx = dbDrawX + dx / m * 11; sy = dbDrawY + dy / m * 11; }
+        }
+        sprite(DEF20[Math.floor(g.safety.frame) % 3], sx - HALF, sy - g.camY - HALF,
           null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: g.safety.frame,
             dir: g.safety.animDir, stable: true,
             actionFrame: Math.min(3, Math.floor((g.safety.motionAge || 0) / 4)) });
+      }
       if (g.state !== 'yac')
         for (const d of g.rushers) sprite(DEF20[Math.floor(d.frame) % 3], d.x - HALF, d.y - g.camY - HALF,
           null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame, stable: true,
