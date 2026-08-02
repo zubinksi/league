@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade89-scale-lock';
+const BUILD = 'arcade90-db-motion';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -903,6 +903,9 @@ const UNIFIED_ACTION_BASE = new Image(), UNIFIED_ACTION_UNIFORM = new Image();
 const UNIFIED_QB_BASE = new Image(), UNIFIED_QB_UNIFORM = new Image();
 const DIRECTIONAL_BASE = new Image(), DIRECTIONAL_UNIFORM = new Image();
 const DEFENSE_BASE = new Image(), DEFENSE_UNIFORM = new Image();
+const DB_BACKPEDAL_BASE = new Image(), DB_BACKPEDAL_UNIFORM = new Image();
+const DB_TURN_BASE = new Image(), DB_TURN_UNIFORM = new Image();
+const DB_PURSUIT_BASE = new Image(), DB_PURSUIT_UNIFORM = new Image();
 const CARRIER_RIG_BASE = new Image(), CARRIER_RIG_UNIFORM = new Image();
 const CARRIER_SPIN_BASE = new Image(), CARRIER_SPIN_UNIFORM = new Image();
 const CARRIER_CUT_BASE = new Image(), CARRIER_CUT_UNIFORM = new Image();
@@ -930,6 +933,12 @@ DIRECTIONAL_BASE.src = '/sprites/football-directional-base.png';
 DIRECTIONAL_UNIFORM.src = '/sprites/football-directional-uniform.png';
 DEFENSE_BASE.src = '/sprites/football-defense-base.png';
 DEFENSE_UNIFORM.src = '/sprites/football-defense-uniform.png';
+DB_BACKPEDAL_BASE.src = '/sprites/football-db-backpedal-v1-base.png';
+DB_BACKPEDAL_UNIFORM.src = '/sprites/football-db-backpedal-v1-uniform.png';
+DB_TURN_BASE.src = '/sprites/football-db-turn-v1-base.png';
+DB_TURN_UNIFORM.src = '/sprites/football-db-turn-v1-uniform.png';
+DB_PURSUIT_BASE.src = '/sprites/football-db-pursuit-v1-base.png';
+DB_PURSUIT_UNIFORM.src = '/sprites/football-db-pursuit-v1-uniform.png';
 CARRIER_RIG_BASE.src = '/sprites/football-carrier-run-v2-base.png';
 CARRIER_RIG_UNIFORM.src = '/sprites/football-carrier-run-v2-uniform.png';
 CARRIER_SPIN_BASE.src = '/sprites/football-carrier-spin-v1-base.png';
@@ -1001,10 +1010,19 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
       frame = Math.max(2, Math.min(7, meta.actionFrame == null ? 2 : meta.actionFrame));
       cell = [frame, 0];
     }
-  } else if (pose === 'defend' || pose === 'db_backpedal' || pose === 'db_turn'
-      || pose === 'safety' || pose === 'rusher') {
+  } else if (pose === 'db_ready' || pose === 'db_backpedal') {
+    artBase = DB_BACKPEDAL_BASE; artUniform = DB_BACKPEDAL_UNIFORM;
+    cell = [pose === 'db_ready' ? 0 : (meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8), 0];
+  } else if (pose === 'db_turn') {
+    artBase = DB_TURN_BASE; artUniform = DB_TURN_UNIFORM;
+    frame = Math.max(0, Math.min(3, meta.actionFrame == null ? frame : meta.actionFrame));
+    cell = [frame + ((meta.dir || 0) < 0 ? 4 : 0), 0];
+  } else if (pose === 'db_pursuit') {
+    artBase = DB_PURSUIT_BASE; artUniform = DB_PURSUIT_UNIFORM;
+    cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
+  } else if (pose === 'defend' || pose === 'safety' || pose === 'rusher') {
     artBase = DEFENSE_BASE; artUniform = DEFENSE_UNIFORM;
-    const row = pose === 'db_turn' ? 1 : pose === 'safety' ? 2 : pose === 'rusher' ? 3 : 0;
+    const row = pose === 'safety' ? 2 : pose === 'rusher' ? 3 : 0;
     cell = [meta.low ? (Math.floor(frame / 2) % 2) * 2 : frame % 4, row];
   } else if (pose === 'accelerate' || pose === 'cut') {
     artBase = UNIFIED_ACTION_BASE; artUniform = UNIFIED_ACTION_UNIFORM;
@@ -1056,7 +1074,11 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // that occupies 47. Normalise that source-box difference before depth is
   // applied; the back may be slightly nearer, but he is not a larger person.
   const sourceScale = pose === 'pass_back' ? .87 : 1;
-  const w = 25 * scale * sourceScale * (wrCarrier ? .92 : 1);
+  // Side-on DB turn frames naturally use more width, but the generated master
+  // filled all 48 source pixels versus 36 in his square stance. Correct that
+  // authoring-box difference so opening his hips does not inflate his body.
+  const sourceWidth = pose === 'db_turn' ? .84 : 1;
+  const w = 25 * scale * sourceScale * sourceWidth * (wrCarrier ? .92 : 1);
   const h = 33.3 * scale * sourceScale;
   if (!tint && ctx.globalAlpha > .9) {
     ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.beginPath();
@@ -1069,7 +1091,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const flip = (pose === 'run_diag' || pose === 'db_turn')
+  const flip = pose === 'run_diag'
     && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
@@ -2113,6 +2135,8 @@ const PASS_GAME = (() => {
       g.safety = D.safety;
       g.wr.db.motionAge = 0;
       g.wr.db.animDir = 1;
+      g.wr.db.turnAge = -1;
+      g.wr.db.turnDir = 1;
       for (const d of g.rushers) { d.motionAge = 0; d.animDir = 1; }
       if (g.safety) { g.safety.motionAge = 0; g.safety.animDir = 1; }
       g.qb = off.qb;
@@ -2148,6 +2172,8 @@ const PASS_GAME = (() => {
       const r = g.wr;
       r.route = route;
       r.dir = this.routeDir(route);
+      r.db.turnAge = -1;
+      r.db.turnDir = r.dir;
       const edge = (EDGE[route] || {})[SHELL.key] ?? 0;
       // A real route runner earns separation on top of the concept itself,
       // and a familiar battery earns a little more.
@@ -2258,7 +2284,6 @@ const PASS_GAME = (() => {
       r.frame += Math.max(.10, Math.min(.28, Math.hypot(r.x - oldX, r.y - oldY) * .22));
       r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
-      r.db.frame += 0.2;
       r.db.motionAge = (r.db.motionAge || 0) + 1;
       // The route's edge on this shell is spent here: a concept that beats the
       // coverage leaves the defender a step further behind all play.
@@ -2275,10 +2300,19 @@ const PASS_GAME = (() => {
       const lag = Math.min(58, Math.round(SHELL.lag * (1 + g.edge * 0.6) * slip));
       const tight = SHELL.tight * (1 - g.edge);
       const back = r.hist[Math.max(0, r.hist.length - 1 - lag)] || p;
+      const oldDbX = r.db.x, oldDbY = r.db.y;
       r.db.x += (back.x - r.db.x) * tight;
       r.db.y += (back.y - r.db.y) * tight;
       const dbDx = back.x - r.db.x;
       if (Math.abs(dbDx) > .4 && r.db.motionAge % 6 === 0) r.db.animDir = Math.sign(dbDx);
+      const breakAt = BREAK[r.route] || 0;
+      if (g.t >= breakAt - 4 && r.db.turnAge < 0) {
+        r.db.turnAge = 0;
+        r.db.turnDir = r.dir;
+      }
+      if (r.db.turnAge >= 0 && r.db.turnAge < 16) r.db.turnAge++;
+      const dbTravel = Math.hypot(r.db.x - oldDbX, r.db.y - oldDbY);
+      r.db.frame += Math.max(.08, Math.min(.30, dbTravel * .34));
 
       // The safety works from depth: he shades across to the receiver and
       // gives ground once the route threatens his level. Standing still until
@@ -2412,11 +2446,14 @@ const PASS_GAME = (() => {
           ctx.beginPath(); ctx.moveTo(ap.x, ap.y); ctx.lineTo(bp.x, bp.y); ctx.stroke();
         }
       }
-      const dbTurning = r.route && g.t >= (BREAK[r.route] || 0) - 4;
+      const dbTurning = (r.db.turnAge || 0) > 0 && r.db.turnAge < 16;
+      const dbChasing = (r.db.turnAge || -1) >= 16;
       sprite(DEF20[Math.floor(r.db.frame) % 3], r.db.x - HALF, r.db.y - g.camY - HALF,
-        null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db'
-          : dbTurning ? 'db_turn' : 'db_backpedal', frame: r.db.frame, dir: r.db.animDir, stable: true,
-          actionFrame: r.db.stumble > 0 ? 7 : Math.min(3, Math.floor((r.db.motionAge || 0) / 4)) });
+        null, 0, null, { pose: r.db.stumble > 0 ? 'tackle' : g.state === 'ready' ? 'db_ready'
+          : dbTurning ? 'db_turn' : dbChasing ? 'db_pursuit' : 'db_backpedal',
+          frame: r.db.frame, dir: dbTurning ? r.db.turnDir : r.db.animDir, stable: true,
+          actionFrame: r.db.stumble > 0 ? 7 : dbTurning
+            ? Math.min(3, Math.floor((r.db.turnAge - 1) / 4)) : 0 });
       if (g.safety)
         sprite(DEF20[Math.floor(g.safety.frame) % 3], g.safety.x - HALF, g.safety.y - g.camY - HALF,
           null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: g.safety.frame,
