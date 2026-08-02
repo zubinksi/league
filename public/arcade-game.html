@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade88-wr-complete';
+const BUILD = 'arcade89-scale-lock';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -992,9 +992,10 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     // Both route-break directions are authored. Never mirror the receiver at
     // runtime: his helmet, ball-side arm, and planted foot remain trackable.
     cell = [frame + ((meta.dir || 0) < 0 ? 4 : 0), 0];
-  } else if (pose === 'wr_ready' || pose === 'wr_release' || pose === 'wr_catch') {
+  } else if (pose === 'wr_ready' || pose === 'wr_release' || pose === 'wr_catch'
+      || pose === 'pass_back') {
     artBase = RECEIVER_STATE_BASE; artUniform = RECEIVER_STATE_UNIFORM;
-    if (pose === 'wr_ready') cell = [0, 0];
+    if (pose === 'wr_ready' || pose === 'pass_back') cell = [0, 0];
     else if (pose === 'wr_release') cell = [1, 0];
     else {
       frame = Math.max(2, Math.min(7, meta.actionFrame == null ? 2 : meta.actionFrame));
@@ -1046,7 +1047,17 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     poseCtx.globalCompositeOperation = 'source-in'; poseCtx.fillStyle = tint; poseCtx.fillRect(0, 0, 48, 64);
     poseCtx.globalCompositeOperation = 'source-over';
   }
-  const w = 25 * scale, h = 33.3 * scale;
+  // The carrier master is a few source pixels broader than the receiver
+  // master. When a WR becomes the carrier, compensate here so catching the
+  // ball never makes his body expand on screen.
+  const wrCarrier = meta.role === 'wr' && (pose === 'carry' || pose === 'spin'
+    || pose.startsWith('cut_') || pose.startsWith('rb_'));
+  // pass_back uses the receiver master (54 occupied pixels) beside a QB rig
+  // that occupies 47. Normalise that source-box difference before depth is
+  // applied; the back may be slightly nearer, but he is not a larger person.
+  const sourceScale = pose === 'pass_back' ? .87 : 1;
+  const w = 25 * scale * sourceScale * (wrCarrier ? .92 : 1);
+  const h = 33.3 * scale * sourceScale;
   if (!tint && ctx.globalAlpha > .9) {
     ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.beginPath();
     ctx.ellipse(base.x, base.y - .25, 8.1 * scale, 1.45 * scale, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
@@ -1160,12 +1171,12 @@ function detailedSprite(rows, base, scale, ballPts, tint, meta = {}) {
 function sprite(rows, px, py, ballPts, ballDx, tint, meta) {
   const h = rows.length, w = rows[0] ? rows[0].length : 20;
   const base = projectPoint(px + w / 2, py + h);
-  // Detailed pixel art shimmers when continuously resampled by perspective.
-  // The stable gameplay rig therefore occupies fixed near/mid/far sizes while
-  // its world position continues to move at full subpixel precision.
+  // Quantising actors into three large size tiers caused a pose-independent
+  // scale pop whenever camera zoom or depth crossed a tier boundary. Retain a
+  // fine 1/32 step for pixel stability while keeping perspective continuous.
   const rawScale = base.scale;
   const s = meta && meta.stable
-    ? rawScale < .80 ? .76 : rawScale < .91 ? .86 : rawScale < 1.02 ? .96 : 1.06
+    ? Math.round(rawScale * 32) / 32
     : rawScale;
   // Far players use the same broad body with fewer internal marks. This keeps
   // the LOD change from looking like a switch to a different art style.
@@ -2379,7 +2390,7 @@ const PASS_GAME = (() => {
         const dx = rec.db.x - rec.x, dy = rec.db.y - rec.y, m = Math.hypot(dx, dy) || 1;
         rec.db.x = rec.x + dx / m * 13; rec.db.y = rec.y + dy / m * 13;
       }
-      rec.catchFrames = 16;
+      rec.catchFrames = 12;
       g.yacFrames = 0;
       g.state = 'yac';
     },
@@ -2436,11 +2447,11 @@ const PASS_GAME = (() => {
         if (caught) r.catchFrames--;
         const visualPose = caught ? 'wr_catch' : (g.visual && g.visual.frames > 0
           ? (g.visual.kind === 'td' ? 'hero' : 'tackle') : 'carry');
-        const actionFrame = caught ? Math.min(7, 4 + Math.floor((16 - r.catchFrames) / 4))
+        const actionFrame = caught ? Math.min(7, 4 + Math.floor((12 - r.catchFrames) / 3))
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
-          { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir,
+          { pose: visualPose, frame: r.frame, actionFrame, dir: r.dir, role: 'wr',
             ball: true, stable: visualPose === 'carry' || visualPose === 'wr_catch' });
       } else {
         const ballDistance = g.ball ? Math.hypot(g.ball.x - r.x, g.ball.y - r.y) : Infinity;
@@ -2463,8 +2474,11 @@ const PASS_GAME = (() => {
           null, 0, null, { pose: g.state === 'ball' ? 'throw' : g.state === 'live' ? 'qb_drop' : 'qb',
             actionFrame: g.state === 'ball' ? Math.min(3, Math.floor(throwAge / 2)) : Math.min(3, Math.floor(g.t / 4)) });
         setJersey(g.backTeam || g.qbTeam);
-        sprite(RUN20[0], Math.round(g.rb.x) - HALF, Math.round(g.rb.y - g.camY) - HALF,
-          null, 0, null, { pose: 'rb', phase: 1 });
+        // One registered pass-back body before and after the snap. The old
+        // generic RB drawing used a different occupied box, visibly shrinking
+        // as the play switched states.
+        sprite(RUN20[0], g.rb.x - HALF, g.rb.y - g.camY - HALF,
+          null, 0, null, { pose: 'pass_back', frame: 0, stable: true });
       }
       if (g.ball) {
         const bp = projectPoint(g.ball.x, g.ball.y - g.camY);
