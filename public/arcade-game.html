@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade105-football-finish';
+const BUILD = 'arcade106-registered-sprites';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -988,6 +988,7 @@ const poseBuffer = document.createElement('canvas'), poseTint = document.createE
 poseBuffer.width = poseTint.width = 48; poseBuffer.height = poseTint.height = 64;
 const poseCtx = poseBuffer.getContext('2d'), poseTintCtx = poseTint.getContext('2d');
 poseCtx.imageSmoothingEnabled = poseTintCtx.imageSmoothingEnabled = false;
+const spriteBoundsCache = new WeakMap();
 const POSE_CELL = {
   presnap: [0, 0], run0: [1, 0], run1: [3, 0], run2: [1, 0], run3: [3, 0],
   catch: [1, 1], contact: [2, 1], truck: [2, 1], fall: [3, 1], hero: [0, 1],
@@ -1127,11 +1128,6 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     poseCtx.globalCompositeOperation = 'source-in'; poseCtx.fillStyle = tint; poseCtx.fillRect(0, 0, 48, 64);
     poseCtx.globalCompositeOperation = 'source-over';
   }
-  // The carrier master is a few source pixels broader than the receiver
-  // master. When a WR becomes the carrier, compensate here so catching the
-  // ball never makes his body expand on screen.
-  const wrCarrier = meta.role === 'wr' && (pose === 'carry' || pose === 'spin'
-    || pose.startsWith('cut_') || pose.startsWith('rb_'));
   // The back is rendered at the extreme near edge of the projected field.
   // Compensate that camera-depth magnification after sharing the QB body box.
   // A canonical screen scale is useful for pocket players: unlike a route
@@ -1141,14 +1137,40 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   const sourceScale = meta.canonicalScale == null
     ? (pose === 'pass_back' ? (meta.actorScale == null ? .72 : meta.actorScale) : 1)
     : meta.canonicalScale / Math.max(.01, scale);
-  // Keep every DB state on the receiver-width body standard; extended limbs
-  // can communicate the action without inflating his torso and shoulders.
-  const sourceWidth = pose === 'db_pursuit' ? .95 : pose.startsWith('db_') ? .90 : 1;
-  const w = 25 * scale * sourceScale * sourceWidth * (wrCarrier ? .92 : 1);
-  const h = 33.3 * scale * sourceScale;
+  // Register the athlete, not the atlas cell. Generated sheets use the same
+  // 48×64 grid but place their occupied pixels at different x centers and
+  // foot baselines. Drawing the full cell made pose changes resize, float and
+  // jump sideways even when the simulation coordinates never moved.
+  let cells = spriteBoundsCache.get(artBase);
+  if (!cells) { cells = new Map(); spriteBoundsCache.set(artBase, cells); }
+  const boundsKey = `${cell[0]},${cell[1]}`;
+  let bounds = cells.get(boundsKey);
+  if (!bounds) {
+    const pixels = poseCtx.getImageData(0, 0, 48, 64).data;
+    let left = 48, top = 64, right = 0, bottom = 0;
+    for (let y = 0; y < 64; y++) for (let x = 0; x < 48; x++) {
+      if (pixels[(y * 48 + x) * 4 + 3] < 8) continue;
+      left = Math.min(left, x); top = Math.min(top, y);
+      right = Math.max(right, x + 1); bottom = Math.max(bottom, y + 1);
+    }
+    bounds = right > left ? { x: left, y: top, w: right - left, h: bottom - top }
+      : { x: 0, y: 0, w: 48, h: 64 };
+    cells.set(boundsKey, bounds);
+  }
+  // Twenty-eight screen pixels is the established occupied height of the
+  // 53px running masters. Family reference heights correct sheets authored at
+  // a different internal scale while preserving deliberate crouches, reaches
+  // and horizontal tackle silhouettes inside each family.
+  const refHeight = pose === 'qb' || pose === 'qb_drop' || pose === 'throw' || pose === 'pass_back' ? 47
+    : pose === 'wr_run' || pose === 'wr_cut' || pose.startsWith('wr_') ? 54
+    : pose === 'accelerate' || pose === 'cut' || pose === 'rusher' ? 48
+    : pose === 'safety' ? 64 : 53;
+  const pixelScale = 28 * scale * sourceScale / refHeight;
+  const w = bounds.w * pixelScale, h = bounds.h * pixelScale;
+  const actorScale = scale * sourceScale;
   if (!tint && ctx.globalAlpha > .9) {
     ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.beginPath();
-    ctx.ellipse(base.x, base.y - .25, 8.1 * scale, 1.45 * scale, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    ctx.ellipse(base.x, base.y - .25, 8.1 * actorScale, 1.45 * actorScale, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   }
   ctx.save();
   // Every frame in the new atlases faces right. Direction changes therefore
@@ -1160,7 +1182,8 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   const flip = (pose === 'run_diag' || pose === 'db_contest')
     && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
-  ctx.drawImage(poseBuffer, base.x - w / 2, base.y - h, w, h);
+  ctx.drawImage(poseBuffer, bounds.x, bounds.y, bounds.w, bounds.h,
+    base.x - w / 2, base.y - h, w, h);
   ctx.restore();
   const integratedBall = pose === 'carry' || pose === 'spin' || pose.startsWith('cut_')
     || pose.startsWith('rb_') || pose === 'catch' || pose === 'wr_catch' || pose === 'throw'
@@ -2024,9 +2047,7 @@ const RUN_GAME = (() => {
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame,
             dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true, role: 'rb',
-            // rb_ready fills much more of its atlas cell than the moving rig.
-            // Normalize occupied pixels, not the transparent source box.
-            canonicalScale: visualPose === 'rb_ready' ? .60 : .84 });
+            canonicalScale: .84 });
       }
       FX.draw(g.camY);
       if ((g.state === 'between' || g.state === 'gameover' || g.state === 'td')
@@ -2885,7 +2906,7 @@ const PASS_GAME = (() => {
         sprite(RUN20[0], g.rb.x - HALF, rbRawY - HALF,
           null, 0, null, { pose: 'pass_back', frame: 0, stable: true,
             // pass_back is a compact stance inside the same 48x64 cell.
-            canonicalScale: 1.0 });
+            canonicalScale: .84 });
       }
       if (g.ball) {
         const b = g.ball;
