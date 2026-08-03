@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade111-offense-scale-parity';
+const BUILD = 'arcade112-formation-scale-parity';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1609,6 +1609,9 @@ function presnapDrift(d, enabled = true) {
 /** Frames spent gliding from the pre-snap frame to the playing one. Cutting
  *  between them at the snap is a jump at the worst possible moment. */
 const CAM_EASE = 16;
+// Pre-snap is a lineup-reading screen, so every offensive position uses the
+// same visible body height rather than inheriting incompatible atlas fill.
+const PRESNAP_ACTOR_H = 32;
 
 function alignDefense(rnd, drive, los, wrX) {
   const ramp = rampAt(drive);
@@ -2078,10 +2081,12 @@ const RUN_GAME = (() => {
       // field should not empty out just because you handed it off.
       setJersey(g.qbTeam || g.backTeam);
       sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF,
-        null, 0, null, { pose: 'qb', phase: 0 });
+        null, 0, null, { pose: 'qb', phase: 0,
+          screenHeight: g.state === 'presnap' ? PRESNAP_ACTOR_H : null });
       setJersey(g.wrTeam || g.backTeam);
       sprite(RUN20[0], Math.round(g.wr.x) - HALF, Math.round(g.wr.y - g.camY) - HALF,
-        null, 0, null, { pose: 'wr', phase: 1 });
+        null, 0, null, { pose: 'wr', phase: 1, role: 'wr',
+          screenHeight: g.state === 'presnap' ? PRESNAP_ACTOR_H : null });
       // Set here rather than at pick time: inside a drive the pass play has
       // repainted the kit for its own two players since our last carry.
       setJersey(g.backTeam);
@@ -2135,7 +2140,8 @@ const RUN_GAME = (() => {
         rimmed(RUN20[Math.floor(rb.frame) % 3], rb.x - HALF, ry - HALF, BALL20, 0, rim,
           { pose: visualPose, frame: rb.frame, actionFrame,
             dir: rb.cutDir, ball: visualPose !== 'rb_ready', stable: true, role: 'rb',
-            canonicalScale: .84 });
+            canonicalScale: .84,
+            screenHeight: g.state === 'presnap' ? PRESNAP_ACTOR_H : null });
       }
       FX.draw(g.camY);
       if ((g.state === 'between' || g.state === 'gameover' || g.state === 'td')
@@ -2982,7 +2988,7 @@ const PASS_GAME = (() => {
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
           { pose: visualPose, frame: g.state === 'ready' ? 0 : r.frame,
             actionFrame, dir: r.dir, role: 'wr', stable: true,
-            screenHeight: g.state === 'ready' ? 28 : null });
+            screenHeight: g.state === 'ready' ? PRESNAP_ACTOR_H : null });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
@@ -2994,7 +3000,7 @@ const PASS_GAME = (() => {
         sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF,
           null, 0, null, { pose: qbPose,
             canonicalScale: .84,
-            screenHeight: g.state === 'ready' ? 28 : null,
+            screenHeight: g.state === 'ready' ? PRESNAP_ACTOR_H : null,
             actionFrame: throwing ? Math.min(3, Math.floor(g.qb.throwAge * 4 / 5))
               : followThrough ? 3 : Math.min(3, Math.floor(g.qb.dropAge / 5)) });
         setJersey(g.backTeam || g.qbTeam);
@@ -3009,7 +3015,8 @@ const PASS_GAME = (() => {
         sprite(RUN20[0], g.rb.x - HALF, rbRawY - HALF,
           null, 0, null, { pose: 'pass_back', frame: 0, stable: true,
             // pass_back is a compact stance inside the same 48x64 cell.
-            canonicalScale: .84, screenHeight: g.state === 'ready' ? 28 : null });
+            canonicalScale: .84,
+            screenHeight: g.state === 'ready' ? PRESNAP_ACTOR_H : null });
       }
       if (g.ball) {
         const b = g.ball;
