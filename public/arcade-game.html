@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade112-formation-scale-parity';
+const BUILD = 'arcade113-receiver-footwork';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -2512,6 +2512,9 @@ const PASS_GAME = (() => {
       const r = g.wr;
       r.route = route;
       r.dir = this.routeDir(route);
+      // Snap into a known first-step phase. Carrying the random idle frame
+      // into the route made the first visible stride begin midair.
+      r.frame = 0;
       r.db.turnAge = -1;
       r.db.turnDir = r.dir;
       const edge = (EDGE[route] || {})[SHELL.key] ?? 0;
@@ -2645,8 +2648,12 @@ const PASS_GAME = (() => {
       // Advance the eight-frame stride from actual ground covered. This keeps
       // feet planted through slow lateral breaks instead of skating at the
       // same cadence used on a vertical release.
-      const strideAdvance = Math.max(.10, Math.min(.28, Math.hypot(r.x - oldX, r.y - oldY) * .22));
-      r.frame += planting ? strideAdvance * .58 : strideAdvance;
+      const groundTravel = Math.hypot(r.x - oldX, r.y - oldY);
+      // Route animation is locked to distance covered, not elapsed time. The
+      // previous .22 rate let the body travel about 4.5 world pixels per art
+      // frame, so the turf visibly slid beneath nearly static legs.
+      const strideAdvance = Math.max(.04, Math.min(.44, groundTravel * .34));
+      r.frame += planting ? strideAdvance * .78 : strideAdvance;
       r.hist.push({ x: r.x, y: r.y });
       if (r.hist.length > 60) r.hist.shift();
       r.db.motionAge = (r.db.motionAge || 0) + 1;
@@ -2981,7 +2988,7 @@ const PASS_GAME = (() => {
           : cutAge < 13 ? 2 : 3;
         const visualPose = g.state === 'ready' ? 'wr_ready'
           : touchdownFinish ? (g.visual.frames > 65 ? 'wr_catch' : 'rb_hero')
-          : g.t < 8 ? 'wr_release' : nearBall ? 'wr_catch' : movingPose;
+          : g.t < 3 ? 'wr_release' : nearBall ? 'wr_catch' : movingPose;
         const actionFrame = touchdownFinish ? Math.min(7, Math.floor((72 - g.visual.frames) / 2))
           : nearBall ? Math.max(0, Math.min(3, Math.floor((27 - ballDistance) / 6))) : movingFrame;
         if (touchdownFinish) g.visual.frames--;
