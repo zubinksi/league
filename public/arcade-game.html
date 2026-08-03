@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade110-receiver-continuity';
+const BUILD = 'arcade111-offense-scale-parity';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -1221,9 +1221,14 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     : pose === 'wr_run' || pose === 'wr_cut' || pose.startsWith('wr_') ? 54
     : pose === 'accelerate' || pose === 'cut' || pose === 'rusher' ? 48
     : pose === 'safety' ? 64 : 53;
-  const pixelScale = 28 * scale * sourceScale / refHeight;
+  // Formation screens can request an exact occupied height. This is applied
+  // after alpha-bound registration, so different authored cells cannot make
+  // one position look larger merely because its stance fills more of the cell.
+  const pixelScale = meta.screenHeight == null
+    ? 28 * scale * sourceScale / refHeight
+    : meta.screenHeight / Math.max(1, bounds.h);
   const w = bounds.w * pixelScale, h = bounds.h * pixelScale;
-  const actorScale = scale * sourceScale;
+  const actorScale = meta.screenHeight == null ? scale * sourceScale : meta.screenHeight / 28;
   if (!tint && ctx.globalAlpha > .9) {
     ctx.save(); ctx.fillStyle = 'rgba(0,0,0,.38)'; ctx.beginPath();
     ctx.ellipse(base.x, base.y - .25, 8.1 * actorScale, 1.45 * actorScale, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
@@ -2976,7 +2981,8 @@ const PASS_GAME = (() => {
         if (touchdownFinish) g.visual.frames--;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
           { pose: visualPose, frame: g.state === 'ready' ? 0 : r.frame,
-            actionFrame, dir: r.dir, role: 'wr', stable: true });
+            actionFrame, dir: r.dir, role: 'wr', stable: true,
+            screenHeight: g.state === 'ready' ? 28 : null });
       }
       setJersey(g.qbTeam);
       if (g.state !== 'yac') {
@@ -2988,6 +2994,7 @@ const PASS_GAME = (() => {
         sprite(RUN20[0], Math.round(g.qb.x) - HALF, Math.round(g.qb.y - g.camY) - HALF,
           null, 0, null, { pose: qbPose,
             canonicalScale: .84,
+            screenHeight: g.state === 'ready' ? 28 : null,
             actionFrame: throwing ? Math.min(3, Math.floor(g.qb.throwAge * 4 / 5))
               : followThrough ? 3 : Math.min(3, Math.floor(g.qb.dropAge / 5)) });
         setJersey(g.backTeam || g.qbTeam);
@@ -3002,7 +3009,7 @@ const PASS_GAME = (() => {
         sprite(RUN20[0], g.rb.x - HALF, rbRawY - HALF,
           null, 0, null, { pose: 'pass_back', frame: 0, stable: true,
             // pass_back is a compact stance inside the same 48x64 cell.
-            canonicalScale: .84 });
+            canonicalScale: .84, screenHeight: g.state === 'ready' ? 28 : null });
       }
       if (g.ball) {
         const b = g.ball;
