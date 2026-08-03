@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade108-kicking-and-balance';
+const BUILD = 'arcade109-continuity-and-presnap-life';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -808,7 +808,9 @@ function drawField(camY, los, marker) {
     // The end zone is field geometry, not a screen-space rectangle. Its four
     // projected corners keep both edges on the same vanishing lines as the
     // sidelines.
-    ctx.fillStyle = 'rgba(255,255,255,0.018)';
+    // A quiet warm-white end zone distinguishes the scoring space without
+    // turning it into a bright screen-space panel or changing the black field.
+    ctx.fillStyle = 'rgba(244,240,226,0.095)';
     ctx.beginPath(); ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y);
     ctx.lineTo(r.x, r.y); ctx.lineTo(l.x, l.y); ctx.closePath(); ctx.fill();
   }
@@ -1584,6 +1586,17 @@ const eyeAt = (y, eye) => Math.max(0, Math.min(WORLD_H - VH, y - VH * eye));
  */
 const presnapAt = (los) =>
   eyeAt(los, Math.min(PRESNAP_EYE, (VH - (BACKFIELD + 38)) / VH));
+/** Restrained, anchor-bound pre-snap life. These offsets are presentation
+ * only: reads, collision, pursuit and coverage continue to use d.x/d.y. */
+function presnapDrift(d, enabled = true) {
+  if (!enabled) return { x: 0, y: 0 };
+  const phase = d.prePhase || 0;
+  const t = performance.now() / 1000;
+  return {
+    x: Math.sin(t * .82 + phase) * (d.preRadiusX || 2.4),
+    y: Math.sin(t * .57 + phase * 1.71) * (d.preRadiusY || 1.5),
+  };
+}
 /** Frames spent gliding from the pre-snap frame to the playing one. Cutting
  *  between them at the snap is a jump at the worst possible moment. */
 const CAM_EASE = 16;
@@ -1765,6 +1778,7 @@ const RUN_GAME = (() => {
       // Everyone pursues, including the corner — so the side the receiver is
       // lined up on is the harder edge to take.
       g.defenders = [...D.front, D.cb, D.safety];
+      D.cb.primaryCover = true;
       for (let i = 0; i < g.defenders.length; i++) {
         const d = g.defenders[i];
         d.motionAge = 0; d.turnAge = 0; d.animDir = 1; d.recover = 0;
@@ -1774,6 +1788,9 @@ const RUN_GAME = (() => {
         d.strideRate = 0.97 + ((i * 7) % 5) * 0.0175;
         d.turnLen = 8 + (i % 3);
         d.pursuing = false;
+        d.prePhase = .9 + i * 1.73;
+        d.preRadiusX = 1.8 + (i % 3) * .65;
+        d.preRadiusY = 1.0 + (i % 2) * .55;
       }
       // Gains are measured from the line, not from where he lined up, so
       // getting caught in the backfield is a loss.
@@ -2022,7 +2039,9 @@ const RUN_GAME = (() => {
       }
       for (const d of g.defenders) {
         const finalAt = finalActorPosition(d);
-        const sy = finalAt.y - g.camY;
+        const pre = presnapDrift(d, g.state === 'presnap' && !d.primaryCover);
+        const drawX = finalAt.x + pre.x, drawY = finalAt.y + pre.y;
+        const sy = drawY - g.camY;
         if (sy > -SPR && sy < VH + SPR) {
           const prone = d.stumble > 0, recovering = d.recover > 0;
           const primary = g.contact && g.contact.defender === d;
@@ -2031,10 +2050,10 @@ const RUN_GAME = (() => {
           if (recovering) ctx.globalAlpha *= 1 - d.recover / 10;
           const turningToPursue = g.state !== 'presnap' && d.pursuing
             && (d.turnAge || 0) < (d.turnLen || 9);
-          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], finalAt.x - HALF, sy - HALF,
+          sprite(DEF20[Math.floor(d.stumble > 0 ? 1 : d.frame) % 3], drawX - HALF, sy - HALF,
             null, 0, null, { pose: primary ? (g.contact.age < 9 ? 'contact' : 'tackle')
               : prone ? 'tackle' : recovering ? 'accelerate'
-              : g.state === 'presnap' ? 'db' : !d.pursuing ? 'db_backpedal'
+              : g.state === 'presnap' ? 'db_ready' : !d.pursuing ? 'db_backpedal'
               : turningToPursue ? 'db_turn' : 'db_pursuit', frame: d.frame,
               dir: d.animDir, facingAway: !!d.pursuitFacingAway, stable: !prone,
               actionFrame: primary ? Math.min(7, Math.floor(g.contact.age / 3))
@@ -2421,12 +2440,16 @@ const PASS_GAME = (() => {
       for (let i = 0; i < g.rushers.length; i++) {
         const d = g.rushers[i];
         d.motionAge = 0; d.animDir = 1;
+        d.prePhase = 1.35 + i * 2.17;
+        d.preRadiusX = 2.2 + i * .55; d.preRadiusY = 1.25;
         d.laneX = (i ? 1 : -1) * 5; d.laneY = 3 + i * 2;
         d.drawX = d.x + d.laneX; d.drawY = d.y + d.laneY;
         d.visualAlpha = 1; d.occluded = false;
       }
       if (g.safety) {
         g.safety.motionAge = 0; g.safety.animDir = 1;
+        g.safety.prePhase = 4.7;
+        g.safety.preRadiusX = 2.8; g.safety.preRadiusY = 1.7;
         g.safety.laneX = (sx < VW / 2 ? 1 : -1) * 7;
         g.safety.laneY = -8;
         g.safety.drawX = g.safety.x + g.safety.laneX;
@@ -2726,11 +2749,15 @@ const PASS_GAME = (() => {
         r.frame += 0.08;
         if (r.catchFrames <= 0) {
           g.catchPair = null;
+          // Brief tuck bridge before the normal carry stride resumes. This
+          // prevents the receiver snapping from extended hands to a runner.
+          r.tuckFrames = 6;
           r.db.contestFrames = 0;
           r.db.turnAge = 18;
         }
         return;
       }
+      if (r.tuckFrames > 0) r.tuckFrames--;
       r.y -= 0.92 + 0.56 * W.SPEED;
       r.x += Math.sign(VW / 2 - r.x) * 0.34;      // works back to the grass
       r.x = Math.max(10, Math.min(VW - 10, r.x));
@@ -2779,7 +2806,7 @@ const PASS_GAME = (() => {
         this.end(g.roll() < 0.12 ? 'int' : 'incomplete', 0); return;
       }
       if (b.y <= EZ) {
-        rec.x = b.x; rec.y = b.y; rec.catchFrames = 7;
+        rec.x = b.x; rec.y = b.y; rec.catchFrames = 11;
         this.end('td', gain); return;
       }
       // He caught it clean and keeps running. This is not a phase you steer —
@@ -2795,7 +2822,8 @@ const PASS_GAME = (() => {
         rec.db.x = rec.x + catchSide * Math.max(11, Math.abs(rec.db.x - rec.x));
         rec.db.y = rec.y + 3;
       }
-      rec.catchFrames = 7;
+      rec.catchFrames = 11;
+      rec.tuckFrames = 0;
       g.yacFrames = 0;
       g.state = 'yac';
     },
@@ -2860,7 +2888,9 @@ const PASS_GAME = (() => {
       if (g.safety) {
         const s = g.safety;
         const sFinal = finalActorPosition(s);
-        const targetX = sFinal.x + (s.laneX || 0), targetY = sFinal.y + (s.laneY || 0);
+        const pre = presnapDrift(s, g.state === 'ready');
+        const targetX = sFinal.x + (s.laneX || 0) + pre.x;
+        const targetY = sFinal.y + (s.laneY || 0) + pre.y;
         s.drawX = s.drawX == null ? s.x : s.drawX + (targetX - s.drawX) * .34;
         s.drawY = s.drawY == null ? s.y : s.drawY + (targetY - s.drawY) * .34;
         const sp = actorScreen(s.drawX, s.drawY);
@@ -2881,7 +2911,7 @@ const PASS_GAME = (() => {
         if (!intersects && s.visualAlpha > .025) {
           ctx.globalAlpha = s.visualAlpha;
           sprite(DEF20[Math.floor(s.frame) % 3], s.drawX - HALF, s.drawY - g.camY - HALF,
-            null, 0, null, { pose: g.state === 'ready' ? 'db' : 'safety', frame: s.frame,
+            null, 0, null, { pose: g.state === 'ready' ? 'db_ready' : 'safety', frame: s.frame,
               dir: s.animDir, stable: true,
               actionFrame: Math.min(3, Math.floor((s.motionAge || 0) / 4)) });
           ctx.globalAlpha = 1;
@@ -2891,7 +2921,9 @@ const PASS_GAME = (() => {
         for (let i = 0; i < g.rushers.length; i++) {
           const d = g.rushers[i];
           const dFinal = finalActorPosition(d);
-          const targetX = dFinal.x + (d.laneX || 0), targetY = dFinal.y + (d.laneY || 0);
+          const pre = presnapDrift(d, g.state === 'ready');
+          const targetX = dFinal.x + (d.laneX || 0) + pre.x;
+          const targetY = dFinal.y + (d.laneY || 0) + pre.y;
           d.drawX = d.drawX == null ? d.x : d.drawX + (targetX - d.drawX) * .38;
           d.drawY = d.drawY == null ? d.y : d.drawY + (targetY - d.drawY) * .38;
           const dp = actorScreen(d.drawX, d.drawY);
@@ -2909,7 +2941,7 @@ const PASS_GAME = (() => {
           if (!intersects && d.visualAlpha > .025) {
             ctx.globalAlpha = d.visualAlpha;
             sprite(DEF20[Math.floor(d.frame) % 3], d.drawX - HALF, d.drawY - g.camY - HALF,
-              null, 0, null, { pose: g.state === 'ready' ? 'db' : 'rusher', frame: d.frame, stable: true,
+              null, 0, null, { pose: g.state === 'ready' ? 'db_ready' : 'rusher', frame: d.frame, stable: true,
                 actionFrame: Math.min(3, Math.floor((d.motionAge || 0) / 4)) });
             ctx.globalAlpha = 1;
           }
@@ -2943,9 +2975,11 @@ const PASS_GAME = (() => {
         // separate screen-space square after projection made the caught ball
         // drift away from the receiver's hip.
         const caught = (r.catchFrames || 0) > 0;
-        const visualPose = caught ? 'wr_catch' : (g.visual && g.visual.frames > 0
+        const tucking = !caught && (r.tuckFrames || 0) > 0;
+        const visualPose = caught || tucking ? 'wr_catch' : (g.visual && g.visual.frames > 0
           ? (g.visual.kind === 'td' ? 'rb_hero' : 'tackle_fall') : 'carry');
-        const actionFrame = caught ? Math.min(7, 3 + Math.floor(((g.catchPair && g.catchPair.age) || 0) / 2))
+        const actionFrame = caught ? Math.min(5, Math.floor(((g.catchPair && g.catchPair.age) || 0) / 2))
+          : tucking ? Math.min(7, 5 + Math.floor((6 - r.tuckFrames) / 3))
           : g.visual && g.visual.kind !== 'td' ? Math.min(7, Math.floor((24 - g.visual.frames) / 3)) : 0;
         if (!caught && g.visual && g.visual.frames > 0) g.visual.frames--;
         rimmed(RUN20[Math.floor(r.frame) % 3], rx, ry0, BALL20, 0, 0.3 + 0.45 * loose,
@@ -2967,7 +3001,7 @@ const PASS_GAME = (() => {
           : touchdownFinish ? (g.visual.frames > 65 ? 'wr_catch' : 'rb_hero')
           : g.t < 8 ? 'wr_release' : nearBall ? 'wr_catch' : movingPose;
         const actionFrame = touchdownFinish ? Math.min(7, Math.floor((72 - g.visual.frames) / 2))
-          : nearBall ? (ballDistance < 9 ? 3 : 2) : movingFrame;
+          : nearBall ? Math.max(0, Math.min(3, Math.floor((27 - ballDistance) / 6))) : movingFrame;
         if (touchdownFinish) g.visual.frames--;
         sprite(RUN20[Math.floor(r.frame) % 3], rx, ry0, null, 0, null,
           { pose: visualPose, frame: g.state === 'ready' ? 0 : r.frame,
