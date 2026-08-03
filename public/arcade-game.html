@@ -437,7 +437,7 @@
 // Each game supplies its own sim, render, input, and copy.
 // ===========================================================================
 
-const BUILD = 'arcade113-receiver-footwork';
+const BUILD = 'arcade114-directional-receiver';
 const VW = 180;
 let VH = 260;
 const SEED = new URLSearchParams(location.search).get('seed') || 'WK15';
@@ -981,6 +981,7 @@ const CARRIER_STATE_BASE = new Image(), CARRIER_STATE_UNIFORM = new Image();
 const TACKLE_FALL_BASE = new Image(), TACKLE_FALL_UNIFORM = new Image();
 const KICKER_BASE = new Image(), KICKER_UNIFORM = new Image();
 const RECEIVER_RUN_BASE = new Image(), RECEIVER_RUN_UNIFORM = new Image();
+const RECEIVER_DOWNHILL_BASE = new Image(), RECEIVER_DOWNHILL_UNIFORM = new Image();
 const RECEIVER_CUT_BASE = new Image(), RECEIVER_CUT_UNIFORM = new Image();
 const RECEIVER_STATE_BASE = new Image(), RECEIVER_STATE_UNIFORM = new Image();
 POSE_BASE.src = '/sprites/football-poses-base.png';
@@ -1027,6 +1028,8 @@ KICKER_BASE.src = '/sprites/football-kicker-v1-base.png';
 KICKER_UNIFORM.src = '/sprites/football-kicker-v1-uniform.png';
 RECEIVER_RUN_BASE.src = '/sprites/football-receiver-run-v2-base.png';
 RECEIVER_RUN_UNIFORM.src = '/sprites/football-receiver-run-v2-uniform.png';
+RECEIVER_DOWNHILL_BASE.src = '/sprites/football-receiver-downhill-v1-base.png';
+RECEIVER_DOWNHILL_UNIFORM.src = '/sprites/football-receiver-downhill-v1-uniform.png';
 RECEIVER_CUT_BASE.src = '/sprites/football-receiver-cuts-v2-base.png';
 RECEIVER_CUT_UNIFORM.src = '/sprites/football-receiver-cuts-v2-uniform.png';
 RECEIVER_STATE_BASE.src = '/sprites/football-receiver-states-v2-base.png';
@@ -1086,6 +1089,9 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
     cell = [frame, 0];
   } else if (pose === 'wr_run') {
     artBase = RECEIVER_RUN_BASE; artUniform = RECEIVER_RUN_UNIFORM;
+    cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
+  } else if (pose === 'wr_downhill') {
+    artBase = RECEIVER_DOWNHILL_BASE; artUniform = RECEIVER_DOWNHILL_UNIFORM;
     cell = [meta.low ? (Math.floor(frame / 2) % 4) * 2 : frame % 8, 0];
   } else if (pose === 'wr_cut') {
     artBase = RECEIVER_CUT_BASE; artUniform = RECEIVER_CUT_UNIFORM;
@@ -1240,7 +1246,7 @@ function authoredSprite(rows, base, scale, ballPts, tint, meta = {}) {
   // authored directional action (cut/catch/contact) may turn the body.
   // Mirroring every time lateral velocity crossed zero was the source of the
   // disorienting whole-player flip in the old cycle.
-  const flip = (pose === 'run_diag' || pose === 'db_contest')
+  const flip = (pose === 'run_diag' || pose === 'wr_run' || pose === 'db_contest')
     && (meta.dir || 0) < 0;
   if (flip) { ctx.translate(base.x, 0); ctx.scale(-1, 1); ctx.translate(-base.x, 0); }
   ctx.drawImage(poseBuffer, bounds.x, bounds.y, bounds.w, bounds.h,
@@ -2435,7 +2441,7 @@ const PASS_GAME = (() => {
       g.red = red;
       g.wr = {
         sx, sy: g.los - 8, x: sx, y: g.los - 8, dir: 1, route: null, red,
-        hist: [], frame: rnd() * 3, speed: W.SPEED,
+        hist: [], frame: rnd() * 3, speed: W.SPEED, runDirection: 'downhill',
         db: D.cb,
       };
       // The box comes after the passer; the deepest of them cannot, so he
@@ -2642,6 +2648,12 @@ const PASS_GAME = (() => {
       const p = at(r, g.t);
       r.x = p.x; r.y = p.y;
       r.vx = r.x - oldX; r.vy = r.y - oldY;
+      // Select locomotion from actual travel. Two thresholds keep the sprite
+      // from flickering between straight and diagonal around a shallow bend.
+      const lateralRatio = Math.abs(r.vx) / Math.max(.08, Math.abs(r.vy));
+      if (r.runDirection === 'downhill') {
+        if (lateralRatio > .34) r.runDirection = 'diagonal';
+      } else if (lateralRatio < .19) r.runDirection = 'downhill';
       const routeBreak = BREAK[r.route] || 0;
       const breakPhase = g.t - routeBreak;
       const planting = breakPhase >= -2 && breakPhase <= 5;
@@ -2980,7 +2992,8 @@ const PASS_GAME = (() => {
         const touchdownFinish = g.visual && g.visual.kind === 'td' && g.visual.frames > 0;
         const breakAt = r.route ? (BREAK[r.route] || 0) : 0;
         const cutting = r.route && g.t >= breakAt - 4 && g.t < breakAt + 12;
-        const movingPose = cutting ? 'wr_cut' : 'wr_run';
+        const movingPose = cutting ? 'wr_cut'
+          : r.runDirection === 'downhill' ? 'wr_downhill' : 'wr_run';
         const cutAge = g.t - (breakAt - 4);
         // The plant drawing gets the longest hold; entry and exit stay short
         // so the receiver flows into and out of the break without skating.
